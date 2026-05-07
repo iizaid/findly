@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+enum CreditLedgerType {
+  CREDIT_GRANTED
+  CREDIT_USED
+  CREDIT_REFUNDED
+  PLAN_RESET
+}
+
+enum SearchSource {
+  INSTAGRAM
+  FACEBOOK
+  GOOGLE_MAPS
+  LINKEDIN
+  TIKTOK
+  WEBSITE
+  YELP
+  TRIPADVISOR
+  YOUTUBE
+  X
+  MANUAL
+  OTHER
+}
+
+enum SearchJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum LeadStatus {
+  NEW
+  SAVED
+  CONTACTED
+  QUALIFIED
+  DISQUALIFIED
+  ARCHIVED
+}
+
+enum ScoreLevel {
+  LOW
+  MEDIUM
+  HIGH
+  GOLD
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  passwordHash   String
+  role           UserRole        @default(USER)
+  plan           Plan            @default(FREE)
+  creditsBalance Int             @default(0)
+  emailVerified  Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  sessions         Session[]
+  ownedWorkspaces  Workspace[]      @relation("WorkspaceOwner")
+  workspaceMembers WorkspaceMember[]
+  auditLogs        AuditLog[]
+  creditLedger     CreditLedger[]
+  searchJobs       SearchJob[]
+  leads            Lead[]
+  leadAnalyses     LeadAnalysis[]
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@index([userId, revokedAt, expiresAt])
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner        User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members      WorkspaceMember[]
+  creditLedger CreditLedger[]
+  searchJobs   SearchJob[]
+  leads        Lead[]
+  leadAnalyses LeadAnalysis[]
+
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model CreditLedger {
+  id            String           @id @default(cuid())
+  userId        String
+  workspaceId   String?
+  type          CreditLedgerType
+  amount        Int
+  balanceAfter  Int
+  reason        String
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime         @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([createdAt])
+}
+
+model SearchJob {
+  id          String          @id @default(cuid())
+  userId      String
+  workspaceId String
+  source      SearchSource
+  query       String
+  status      SearchJobStatus @default(QUEUED)
+  filters     Json?
+  resultCount Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([source])
+  @@index([userId, workspaceId, status])
+  @@index([createdAt])
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  userId         String
+  workspaceId    String
+  businessName   String
+  country        String
+  city           String
+  businessType   String
+  websiteUrl     String?
+  instagramUrl   String?
+  facebookUrl    String?
+  googleMapsUrl  String?
+  whatsappNumber String?
+  source         String?
+  rawData        Json?
+  status         LeadStatus @default(NEW)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  analyses  LeadAnalysis[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([businessType])
+  @@index([city])
+  @@index([country])
+  @@index([userId, workspaceId, status])
+  @@index([country, city])
+  @@index([createdAt])
+}
+
+model LeadAnalysis {
+  id               String     @id @default(cuid())
+  userId           String
+  workspaceId      String
+  leadId           String
+  opportunityScore Int
+  scoreLevel       ScoreLevel
+  detectedSignals  Json
+  reasons          Json
+  suggestedService String
+  outreachAngle    String
+  createdAt        DateTime   @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([leadId])
+  @@index([scoreLevel])
+  @@index([createdAt])
+}

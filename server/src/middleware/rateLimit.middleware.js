@@ -1,0 +1,66 @@
+import rateLimit from 'express-rate-limit';
+import { env } from '../config/env.js';
+import { prisma } from '../db/prisma.js';
+import { errorCodes } from '../utils/AppError.js';
+
+const auditRateLimit = (req, limitName) => {
+  prisma.auditLog.create({
+    data: {
+      action: 'RATE_LIMIT_TRIGGERED',
+      entityType: 'RateLimit',
+      metadata: {
+        limitName,
+        method: req.method,
+        path: req.originalUrl,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  }).catch(() => {});
+};
+
+const makeRateLimit = ({ windowMs, limit, message, name }) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (req, res) => {
+      auditRateLimit(req, name);
+      return res.status(429).json({
+        success: false,
+        error: {
+          code: errorCodes.RATE_LIMITED,
+          message,
+        },
+      });
+    },
+  });
+
+export const generalRateLimiter = makeRateLimit({
+  name: 'general',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.RATE_LIMIT_MAX,
+  message: 'Too many requests. Please try again later.',
+});
+
+export const authRateLimiter = makeRateLimit({
+  name: 'auth',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.AUTH_RATE_LIMIT_MAX,
+  message: 'Too many authentication attempts. Please try again later.',
+});
+
+export const signupRateLimiter = makeRateLimit({
+  name: 'signup',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.SIGNUP_RATE_LIMIT_MAX,
+  message: 'Too many signup attempts. Please try again later.',
+});
+
+export const loginRateLimiter = makeRateLimit({
+  name: 'login',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.LOGIN_RATE_LIMIT_MAX,
+  message: 'Too many login attempts. Please try again later.',
+});
