@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-primary font-sans antialiased;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100%;
+    overflow-x: clip;
+  }
+
+  ::selection {
+    background-color: #A6FF00;
+    color: #000000;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight;
+  }
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.font-editorial {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+}
+
+.findly-hero-title {
+  font-size: clamp(4.1rem, 8.5vw, 8rem);
+}
+
+@media (max-width: 640px) {
+  .findly-hero-title {
+    font-size: clamp(3rem, 14vw, 4.35rem);
+    max-width: 23rem;
+  }
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-caret {
+  animation: caret-blink 0.8s ease-in-out infinite;
+}
+
+/* ─── Marquee animation ─── */
+@keyframes marquee-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-25%); }
+}
+
+.marquee-track {
+  animation: marquee-scroll 40s linear infinite;
+  will-change: transform;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+.marquee-content {
+  /* Ensures each copy is exactly the same width */
+  flex-shrink: 0;
+}
+
+@keyframes findly-core-spin {
+  0% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+  50% { transform: translate(-50%, -50%) rotate(180deg) scale(1.025); }
+  100% { transform: translate(-50%, -50%) rotate(360deg) scale(1); }
+}
+
+@keyframes findly-core-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.96); }
+  50% { opacity: 0.95; transform: scale(1.04); }
+}
+
+@keyframes findly-flow-dash {
+  to { stroke-dashoffset: -420; }
+}
+
+.findly-core-halo {
+  background:
+    radial-gradient(circle, rgba(166, 255, 0, 0.42) 0%, rgba(166, 255, 0, 0.22) 38%, rgba(101, 154, 0, 0.12) 56%, transparent 72%),
+    radial-gradient(circle at 35% 30%, rgba(217, 255, 179, 0.28), transparent 48%);
+  filter: blur(18px);
+  animation: findly-core-breathe 4.8s ease-in-out infinite;
+}
+
+.findly-core-orbit {
+  border: 1px solid rgba(166, 255, 0, 0.22);
+  background: conic-gradient(from 80deg, transparent 0deg, rgba(166, 255, 0, 0.42) 38deg, transparent 84deg, transparent 210deg, rgba(217, 255, 179, 0.24) 252deg, transparent 310deg);
+  mask: radial-gradient(circle, transparent 62%, #000 63%);
+  animation: findly-core-spin 10s linear infinite;
+}
+
+.findly-core-orbit-slow {
+  opacity: 0.48;
+  animation-duration: 16s;
+  animation-direction: reverse;
+}
+
+.findly-flow-line {
+  stroke: rgba(101, 154, 0, 0.7);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-dasharray: 9 16;
+  filter: drop-shadow(0 0 8px rgba(166, 255, 0, 0.32));
+  animation: findly-flow-dash 6s linear infinite;
+}
+
+.findly-flow-line-delay {
+  animation-delay: -2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .marquee-track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .findly-core-halo,
+  .findly-core-orbit,
+  .findly-flow-line {
+    animation: none !important;
+  }
+}
