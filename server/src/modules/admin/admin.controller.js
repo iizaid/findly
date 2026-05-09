@@ -2,7 +2,7 @@ import { prisma } from '../../db/prisma.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
 import { toPagination } from '../../utils/pagination.js';
-import { mapRawLocationToGovernorate } from '../search/locationNormalization.js';
+import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
 
 const securityActions = [
   'FAILED_LOGIN',
@@ -288,49 +288,103 @@ export const getCatalogLeads = asyncHandler(async (req, res) => {
   const { page, limit, skip } = toPagination(req.validated.query);
   const { search, source, category, governorate, missingWebsite, hasInstagram, hasPhone } = req.validated.query;
 
-  const where = {};
+  const and = [];
 
   if (search) {
-    where.businessName = { contains: search, mode: 'insensitive' };
-  }
-  
-  if (source) {
-    where.source = source;
-  }
-  
-  if (category) {
-    where.category = category;
+    and.push({
+      OR: [
+        { businessName: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+        { address: { contains: search, mode: 'insensitive' } },
+      ],
+    });
   }
 
-  // Very naive governorate matching: just checking city or address string if requested
+  if (source) {
+    and.push({ source });
+  }
+
+  if (category) {
+    and.push({ category });
+  }
+
+  // Governorate: broad Prisma pre-filter, then precise JS normalization post-filter
   if (governorate) {
-    where.OR = [
-      { city: { contains: governorate, mode: 'insensitive' } },
-      { address: { contains: governorate, mode: 'insensitive' } },
-    ];
+    and.push({
+      OR: [
+        { city: { contains: governorate, mode: 'insensitive' } },
+        { address: { contains: governorate, mode: 'insensitive' } },
+      ],
+    });
   }
 
   if (missingWebsite === 'true') {
-    where.websiteUrl = null;
+    and.push({ websiteUrl: null });
   } else if (missingWebsite === 'false') {
-    where.websiteUrl = { not: null };
+    and.push({ websiteUrl: { not: null } });
   }
 
   if (hasInstagram === 'true') {
-    where.instagramUrl = { not: null };
+    and.push({
+      OR: [
+        { instagramUrl: { not: null } },
+        { instagramUsername: { not: null } },
+      ],
+    });
   } else if (hasInstagram === 'false') {
-    where.instagramUrl = null;
+    and.push({ instagramUrl: null, instagramUsername: null });
   }
 
   if (hasPhone === 'true') {
-    where.OR = [
-      ...(where.OR || []),
-      { phone: { not: null } },
-      { whatsappNumber: { not: null } }
-    ];
+    and.push({
+      OR: [
+        { phone: { not: null } },
+        { whatsappNumber: { not: null } },
+      ],
+    });
   } else if (hasPhone === 'false') {
-    where.phone = null;
-    where.whatsappNumber = null;
+    and.push({ phone: null, whatsappNumber: null });
+  }
+
+  const where = and.length ? { AND: and } : {};
+
+  // When governorate filter is active, we over-fetch from Prisma (which does broad
+  // string matching) and then refine with the normalizer to handle neighborhoods
+  // like "Sweifieh" → Amman. Pagination is applied after JS filtering.
+  if (governorate) {
+    const allCandidates = await prisma.leadCatalog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+      select: {
+        id: true,
+        businessName: true,
+        category: true,
+        city: true,
+        country: true,
+        source: true,
+        address: true,
+        websiteUrl: true,
+        instagramUrl: true,
+        instagramUsername: true,
+        phone: true,
+        whatsappNumber: true,
+        detectedSignals: true,
+        importedAt: true,
+        createdAt: true,
+        rawData: true,
+      },
+    });
+
+    const filtered = allCandidates.filter((lead) => leadMatchesGovernorate(lead, governorate));
+    const total = filtered.length;
+    const leads = filtered.slice(skip, skip + limit).map(({ rawData, ...rest }) => rest);
+
+    return successResponse(res, {
+      leads,
+      pagination: { page, limit, total },
+    }, 'Catalog leads loaded.');
   }
 
   const [leads, total] = await prisma.$transaction([
@@ -410,4 +464,214 @@ export const createCatalogLead = asyncHandler(async (req, res) => {
   });
 
   return successResponse(res, { lead }, 'Manual lead added to catalog successfully.', 201);
+});
+
+export const getSystemStatus = asyncHandler(async (_req, res) => {
+  let dbStatus = 'offline';
+  let dbMessage = 'Database connection failed.';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'online';
+    dbMessage = 'Database is connected and responsive.';
+  } catch {
+    dbStatus = 'degraded';
+    dbMessage = 'Database is experiencing issues.';
+  }
+
+  let totalCatalogLeads = 0;
+  try {
+    totalCatalogLeads = await prisma.leadCatalog.count();
+  } catch {
+    // leave as 0
+  }
+
+  const { getSourceStatuses } = await import('../search/source.registry.js');
+  const sources = getSourceStatuses().map(s => ({
+    key: s.key,
+    label: s.label,
+    status: s.status,
+    configured: s.configured,
+    available: s.available,
+    message: s.reason || s.description || ''
+  }));
+
+  const { env } = await import('../../config/env.js');
+
+  const systemStatus = {
+    database: {
+      status: dbStatus,
+      label: 'Database',
+      message: dbMessage,
+      checkedAt: new Date().toISOString()
+    },
+    localDataset: {
+      status: totalCatalogLeads > 0 ? 'available' : 'empty',
+      label: 'Local Dataset',
+      totalCatalogLeads,
+      message: totalCatalogLeads > 0 
+        ? 'Internal searchable catalog is available.' 
+        : 'No catalog leads loaded yet.'
+    },
+    sources,
+    importPipeline: {
+      status: 'available',
+      label: 'Bulk Import Pipeline',
+      allowedFileTypes: ['.csv', '.xlsx'],
+      ttlMinutes: env.IMPORT_UPLOAD_TTL_MINUTES || 60,
+      message: 'File upload and parsing pipeline is operational.'
+    },
+    adminSystem: {
+      status: 'available',
+      label: 'Admin Operations',
+      message: 'Admin system is fully operational.'
+    },
+    aiProviders: {
+      status: 'not_implemented',
+      label: 'AI Providers',
+      message: 'AI provider foundation is not implemented yet.'
+    }
+  };
+
+  return successResponse(res, systemStatus, 'System status loaded.');
+});
+
+const sanitizeMetadata = (meta) => {
+  if (!meta || typeof meta !== 'object') return null;
+  const safeMeta = { ...meta };
+  const sensitiveKeys = ['password', 'passwordhash', 'token', 'tokenhash', 'session', 'cookie', 'authorization', 'apikey', 'secret', 'smtp', 'url', 'key', 'body', 'headers'];
+  
+  for (const k of Object.keys(safeMeta)) {
+    const keyLower = k.toLowerCase();
+    if (sensitiveKeys.some(sk => keyLower.includes(sk))) {
+      safeMeta[k] = '[REDACTED]';
+    } else if (typeof safeMeta[k] === 'object') {
+      safeMeta[k] = sanitizeMetadata(safeMeta[k]);
+    } else if (typeof safeMeta[k] === 'string' && safeMeta[k].length > 200) {
+      safeMeta[k] = safeMeta[k].substring(0, 200) + '...';
+    }
+  }
+  return safeMeta;
+};
+
+export const getActivityLogs = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = toPagination(req.validated.query);
+  const { category, severity, type, search, from, to } = req.validated.query;
+
+  const fetchLimit = 1000;
+  
+  let auditWhere = {};
+  let errorWhere = {};
+  
+  if (from || to) {
+    const dateFilter = {};
+    if (from) dateFilter.gte = new Date(from);
+    if (to) dateFilter.lte = new Date(to);
+    auditWhere.createdAt = dateFilter;
+    errorWhere.createdAt = dateFilter;
+  }
+  
+  if (type) {
+    auditWhere.action = type;
+    errorWhere.errorCode = type;
+  }
+
+  const [audits, errors] = await Promise.all([
+    prisma.auditLog.findMany({
+      where: auditWhere,
+      orderBy: { createdAt: 'desc' },
+      take: fetchLimit,
+      include: { user: { select: { email: true, role: true } } }
+    }),
+    prisma.backendErrorLog.findMany({
+      where: errorWhere,
+      orderBy: { createdAt: 'desc' },
+      take: fetchLimit,
+      include: { user: { select: { email: true, role: true } } }
+    })
+  ]);
+
+  let combined = [];
+
+  for (const audit of audits) {
+    let cat = 'system';
+    let sev = 'info';
+    let title = audit.action;
+    
+    if (audit.action.startsWith('USER_')) { cat = 'auth'; sev = 'info'; }
+    if (audit.action.includes('FAILED') || audit.action.includes('DENIED') || audit.action.includes('REVOKED')) sev = 'warning';
+    if (audit.action.includes('CSRF') || audit.action.includes('RATE_LIMIT')) sev = 'critical';
+    if (audit.action.includes('SECURITY') || audit.action.includes('DENIED')) cat = 'security';
+    if (audit.action.startsWith('SEARCH_') || audit.action.startsWith('LEADLIST_')) cat = 'search';
+    if (audit.action.includes('LEADLIST_')) cat = 'lead_list';
+    if (audit.action.includes('IMPORT') || audit.action.includes('DATASET')) cat = 'import';
+    if (audit.action.startsWith('ADMIN_')) { cat = 'admin'; sev = 'info'; }
+    if (audit.action === 'ADMIN_ACCESS_DENIED') { cat = 'security'; sev = 'warning'; }
+    if (audit.action === 'CSRF_FAILED') { cat = 'security'; sev = 'critical'; }
+
+    combined.push({
+      id: audit.id,
+      type: audit.action,
+      category: cat,
+      severity: sev,
+      title,
+      description: audit.action.replace(/_/g, ' '),
+      actorEmail: audit.user?.email || null,
+      actorRole: audit.user?.role || null,
+      entityType: audit.entityType || null,
+      entityId: audit.entityId || null,
+      ipAddress: audit.ipAddress || null,
+      userAgent: audit.userAgent || null,
+      metadataSummary: sanitizeMetadata(audit.metadata),
+      createdAt: audit.createdAt
+    });
+  }
+
+  for (const err of errors) {
+    let sev = err.statusCode >= 500 ? 'critical' : 'warning';
+    
+    combined.push({
+      id: err.id,
+      type: err.errorCode,
+      category: 'error',
+      severity: sev,
+      title: `Error: ${err.errorCode}`,
+      description: err.message,
+      actorEmail: err.user?.email || null,
+      actorRole: err.user?.role || null,
+      route: err.route || null,
+      method: err.method || null,
+      statusCode: err.statusCode,
+      errorCode: err.errorCode,
+      requestId: err.requestId || null,
+      ipAddress: err.ipAddress || null,
+      userAgent: err.userAgent || null,
+      metadataSummary: null,
+      createdAt: err.createdAt
+    });
+  }
+
+  if (category) combined = combined.filter(c => c.category === category);
+  if (severity) combined = combined.filter(c => c.severity === severity);
+  
+  if (search) {
+    const s = search.toLowerCase();
+    combined = combined.filter(c => 
+      c.actorEmail?.toLowerCase().includes(s) ||
+      c.type.toLowerCase().includes(s) ||
+      c.requestId?.toLowerCase().includes(s) ||
+      c.route?.toLowerCase().includes(s) ||
+      c.errorCode?.toLowerCase().includes(s) ||
+      c.description?.toLowerCase().includes(s)
+    );
+  }
+
+  combined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  
+  const total = combined.length;
+  const paginated = combined.slice(skip, skip + limit);
+
+  return successResponse(res, {
+    activity: paginated,
+    pagination: { page, limit, total }
+  }, 'Activity logs loaded.');
 });

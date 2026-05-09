@@ -34,6 +34,13 @@ searchRouter.get('/campaigns/:id/analytics', validate(v.idParamSchema), ctrl.get
 searchRouter.get('/lists', validate(v.paginationOnlySchema), ctrl.getLeadLists);
 searchRouter.get('/lists/:id', validate(v.idParamSchema), ctrl.getLeadListById);
 searchRouter.get('/lists/:id/leads', validate(v.getLeadListLeadsSchema), ctrl.getLeads);
+searchRouter.post('/lists/:id/analyze', analysisRateLimiter, validate(v.idParamSchema), ctrl.analyzeListItems);
+
+// Lead list items
+searchRouter.patch('/lists/:listId/items/:itemId/status', validate(v.updateItemStatusSchema), ctrl.updateListItemStatus);
+searchRouter.patch('/lists/:listId/items/:itemId/notes', validate(v.updateItemNotesSchema), ctrl.updateListItemNotes);
+searchRouter.post('/lists/:listId/items/:itemId/analyze', analysisRateLimiter, validate(v.listItemParamSchema), ctrl.analyzeListItem);
+
 searchRouter.get('/opportunity-signals', validate(v.paginationOnlySchema), ctrl.getOpportunitySignals);
 
 // Leads

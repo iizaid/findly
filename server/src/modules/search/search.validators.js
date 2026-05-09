@@ -86,3 +86,30 @@ export const estimateCostSchema = z.object({
 export const paginationOnlySchema = z.object({
   query: paginationQuerySchema,
 });
+
+export const updateItemStatusSchema = z.object({
+  params: z.object({
+    listId: z.string().cuid(),
+    itemId: z.string().cuid(),
+  }),
+  body: z.object({
+    status: z.enum(['NEW', 'REVIEWED', 'CONTACTED', 'INTERESTED', 'NOT_A_FIT', 'SAVED', 'QUALIFIED', 'DISQUALIFIED', 'ARCHIVED']),
+  }),
+});
+
+export const updateItemNotesSchema = z.object({
+  params: z.object({
+    listId: z.string().cuid(),
+    itemId: z.string().cuid(),
+  }),
+  body: z.object({
+    notes: z.string().max(5000).nullable().optional(),
+  }),
+});
+
+export const listItemParamSchema = z.object({
+  params: z.object({
+    listId: z.string().cuid(),
+    itemId: z.string().cuid(),
+  }),
+});

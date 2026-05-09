@@ -181,17 +181,17 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner           User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members         WorkspaceMember[]
-  creditLedger    CreditLedger[]
-  serviceProfiles ServiceProfile[]
-  searchCampaigns SearchCampaign[]
-  leadLists       LeadList[]
-  leads           Lead[]
-  leadAnalyses    LeadAnalysis[]
+  owner              User                @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members            WorkspaceMember[]
+  creditLedger       CreditLedger[]
+  serviceProfiles    ServiceProfile[]
+  searchCampaigns    SearchCampaign[]
+  leadLists          LeadList[]
+  leads              Lead[]
+  leadAnalyses       LeadAnalysis[]
   opportunitySignals OpportunitySignal[]
-  jobs            Job[]
-  datasetImports  DatasetImport[]
+  jobs               Job[]
+  datasetImports     DatasetImport[]
 
   @@index([ownerId])
 }
@@ -229,17 +229,17 @@ model AuditLog {
 }
 
 model BackendErrorLog {
-  id           String   @id @default(cuid())
-  requestId    String?
-  userId       String?
-  route        String?
-  method       String?
-  statusCode   Int
-  errorCode    String
-  message      String
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime @default(now())
+  id         String   @id @default(cuid())
+  requestId  String?
+  userId     String?
+  route      String?
+  method     String?
+  statusCode Int
+  errorCode  String
+  message    String
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -320,14 +320,14 @@ model SearchCampaign {
   updatedAt        DateTime       @updatedAt
   completedAt      DateTime?
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  serviceProfile ServiceProfile? @relation(fields: [serviceProfileId], references: [id], onDelete: SetNull)
-  leadLists      LeadList[]
-  leads          Lead[]
-  leadAnalyses   LeadAnalysis[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  serviceProfile     ServiceProfile?     @relation(fields: [serviceProfileId], references: [id], onDelete: SetNull)
+  leadLists          LeadList[]
+  leads              Lead[]
+  leadAnalyses       LeadAnalysis[]
   opportunitySignals OpportunitySignal[]
-  jobs           Job[]
+  jobs               Job[]
 
   @@index([userId])
   @@index([workspaceId])
@@ -337,24 +337,24 @@ model SearchCampaign {
 }
 
 model Job {
-  id          String    @id @default(cuid())
-  userId      String
-  workspaceId String
-  campaignId  String?
-  type        JobType
-  status      JobStatus @default(QUEUED)
-  payload     Json?
-  attempts    Int       @default(0)
-  maxAttempts Int       @default(3)
-  lockedAt    DateTime?
-  lockedBy    String?
-  startedAt   DateTime?
-  completedAt DateTime?
-  failedAt    DateTime?
-  errorCode   String?
+  id           String    @id @default(cuid())
+  userId       String
+  workspaceId  String
+  campaignId   String?
+  type         JobType
+  status       JobStatus @default(QUEUED)
+  payload      Json?
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  lockedAt     DateTime?
+  lockedBy     String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  failedAt     DateTime?
+  errorCode    String?
   errorMessage String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -396,24 +396,35 @@ model LeadList {
 }
 
 model LeadListLead {
-  id        String   @id @default(cuid())
-  leadListId String
-  leadId    String?
-  catalogLeadId String?
-  rank      Int      @default(0)
-  score     Int?
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id              String     @id @default(cuid())
+  leadListId      String
+  leadId          String?
+  catalogLeadId   String?
+  rank            Int        @default(0)
+  score           Int?
+  metadata        Json?
+  status          LeadStatus @default(NEW)
+  notes           String?
+  userTags        Json?
+  lastContactedAt DateTime?
+  analysisStatus  String?
+  analyzedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @default(now()) @updatedAt
 
-  leadList LeadList @relation(fields: [leadListId], references: [id], onDelete: Cascade)
-  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  catalogLead LeadCatalog? @relation(fields: [catalogLeadId], references: [id], onDelete: Cascade)
+  leadList    LeadList       @relation(fields: [leadListId], references: [id], onDelete: Cascade)
+  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  catalogLead LeadCatalog?   @relation(fields: [catalogLeadId], references: [id], onDelete: Cascade)
+  analyses    LeadAnalysis[]
 
   @@unique([leadListId, leadId])
   @@unique([leadListId, catalogLeadId])
   @@index([leadListId])
   @@index([leadId])
   @@index([catalogLeadId])
+  @@index([status])
+  @@index([updatedAt])
+  @@index([analyzedAt])
 }
 
 model DatasetImport {
@@ -438,10 +449,10 @@ model DatasetImport {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  user      User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  workspace Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  rows      DatasetImportRow[]
-  leads     Lead[]
+  user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace    Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  rows         DatasetImportRow[]
+  leads        Lead[]
   catalogLeads LeadCatalog[]
 
   @@index([userId])
@@ -464,9 +475,9 @@ model DatasetImportRow {
   catalogLeadId  String?
   createdAt      DateTime               @default(now())
 
-  import DatasetImport @relation(fields: [importId], references: [id], onDelete: Cascade)
-  lead   Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  catalogLead LeadCatalog? @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
+  import      DatasetImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  lead        Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  catalogLead LeadCatalog?  @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
 
   @@index([importId])
   @@index([leadId])
@@ -475,40 +486,40 @@ model DatasetImportRow {
 }
 
 model LeadCatalog {
-  id              String     @id @default(cuid())
-  datasetImportId String?
-  businessName    String
-  category        String?
-  country         String?
-  city            String?
-  address         String?
-  phone           String?
-  whatsappNumber  String?
-  email           String?
-  websiteUrl      String?
-  websiteStatus   String?
-  instagramUrl    String?
-  instagramUsername String?
-  facebookUrl     String?
-  googleMapsUrl   String?
-  source          String?
-  sourceId        String?
-  sourceFile      String?
-  rating          Float?
-  reviewCount     Int?
-  latitude        Float?
-  longitude       Float?
+  id                    String    @id @default(cuid())
+  datasetImportId       String?
+  businessName          String
+  category              String?
+  country               String?
+  city                  String?
+  address               String?
+  phone                 String?
+  whatsappNumber        String?
+  email                 String?
+  websiteUrl            String?
+  websiteStatus         String?
+  instagramUrl          String?
+  instagramUsername     String?
+  facebookUrl           String?
+  googleMapsUrl         String?
+  source                String?
+  sourceId              String?
+  sourceFile            String?
+  rating                Float?
+  reviewCount           Int?
+  latitude              Float?
+  longitude             Float?
   normalizedFingerprint String?
-  rawData         Json?
-  detectedSignals Json?
-  enrichmentData  Json?
-  importedAt      DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  rawData               Json?
+  detectedSignals       Json?
+  enrichmentData        Json?
+  importedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  datasetImport DatasetImport? @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
+  datasetImport     DatasetImport?     @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
   datasetImportRows DatasetImportRow[]
-  leadListItems LeadListLead[]
+  leadListItems     LeadListLead[]
 
   @@index([datasetImportId])
   @@index([source])
@@ -525,50 +536,50 @@ model LeadCatalog {
 }
 
 model Lead {
-  id              String     @id @default(cuid())
-  userId          String
-  workspaceId     String
-  leadListId      String?
-  campaignId      String?
-  datasetImportId String?
-  businessName    String
-  category        String?
-  country         String?
-  city            String?
-  address         String?
-  phone           String?
-  whatsappNumber  String?
-  email           String?
-  websiteUrl      String?
-  websiteStatus   String?
-  instagramUrl    String?
-  instagramUsername String?
-  facebookUrl     String?
-  googleMapsUrl   String?
-  source          String?
-  sourceId        String?
-  sourceFile      String?
-  rating          Float?
-  reviewCount     Int?
-  latitude        Float?
-  longitude       Float?
+  id                    String     @id @default(cuid())
+  userId                String
+  workspaceId           String
+  leadListId            String?
+  campaignId            String?
+  datasetImportId       String?
+  businessName          String
+  category              String?
+  country               String?
+  city                  String?
+  address               String?
+  phone                 String?
+  whatsappNumber        String?
+  email                 String?
+  websiteUrl            String?
+  websiteStatus         String?
+  instagramUrl          String?
+  instagramUsername     String?
+  facebookUrl           String?
+  googleMapsUrl         String?
+  source                String?
+  sourceId              String?
+  sourceFile            String?
+  rating                Float?
+  reviewCount           Int?
+  latitude              Float?
+  longitude             Float?
   normalizedFingerprint String?
-  rawData         Json?
-  detectedSignals Json?
-  enrichmentData  Json?
-  status          LeadStatus @default(NEW)
-  importedAt      DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  rawData               Json?
+  detectedSignals       Json?
+  enrichmentData        Json?
+  status                LeadStatus @default(NEW)
+  importedAt            DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  leadList  LeadList?       @relation(fields: [leadListId], references: [id], onDelete: SetNull)
-  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  datasetImport DatasetImport? @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadList          LeadList?          @relation(fields: [leadListId], references: [id], onDelete: SetNull)
+  campaign          SearchCampaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  datasetImport     DatasetImport?     @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
   datasetImportRows DatasetImportRow[]
-  analyses  LeadAnalysis[]
-  leadListItems LeadListLead[]
+  analyses          LeadAnalysis[]
+  leadListItems     LeadListLead[]
 
   @@index([userId])
   @@index([workspaceId])
@@ -595,7 +606,8 @@ model LeadAnalysis {
   id               String     @id @default(cuid())
   userId           String
   workspaceId      String
-  leadId           String
+  leadId           String?
+  leadListLeadId   String?
   campaignId       String?
   fitScore         Int?
   opportunityScore Int
@@ -609,21 +621,23 @@ model LeadAnalysis {
   nextBestAction   String?
   createdAt        DateTime   @default(now())
 
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  lead      Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead         Lead?           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadListLead LeadListLead?   @relation(fields: [leadListLeadId], references: [id], onDelete: Cascade)
+  campaign     SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([workspaceId])
   @@index([leadId])
+  @@index([leadListLeadId])
   @@index([campaignId])
   @@index([scoreLevel])
   @@index([createdAt])
 }
 
 model OpportunitySignal {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   userId          String
   workspaceId     String
   campaignId      String?
@@ -639,15 +653,16 @@ model OpportunitySignal {
   commentCount    Int?
   matchedKeywords Json?
   detectedIntent  String?
-  confidence      Int      @default(0)
+  confidence      Int       @default(0)
   rawData         Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
+  @@unique([workspaceId, source, sourceId])
   @@index([userId])
   @@index([workspaceId])
   @@index([campaignId])
@@ -656,5 +671,4 @@ model OpportunitySignal {
   @@index([subreddit])
   @@index([detectedIntent])
   @@index([createdAt])
-  @@unique([workspaceId, source, sourceId])
 }

@@ -21,6 +21,10 @@ dist-ssr
 Data/
 local data/
 
+# Temporary admin upload files
+uploads/
+server/uploads/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

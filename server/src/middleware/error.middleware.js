@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import multer from 'multer';
 import { env } from '../config/env.js';
 import { AppError, errorCodes } from '../utils/AppError.js';
 import { errorResponse } from '../utils/apiResponse.js';
@@ -39,6 +40,21 @@ export const errorHandler = (err, req, res, _next) => {
   if (err?.type === 'entity.too.large') {
     logBackendError(req, 413, errorCodes.PAYLOAD_TOO_LARGE, 'Request body is too large.');
     return errorResponse(res, errorCodes.PAYLOAD_TOO_LARGE, 'Request body is too large.', 413);
+  }
+
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      logBackendError(req, 413, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large. Maximum size is 50MB.');
+      return errorResponse(res, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large. Maximum size is 50MB.', 413);
+    }
+    logBackendError(req, 400, errorCodes.VALIDATION_ERROR, err.message || 'File upload error.');
+    return errorResponse(res, errorCodes.VALIDATION_ERROR, err.message || 'File upload error.', 400);
+  }
+
+  // Multer fileFilter rejections throw a plain Error (not MulterError)
+  if (err?.message?.startsWith('Unsupported file type:')) {
+    logBackendError(req, 400, errorCodes.VALIDATION_ERROR, 'Only .csv and .xlsx files are supported.');
+    return errorResponse(res, errorCodes.VALIDATION_ERROR, 'Only .csv and .xlsx files are supported.', 400);
   }
 
   if (err instanceof AppError) {

@@ -954,4 +954,120 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(importLog).toBeTruthy();
     expect(importLog.metadata.fileName.endsWith('.csv')).toBe(true);
   });
+
+  it('admin catalog filters combine with AND correctly and do not leak across conditions', async () => {
+    const adminAgent = request.agent(createApp());
+    await adminAgent.post('/api/auth/login').send({ email, password }).expect(200);
+    const adminCsrf = await getCsrfToken(adminAgent);
+
+    // Create controlled test data: 4 leads with distinct properties
+    const filterTag = `filter-test-${unique}`;
+
+    // Lead A: Amman, has phone, no website, has instagram, category Cafe
+    await adminAgent.post('/api/admin/catalog/leads')
+      .set('X-CSRF-Token', adminCsrf)
+      .send({
+        businessName: `Lead A ${filterTag}`,
+        category: 'Cafe',
+        country: 'Jordan',
+        governorate: 'Amman',
+        phone: '+962791111111',
+        sourceType: 'MANUAL_ADMIN',
+      }).expect(201);
+
+    // Lead B: Amman, no phone, no website, no instagram, category Cafe
+    await adminAgent.post('/api/admin/catalog/leads')
+      .set('X-CSRF-Token', adminCsrf)
+      .send({
+        businessName: `Lead B ${filterTag}`,
+        category: 'Cafe',
+        country: 'Jordan',
+        governorate: 'Amman',
+        sourceType: 'MANUAL_ADMIN',
+      }).expect(201);
+
+    // Lead C: Aqaba, has phone, no website, category Restaurant
+    await adminAgent.post('/api/admin/catalog/leads')
+      .set('X-CSRF-Token', adminCsrf)
+      .send({
+        businessName: `Lead C ${filterTag}`,
+        category: 'Restaurant',
+        country: 'Jordan',
+        governorate: 'Aqaba',
+        phone: '+962793333333',
+        sourceType: 'MANUAL_ADMIN',
+      }).expect(201);
+
+    // Lead D: Irbid, has phone, has website, category Tech
+    await adminAgent.post('/api/admin/catalog/leads')
+      .set('X-CSRF-Token', adminCsrf)
+      .send({
+        businessName: `Lead D ${filterTag}`,
+        category: 'Tech',
+        country: 'Jordan',
+        governorate: 'Irbid',
+        phone: '+962794444444',
+        websiteUrl: 'https://example-d.test',
+        instagramUrl: 'https://instagram.com/lead_d',
+        sourceType: 'MANUAL_ADMIN',
+      }).expect(201);
+
+    // --- Test 1: governorate=Amman AND hasPhone=true → only Lead A ---
+    const t1 = await adminAgent.get(`/api/admin/catalog/leads?governorate=Amman&hasPhone=true&search=${filterTag}`).expect(200);
+    const t1Names = t1.body.data.leads.map((l) => l.businessName);
+    expect(t1Names).toContain(`Lead A ${filterTag}`);
+    expect(t1Names).not.toContain(`Lead B ${filterTag}`);
+    expect(t1Names).not.toContain(`Lead C ${filterTag}`);
+    expect(t1Names).not.toContain(`Lead D ${filterTag}`);
+
+    // --- Test 2: governorate=Amman AND missingWebsite=true → Lead A and Lead B ---
+    const t2 = await adminAgent.get(`/api/admin/catalog/leads?governorate=Amman&missingWebsite=true&search=${filterTag}`).expect(200);
+    const t2Names = t2.body.data.leads.map((l) => l.businessName);
+    expect(t2Names).toContain(`Lead A ${filterTag}`);
+    expect(t2Names).toContain(`Lead B ${filterTag}`);
+    expect(t2Names).not.toContain(`Lead C ${filterTag}`);
+    expect(t2Names).not.toContain(`Lead D ${filterTag}`);
+
+    // --- Test 3: source + category + governorate all AND ---
+    const t3 = await adminAgent.get(`/api/admin/catalog/leads?source=MANUAL_ADMIN&category=Cafe&governorate=Amman&search=${filterTag}`).expect(200);
+    const t3Names = t3.body.data.leads.map((l) => l.businessName);
+    expect(t3Names).toContain(`Lead A ${filterTag}`);
+    expect(t3Names).toContain(`Lead B ${filterTag}`);
+    expect(t3Names).not.toContain(`Lead C ${filterTag}`);
+    expect(t3Names).not.toContain(`Lead D ${filterTag}`);
+
+    // --- Test 4: hasInstagram=true → only Lead D among our set ---
+    const t4 = await adminAgent.get(`/api/admin/catalog/leads?hasInstagram=true&search=${filterTag}`).expect(200);
+    const t4Names = t4.body.data.leads.map((l) => l.businessName);
+    expect(t4Names).toContain(`Lead D ${filterTag}`);
+    expect(t4Names).not.toContain(`Lead A ${filterTag}`);
+    expect(t4Names).not.toContain(`Lead B ${filterTag}`);
+    expect(t4Names).not.toContain(`Lead C ${filterTag}`);
+
+    // --- Test 5: hasPhone=false → only Lead B among our set ---
+    const t5 = await adminAgent.get(`/api/admin/catalog/leads?hasPhone=false&search=${filterTag}`).expect(200);
+    const t5Names = t5.body.data.leads.map((l) => l.businessName);
+    expect(t5Names).toContain(`Lead B ${filterTag}`);
+    expect(t5Names).not.toContain(`Lead A ${filterTag}`);
+    expect(t5Names).not.toContain(`Lead C ${filterTag}`);
+    expect(t5Names).not.toContain(`Lead D ${filterTag}`);
+
+    // --- Test 6: search does not override other filters ---
+    const t6 = await adminAgent.get(`/api/admin/catalog/leads?search=${filterTag}&hasPhone=true&governorate=Aqaba`).expect(200);
+    const t6Names = t6.body.data.leads.map((l) => l.businessName);
+    expect(t6Names).toContain(`Lead C ${filterTag}`);
+    expect(t6Names).not.toContain(`Lead A ${filterTag}`);
+
+    // --- Test 7: response does not contain secrets ---
+    expect(JSON.stringify(t1.body)).not.toContain('passwordHash');
+    expect(JSON.stringify(t1.body)).not.toContain('SESSION_SECRET');
+
+    // --- Test 8: normal user denied ---
+    const normalEmail2 = `test.${unique}.filter-denied@findly.local`;
+    const { agent: normalAgent2 } = await registerAccount({ userEmail: normalEmail2, name: 'FilterDenied' });
+    const normalToken2 = verificationTokenFor(normalEmail2);
+    await request(createApp()).post('/api/auth/verify-email').send({ token: normalToken2 }).expect(200);
+    await normalAgent2.post('/api/auth/login').send({ email: normalEmail2, password }).expect(200);
+    await normalAgent2.get('/api/admin/catalog/leads').expect(403);
+  });
 });

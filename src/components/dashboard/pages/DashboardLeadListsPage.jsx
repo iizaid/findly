@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Table2, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye } from 'lucide-react';
+import { Plus, Table2, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2 } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest } from '../../../lib/api';
@@ -40,6 +40,10 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
   const [sortOrder, setSortOrder] = useState('desc');
   const [selectedLead, setSelectedLead] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(null);
+  const [analyzingLead, setAnalyzingLead] = useState(null);
+  const [analyzingList, setAnalyzingList] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(null);
+  const [notesValue, setNotesValue] = useState('');
   const [signals, setSignals] = useState([]);
   const [activeList, setActiveList] = useState(null);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
@@ -107,18 +111,87 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
     }
   };
 
-  const updateStatus = async (leadId, newStatus) => {
-    setUpdatingStatus(leadId);
+  const getTargetId = (lead) => lead.leadListItemId || lead.id;
+
+  const updateStatus = async (lead, newStatus) => {
+    const targetId = getTargetId(lead);
+    const isListItem = !!lead.leadListItemId;
+    setUpdatingStatus(targetId);
     try {
-      await apiRequest(`/api/search/leads/${leadId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: newStatus }),
-      });
-      setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: newStatus } : l));
-    } catch {
-      // silent
+      if (isListItem && selectedListId) {
+        await apiRequest(`/api/search/lists/${selectedListId}/items/${targetId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: newStatus }),
+        });
+      } else if (!lead.catalogOnly) {
+        await apiRequest(`/api/search/leads/${lead.id}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: newStatus }),
+        });
+      }
+      setLeads((prev) => prev.map((l) => getTargetId(l) === targetId ? { ...l, status: newStatus } : l));
+    } catch (err) {
+      setError(err.message);
     } finally {
       setUpdatingStatus(null);
+    }
+  };
+
+  const saveNotes = async (lead) => {
+    const targetId = getTargetId(lead);
+    const isListItem = !!lead.leadListItemId;
+    if (!isListItem || !selectedListId) return;
+
+    try {
+      await apiRequest(`/api/search/lists/${selectedListId}/items/${targetId}/notes`, {
+        method: 'PATCH',
+        body: JSON.stringify({ notes: notesValue }),
+      });
+      setLeads((prev) => prev.map((l) => getTargetId(l) === targetId ? { ...l, notes: notesValue } : l));
+      setEditingNotes(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const analyzeLead = async (lead) => {
+    const targetId = getTargetId(lead);
+    const isListItem = !!lead.leadListItemId;
+    setAnalyzingLead(targetId);
+    setError(null);
+    try {
+      let res;
+      if (isListItem && selectedListId) {
+        res = await apiRequest(`/api/search/lists/${selectedListId}/items/${targetId}/analyze`, { method: 'POST' });
+      } else if (!lead.catalogOnly) {
+        res = await apiRequest(`/api/search/leads/${lead.id}/analyze`, { method: 'POST' });
+      }
+      if (res?.data?.analysis) {
+        setLeads((prev) => prev.map((l) => getTargetId(l) === targetId ? { ...l, analyses: [res.data.analysis] } : l));
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAnalyzingLead(null);
+    }
+  };
+
+  const analyzeList = async () => {
+    if (!selectedListId) return;
+    setAnalyzingList(true);
+    setError(null);
+    try {
+      const res = await apiRequest(`/api/search/lists/${selectedListId}/analyze`, { method: 'POST' });
+      if (res?.data?.analyzedCount > 0) {
+        // Refresh leads to show new analyses
+        const refreshParams = new URLSearchParams(window.location.search);
+        const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
+        setLeads(refRes.data.leads || []);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAnalyzingList(false);
     }
   };
 
@@ -135,14 +208,27 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
             Search results stored as structured lead rows. Filter, sort, and manage your pipeline.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('/dashboard/find-leads')}
-          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black"
-        >
-          <Plus size={16} />
-          New Campaign
-        </button>
+        <div className="flex items-center gap-3">
+          {selectedListId && (
+            <button
+              type="button"
+              onClick={analyzeList}
+              disabled={analyzingList}
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-5 text-sm font-bold text-black transition-colors hover:bg-black/5 disabled:opacity-50"
+            >
+              {analyzingList ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+              Analyze List
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onNavigate('/dashboard/find-leads')}
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black"
+          >
+            <Plus size={16} />
+            New Campaign
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -208,48 +294,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       </div>
 
       {/* Table */}
-      <div className="mt-5 rounded-[20px] border border-black/[0.08] bg-[#F7F8F6] p-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Opportunity Signals</p>
-            <p className="mt-1 text-sm font-semibold text-secondary">
-              Reddit and forum-style sources will appear here as demand signals, separate from verified business listings.
-            </p>
-          </div>
-          <span className="inline-flex h-8 items-center rounded-full bg-white px-3 text-xs font-bold text-black">
-            {signals.length} signal{signals.length === 1 ? '' : 's'}
-          </span>
-        </div>
-        {signals.length > 0 && (
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {signals.map((signal) => {
-              const content = (
-                <>
-                  <span className="text-[10px] uppercase tracking-[0.14em] text-secondary">{signal.source} · {signal.detectedIntent || 'Signal'}</span>
-                  <span className="mt-1 block">{signal.title}</span>
-                </>
-              );
-
-              return signal.sourceUrl ? (
-                <a
-                  key={signal.id}
-                  href={signal.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-2xl border border-black/[0.08] bg-white p-3 text-sm font-bold transition-colors hover:border-accent"
-                >
-                  {content}
-                </a>
-              ) : (
-                <div key={signal.id} className="rounded-2xl border border-black/[0.08] bg-white p-3 text-sm font-bold">
-                  {content}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       <div className="mt-5 overflow-hidden rounded-[20px] border border-black/[0.08] bg-white">
         <div className="overflow-x-auto">
           <div className="min-w-[1200px]">
@@ -274,69 +318,178 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
             ) : filtered.length > 0 ? (
               <div className="flex flex-col divide-y divide-black/[0.06]">
                 {filtered.map((lead) => {
+                  const targetId = getTargetId(lead);
+                  const isExpanded = selectedLead === targetId;
+                  const isListItem = !!lead.leadListItemId;
+                  const isCatalogLeadWithoutList = lead.catalogOnly && !isListItem;
                   const a = lead.analyses?.[0];
-                  const isCatalogSnapshot = Boolean(lead.catalogOnly || (lead.catalogLeadId && !lead.userLeadId));
+                  
                   return (
-                    <div key={lead.leadListItemId || lead.id} className="grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#F7F8F6]">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-xs">{lead.businessName}</p>
-                        {lead.rating && <p className="text-[10px] text-secondary mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
+                    <div key={targetId} className="flex flex-col">
+                      <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3 text-sm font-semibold text-black transition-colors ${isExpanded ? 'bg-accent/5' : 'hover:bg-[#F7F8F6]'}`}>
+                        <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
+                          <p className="truncate font-bold text-xs">{lead.businessName}</p>
+                          {lead.rating && <p className="text-[10px] text-secondary mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
+                        </div>
+                        <div className="truncate text-xs text-secondary">{lead.category || '-'}</div>
+                        <div className="truncate text-xs">{lead.city || '-'}</div>
+                        <div className="truncate text-[10px] font-bold text-secondary">{(lead.source || '-').replace(/_/g, ' ')}</div>
+                        <div className="text-xs">
+                          {lead.websiteUrl ? (
+                            <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
+                              <Link2 size={12} /> Visit
+                            </a>
+                          ) : <span className="text-red-400 text-[10px] font-bold">Missing</span>}
+                        </div>
+                        <div className="text-xs">
+                          {lead.instagramUrl ? (
+                            <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
+                              <ExternalLink size={12} /> Open
+                            </a>
+                          ) : (lead.instagramUsername ? <span className="text-[10px] font-bold">@{lead.instagramUsername}</span> : <span className="text-secondary/40">-</span>)}
+                        </div>
+                        <div className="truncate text-xs text-secondary">{lead.phone || '-'}</div>
+                        <div className="min-w-0">
+                          {a?.detectedSignals?.length ? (
+                            <div className="flex flex-wrap gap-0.5">
+                              {a.detectedSignals.slice(0, 2).map((sig) => (
+                                <span key={sig} className="rounded bg-black/[0.04] px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider">{sig.replace(/_/g, ' ')}</span>
+                              ))}
+                              {a.detectedSignals.length > 2 && <span className="text-[9px] text-secondary">+{a.detectedSignals.length - 2}</span>}
+                            </div>
+                          ) : <span className="text-secondary/40 text-xs">-</span>}
+                        </div>
+                        <div>{scoreBadge(a) || <span className="text-secondary/40 text-xs">-</span>}</div>
+                        <div className="relative">
+                          <select
+                            value={lead.status}
+                            onChange={(e) => updateStatus(lead, e.target.value)}
+                            disabled={isCatalogLeadWithoutList || updatingStatus === targetId}
+                            title={isCatalogLeadWithoutList ? 'Status updates will be available after saving a catalog lead to your workspace.' : 'Update lead status'}
+                            className={`h-7 rounded-lg border-0 px-1.5 text-[10px] font-bold uppercase outline-none ${isCatalogLeadWithoutList ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} ${statusColor(lead.status)}`}
+                          >
+                            {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLead(isExpanded ? null : targetId)}
+                            className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isExpanded ? 'bg-accent text-black' : 'bg-black/[0.04] text-secondary hover:bg-accent hover:text-black'}`}
+                            title="View details"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          {lead.googleMapsUrl && (
+                            <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
+                              <ExternalLink size={13} />
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <div className="truncate text-xs text-secondary">{lead.category || '-'}</div>
-                      <div className="truncate text-xs">{lead.city || '-'}</div>
-                      <div className="truncate text-[10px] font-bold text-secondary">{(lead.source || '-').replace(/_/g, ' ')}</div>
-                      <div className="text-xs">
-                        {lead.websiteUrl ? (
-                          <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
-                            <Link2 size={12} /> Visit
-                          </a>
-                        ) : <span className="text-red-400 text-[10px] font-bold">Missing</span>}
-                      </div>
-                      <div className="text-xs">
-                        {lead.instagramUrl ? (
-                          <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
-                            <ExternalLink size={12} /> Open
-                          </a>
-                        ) : (lead.instagramUsername ? <span className="text-[10px] font-bold">@{lead.instagramUsername}</span> : <span className="text-secondary/40">-</span>)}
-                      </div>
-                      <div className="truncate text-xs text-secondary">{lead.phone || '-'}</div>
-                      <div className="min-w-0">
-                        {a?.detectedSignals?.length ? (
-                          <div className="flex flex-wrap gap-0.5">
-                            {a.detectedSignals.slice(0, 2).map((sig) => (
-                              <span key={sig} className="rounded bg-black/[0.04] px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider">{sig.replace(/_/g, ' ')}</span>
-                            ))}
-                            {a.detectedSignals.length > 2 && <span className="text-[9px] text-secondary">+{a.detectedSignals.length - 2}</span>}
+
+                      {/* Expanded View */}
+                      {isExpanded && (
+                        <div className="bg-accent/5 px-5 pb-5 pt-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Left Column: Analysis */}
+                            <div className="rounded-xl border border-black/[0.08] bg-white p-4">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary">AI Analysis</h4>
+                                {!a && !isCatalogLeadWithoutList && (
+                                  <button 
+                                    onClick={() => analyzeLead(lead)}
+                                    disabled={analyzingLead === targetId}
+                                    className="flex items-center gap-1 text-xs font-bold text-accent-dark hover:underline disabled:opacity-50"
+                                  >
+                                    {analyzingLead === targetId ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                    Analyze
+                                  </button>
+                                )}
+                              </div>
+                              
+                              {a ? (
+                                <div className="space-y-3">
+                                  <div className="flex gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary w-20">Service:</span>
+                                    <span className="text-xs font-bold">{a.suggestedService}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary w-20">Angle:</span>
+                                    <span className="text-xs text-black/80 leading-relaxed">{a.outreachAngle}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary block mb-1">Message Draft:</span>
+                                    <div className="bg-[#F7F8F6] p-3 rounded-lg text-xs leading-relaxed text-black/80 whitespace-pre-wrap">
+                                      {a.messageDraft}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="py-6 text-center">
+                                  <p className="text-xs text-secondary">Not analyzed yet.</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Right Column: Notes & Raw Data */}
+                            <div className="space-y-4">
+                              {/* Notes */}
+                              {isListItem && (
+                                <div className="rounded-xl border border-black/[0.08] bg-white p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-secondary flex items-center gap-1"><FileText size={12} /> Notes</h4>
+                                    {editingNotes !== targetId ? (
+                                      <button 
+                                        onClick={() => {
+                                          setNotesValue(lead.notes || '');
+                                          setEditingNotes(targetId);
+                                        }}
+                                        className="text-[10px] font-bold text-accent-dark hover:underline"
+                                      >
+                                        Edit
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        onClick={() => saveNotes(lead)}
+                                        className="flex items-center gap-1 text-[10px] font-bold text-green-600 hover:underline"
+                                      >
+                                        <CheckCircle2 size={12} /> Save
+                                      </button>
+                                    )}
+                                  </div>
+                                  
+                                  {editingNotes === targetId ? (
+                                    <textarea
+                                      value={notesValue}
+                                      onChange={(e) => setNotesValue(e.target.value)}
+                                      className="w-full rounded-lg border border-black/10 bg-[#F7F8F6] p-2 text-xs outline-none focus:border-accent min-h-[80px]"
+                                      placeholder="Add your notes here..."
+                                    />
+                                  ) : (
+                                    <p className="text-xs text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
+                                      {lead.notes || <span className="text-secondary/50 italic">No notes added.</span>}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Details */}
+                              <div className="rounded-xl border border-black/[0.08] bg-white p-4">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary mb-3">Lead Details</h4>
+                                <div className="grid grid-cols-2 gap-y-2 text-xs">
+                                  <div className="text-secondary">Email</div>
+                                  <div className="truncate" title={lead.email}>{lead.email || '-'}</div>
+                                  <div className="text-secondary">Address</div>
+                                  <div className="truncate" title={lead.address}>{lead.address || '-'}</div>
+                                  <div className="text-secondary">Database</div>
+                                  <div>{isListItem ? 'Catalog Snapshot' : (lead.catalogOnly ? 'Global Catalog' : 'User Workspace')}</div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        ) : <span className="text-secondary/40 text-xs">-</span>}
-                      </div>
-                      <div>{scoreBadge(a) || <span className="text-secondary/40 text-xs">-</span>}</div>
-                      <div className="relative">
-                        <select
-                          value={lead.status}
-                          onChange={(e) => updateStatus(lead.id, e.target.value)}
-                          disabled={isCatalogSnapshot || updatingStatus === lead.id}
-                          title={isCatalogSnapshot ? 'Status updates will be available after saving a catalog lead to your workspace.' : 'Update lead status'}
-                          className={`h-7 rounded-lg border-0 px-1.5 text-[10px] font-bold uppercase outline-none ${isCatalogSnapshot ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} ${statusColor(lead.status)}`}
-                        >
-                          {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedLead(selectedLead === lead.id ? null : lead.id)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors"
-                          title="View details"
-                        >
-                          <Eye size={13} />
-                        </button>
-                        {lead.googleMapsUrl && (
-                          <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
-                            <ExternalLink size={13} />
-                          </a>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

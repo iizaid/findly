@@ -8,6 +8,8 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireVerifiedEmail, requireAdmin);
 
+adminRouter.get('/system/status', ctrl.getSystemStatus);
+adminRouter.get('/activity', validate(v.adminActivityQuerySchema), ctrl.getActivityLogs);
 adminRouter.get('/summary', ctrl.getAdminSummary);
 adminRouter.get('/users', validate(v.adminListQuerySchema), ctrl.getAdminUsers);
 adminRouter.get('/catalog/stats', ctrl.getCatalogStats);
@@ -22,15 +24,16 @@ import multer from 'multer';
 import * as bulkCtrl from './bulkImport.controller.js';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { getAdminUploadDir, uploadFileFilter } from './uploadCleanup.service.js';
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.resolve(process.cwd(), 'uploads')),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
+  destination: (_req, _file, cb) => cb(null, getAdminUploadDir()),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: uploadFileFilter });
 
 adminRouter.post('/imports/parse', upload.single('file'), bulkCtrl.parseImportFile);
-adminRouter.post('/imports/commit', bulkCtrl.commitImportFile);
+adminRouter.post('/imports/commit', validate(v.commitImportSchema), bulkCtrl.commitImportFile);

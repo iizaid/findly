@@ -223,13 +223,143 @@ const CatalogTab = () => {
   );
 };
 
+const LiveActivityTab = () => {
+  const [data, setData] = useState({ logs: [], loading: true });
+  const [filters, setFilters] = useState({ search: '', category: '', severity: '' });
+  
+  const loadLogs = async () => {
+    setData(d => ({ ...d, loading: true }));
+    try {
+      const q = new URLSearchParams({ limit: '100' });
+      if (filters.search) q.set('search', filters.search);
+      if (filters.category) q.set('category', filters.category);
+      if (filters.severity) q.set('severity', filters.severity);
+      
+      const res = await apiRequest(`/api/admin/activity?${q.toString()}`);
+      setData({ logs: res.data.activity || [], loading: false });
+    } catch {
+      setData({ logs: [], loading: false });
+    }
+  };
+
+  useEffect(() => { loadLogs(); }, [filters.category, filters.severity]);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    loadLogs();
+  };
+  
+  const handleCopy = (id) => {
+    navigator.clipboard.writeText(id);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-4 items-center justify-between bg-black/5 p-4 rounded-2xl border border-black/10">
+        <form onSubmit={handleSearch} className="flex flex-1 min-w-[200px] gap-2">
+          <input 
+            type="text" 
+            placeholder="Search email, action, request ID..." 
+            value={filters.search}
+            onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+            className="flex-1 rounded-xl border border-black/10 px-4 py-2 text-sm focus:border-black focus:outline-none"
+          />
+          <button type="submit" className="rounded-xl bg-black px-4 text-sm font-bold text-white hover:bg-black/80">Search</button>
+        </form>
+        <div className="flex gap-2">
+          <select value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))} className="rounded-xl border border-black/10 px-4 py-2 text-sm focus:outline-none">
+            <option value="">All Categories</option>
+            <option value="auth">Auth</option>
+            <option value="security">Security</option>
+            <option value="error">Errors</option>
+            <option value="search">Search</option>
+            <option value="lead_list">Lead Lists</option>
+            <option value="import">Imports</option>
+            <option value="admin">Admin</option>
+            <option value="system">System</option>
+          </select>
+          <select value={filters.severity} onChange={e => setFilters(f => ({ ...f, severity: e.target.value }))} className="rounded-xl border border-black/10 px-4 py-2 text-sm focus:outline-none">
+            <option value="">All Severities</option>
+            <option value="info">Info</option>
+            <option value="warning">Warning</option>
+            <option value="critical">Critical</option>
+          </select>
+          <button onClick={loadLogs} className="rounded-xl bg-white border border-black/10 px-4 text-sm font-bold text-black hover:bg-black/5">Refresh</button>
+        </div>
+      </div>
+      
+      <DashboardCard className="p-0 overflow-hidden">
+        {data.loading ? (
+          <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-secondary" size={32} /></div>
+        ) : data.logs.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-black/5 text-[10px] uppercase tracking-[0.14em] text-secondary border-b border-black/[0.08]">
+                <tr>
+                  <th className="py-3 px-5">Severity</th>
+                  <th className="py-3 px-5">Event</th>
+                  <th className="py-3 px-5">Actor / Request ID</th>
+                  <th className="py-3 px-5">Context</th>
+                  <th className="py-3 px-5 text-right">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {data.logs.map(log => (
+                  <tr key={log.id} className="hover:bg-black/[0.02]">
+                    <td className="py-3 px-5 align-top">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        log.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                        log.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {log.severity}
+                      </span>
+                    </td>
+                    <td className="py-3 px-5 align-top">
+                      <div className="font-bold text-black">{log.title}</div>
+                      <div className="text-xs text-secondary mt-1">{log.category}</div>
+                    </td>
+                    <td className="py-3 px-5 align-top">
+                      <div className="text-sm font-medium">{log.actorEmail || 'System / Anonymous'}</div>
+                      {log.requestId && (
+                        <div className="text-xs text-secondary mt-1 cursor-pointer hover:text-black flex items-center gap-1" onClick={() => handleCopy(log.requestId)}>
+                          {log.requestId.slice(0, 8)}... (copy)
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-5 align-top">
+                      <div className="text-xs text-secondary truncate max-w-xs">{log.description || log.route || '-'}</div>
+                      {log.metadataSummary && (
+                        <div className="text-[10px] text-secondary mt-1 max-w-xs truncate">
+                          {JSON.stringify(log.metadataSummary)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-5 align-top text-right whitespace-nowrap text-xs text-secondary">
+                      {date(log.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-10">
+            <DashboardEmptyState title="No activity found" description="Adjust your filters or wait for new events to arrive." />
+          </div>
+        )}
+      </DashboardCard>
+    </div>
+  );
+};
+
 const DashboardAdminPage = ({ user, onNavigate }) => {
   const [state, setState] = useState({ status: 'loading' });
   const [activeTab, setActiveTab] = useState('overview');
 
   const loadData = async () => {
     try {
-      const [summary, users, catalog, imports, campaigns, security, errors] = await Promise.all([
+      const [summary, users, catalog, imports, campaigns, security, errors, systemStatusRes] = await Promise.all([
         apiRequest('/api/admin/summary'),
         apiRequest('/api/admin/users?limit=20'),
         apiRequest('/api/admin/catalog/stats'),
@@ -237,6 +367,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
         apiRequest('/api/admin/campaigns?limit=20'),
         apiRequest('/api/admin/security/events?limit=20'),
         apiRequest('/api/admin/errors?limit=20'),
+        apiRequest('/api/admin/system/status'),
       ]);
       setState({
         status: 'ready',
@@ -248,6 +379,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
           campaigns: campaigns.data.campaigns || [],
           security: security.data.events || [],
           errors: errors.data.errors || [],
+          systemStatus: systemStatusRes.data,
         },
       });
     } catch (error) {
@@ -296,7 +428,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
     );
   }
 
-  const { summary, users, catalog, imports, campaigns, security, errors } = state.data;
+  const { summary, users, catalog, imports, campaigns, security, errors, systemStatus } = state.data;
   const totals = summary.totals || {};
 
   const tabs = [
@@ -333,11 +465,36 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
             <DashboardCard className="p-5">
               <h3 className="text-xl font-bold tracking-tight mb-4">System Status</h3>
               <div className="space-y-3 text-sm font-semibold">
-                <div className="flex justify-between border-b border-black/5 pb-2"><span>Database</span> <span className="text-[#137333]">Online</span></div>
-                <div className="flex justify-between border-b border-black/5 pb-2"><span>Local Dataset</span> <span className="text-[#137333]">Available</span></div>
-                <div className="flex justify-between border-b border-black/5 pb-2"><span>Google Maps API</span> <span className="text-black/50">Not configured</span></div>
-                <div className="flex justify-between border-b border-black/5 pb-2"><span>Website Enrichment</span> <span className="text-[#137333]">Available</span></div>
-                <div className="flex justify-between pb-2"><span>AI Providers</span> <span className="text-black/50">Coming next</span></div>
+                <div className="flex justify-between border-b border-black/5 pb-2">
+                  <span>{systemStatus.database.label}</span> 
+                  <span className={systemStatus.database.status === 'online' ? 'text-[#137333]' : 'text-red-700'}>
+                    {systemStatus.database.status === 'online' ? 'Online' : 'Degraded'}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-black/5 pb-2">
+                  <span>{systemStatus.localDataset.label} ({fmt(systemStatus.localDataset.totalCatalogLeads)})</span> 
+                  <span className={systemStatus.localDataset.status === 'available' ? 'text-[#137333]' : 'text-black/50'}>
+                    {systemStatus.localDataset.status === 'available' ? 'Available' : 'Empty'}
+                  </span>
+                </div>
+                {systemStatus.sources.map(source => (
+                  <div key={source.key} className="flex justify-between border-b border-black/5 pb-2">
+                    <span>{source.label}</span>
+                    <span className={source.status === 'coming_later' ? 'text-black/50' : source.available ? 'text-[#137333]' : 'text-black/50'}>
+                      {source.status === 'coming_later' ? 'Coming Next' : source.available ? 'Available' : 'Not configured'}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex justify-between border-b border-black/5 pb-2">
+                  <span>{systemStatus.importPipeline.label}</span>
+                  <span className={systemStatus.importPipeline.status === 'available' ? 'text-[#137333]' : 'text-red-700'}>
+                    {systemStatus.importPipeline.status === 'available' ? `Ready (${systemStatus.importPipeline.ttlMinutes}m TTL)` : 'Unavailable'}
+                  </span>
+                </div>
+                <div className="flex justify-between pb-2">
+                  <span>{systemStatus.aiProviders.label}</span>
+                  <span className="text-black/50">Not implemented yet</span>
+                </div>
               </div>
             </DashboardCard>
             <MiniTable
@@ -354,26 +511,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
       )}
 
       {activeTab === 'live' && (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <MiniTable
-            title="Recent Security Events"
-            rows={security}
-            columns={[
-              { key: 'action', label: 'Action' },
-              { key: 'user', label: 'User', render: (row) => row.user?.email || '-' },
-              { key: 'createdAt', label: 'Time', render: (row) => date(row.createdAt) },
-            ]}
-          />
-          <MiniTable
-            title="Recent Backend Errors"
-            rows={errors}
-            columns={[
-              { key: 'route', label: 'Route' },
-              { key: 'errorCode', label: 'Code' },
-              { key: 'createdAt', label: 'Time', render: (row) => date(row.createdAt) },
-            ]}
-          />
-        </div>
+        <LiveActivityTab />
       )}
 
       {activeTab === 'catalog' && (

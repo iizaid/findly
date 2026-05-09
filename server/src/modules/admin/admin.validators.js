@@ -49,3 +49,69 @@ export const adminCreateLeadSchema = z.object({
     }
   }),
 });
+
+// Fields an admin can map a source column to
+export const ALLOWED_TARGET_FIELDS = new Set([
+  'ignore',
+  'businessName', 'category', 'country', 'governorate', 'city', 'address',
+  'phone', 'whatsappNumber', 'email',
+  'websiteUrl', 'instagramUrl', 'instagramUsername', 'facebookUrl', 'googleMapsUrl',
+  'rating', 'reviewCount', 'notes', 'sourceUrl', 'sourceType',
+]);
+
+// Fields that may only be mapped once (unique-per-sheet)
+const UNIQUE_TARGET_FIELDS = new Set([...ALLOWED_TARGET_FIELDS].filter(f => f !== 'ignore'));
+
+const mappingColumnSchema = z.object({
+  sourceHeader: z.string().min(1).max(200),
+  targetField: z.string().refine(
+    (f) => ALLOWED_TARGET_FIELDS.has(f),
+    { message: 'Unknown target field.' },
+  ),
+});
+
+const mappingSheetSchema = z.object({
+  sheetName: z.string().min(1).max(200),
+  columns: z.array(mappingColumnSchema).min(1),
+}).superRefine((data, ctx) => {
+  const seen = new Set();
+  data.columns.forEach((col, i) => {
+    if (col.targetField === 'ignore') return;
+    if (seen.has(col.targetField)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate mapping for field "${col.targetField}".`,
+        path: ['columns', i, 'targetField'],
+      });
+    }
+    seen.add(col.targetField);
+  });
+  if (!seen.has('businessName')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A column must be mapped to "businessName".',
+      path: ['columns'],
+    });
+  }
+});
+
+export const commitImportSchema = z.object({
+  body: z.object({
+    fileKey: z.string().min(1).max(200),
+    sourceType: z.string().optional().nullable(),
+    mappingConfig: z.object({
+      sheets: z.array(mappingSheetSchema).min(1),
+    }).optional().nullable(),
+  }),
+});
+
+export const adminActivityQuerySchema = z.object({
+  query: paginationQuerySchema.extend({
+    category: z.string().max(50).optional(),
+    severity: z.string().max(20).optional(),
+    type: z.string().max(100).optional(),
+    search: z.string().max(120).optional(),
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  }),
+});

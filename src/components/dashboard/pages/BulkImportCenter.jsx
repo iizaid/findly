@@ -1,7 +1,15 @@
-import { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Play, ChevronRight } from 'lucide-react';
+import { useState, useRef, useMemo } from 'react';
+import { Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Play, ChevronRight, Settings } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import { apiRequest, ApiError } from '../../../lib/api';
+
+const ALLOWED_TARGET_FIELDS = [
+  'ignore',
+  'businessName', 'category', 'country', 'governorate', 'city', 'address',
+  'phone', 'whatsappNumber', 'email',
+  'websiteUrl', 'instagramUrl', 'instagramUsername', 'facebookUrl', 'googleMapsUrl',
+  'rating', 'reviewCount', 'notes', 'sourceUrl', 'sourceType',
+];
 
 const BulkImportCenter = ({ onSuccess }) => {
   const [file, setFile] = useState(null);
@@ -9,6 +17,7 @@ const BulkImportCenter = ({ onSuccess }) => {
   const [status, setStatus] = useState('idle'); // 'idle', 'parsing', 'review', 'committing', 'success', 'error'
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [mappingState, setMappingState] = useState({});
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -42,15 +51,24 @@ const BulkImportCenter = ({ onSuccess }) => {
     formData.append('file', selectedFile);
 
     try {
-      // Need to use native fetch for FormData since apiRequest normally sends JSON
-      // Wait, apiRequest supports body being FormData natively? Let's check apiRequest later, or just use fetch
-      // apiRequest usually defaults to JSON if we don't handle headers properly.
-      // Assuming apiRequest handles FormData if body is FormData:
       const res = await apiRequest('/api/admin/imports/parse', {
         method: 'POST',
         body: formData,
       });
       setInspection(res.data);
+      
+      const initialMapping = {};
+      res.data.sheets.forEach(sheet => {
+        if (sheet.skippedSheet) return;
+        const sheetMapping = {};
+        sheet.headers.forEach((header, index) => {
+           const targetField = Object.keys(sheet.mapping).find(key => sheet.mapping[key] === index);
+           sheetMapping[header] = targetField || 'ignore';
+        });
+        initialMapping[sheet.name] = sheetMapping;
+      });
+      setMappingState(initialMapping);
+      
       setStatus('review');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to parse file.');
@@ -59,16 +77,69 @@ const BulkImportCenter = ({ onSuccess }) => {
     }
   };
 
+  const handleMappingChange = (sheetName, header, value) => {
+    setMappingState(prev => ({
+      ...prev,
+      [sheetName]: {
+        ...prev[sheetName],
+        [header]: value
+      }
+    }));
+  };
+
+  const validationIssues = useMemo(() => {
+    if (!inspection) return [];
+    const issues = [];
+    
+    inspection.sheets.forEach(sheet => {
+      if (sheet.skippedSheet) return;
+      const sheetMapping = mappingState[sheet.name] || {};
+      
+      const targetCounts = {};
+      let hasBusinessName = false;
+      
+      Object.entries(sheetMapping).forEach(([header, target]) => {
+        if (target === 'ignore') return;
+        targetCounts[target] = (targetCounts[target] || 0) + 1;
+        if (target === 'businessName') hasBusinessName = true;
+      });
+      
+      if (!hasBusinessName) {
+        issues.push(`Sheet "${sheet.name}": A column must be mapped to "businessName".`);
+      }
+      
+      Object.entries(targetCounts).forEach(([target, count]) => {
+        if (count > 1) {
+          issues.push(`Sheet "${sheet.name}": Duplicate mapping for field "${target}".`);
+        }
+      });
+    });
+    
+    return issues;
+  }, [inspection, mappingState]);
+
   const handleCommit = async () => {
+    if (validationIssues.length > 0) return;
+    
     setStatus('committing');
     setError(null);
+    
+    const mappingConfig = {
+      sheets: Object.entries(mappingState).map(([sheetName, mapping]) => ({
+        sheetName,
+        columns: Object.entries(mapping).map(([sourceHeader, targetField]) => ({
+          sourceHeader,
+          targetField
+        }))
+      }))
+    };
+    
     try {
       const res = await apiRequest('/api/admin/imports/commit', {
         method: 'POST',
         body: JSON.stringify({
           fileKey: inspection.fileKey,
-          // If we had a UI for mapping config, we would pass it here
-          mappingConfig: null,
+          mappingConfig,
           sourceType: inspection.sourceType,
         }),
       });
@@ -76,8 +147,11 @@ const BulkImportCenter = ({ onSuccess }) => {
       setStatus('success');
       if (onSuccess) onSuccess();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to commit import.');
-      setStatus('review');
+      const msg = err instanceof ApiError ? err.message : 'Failed to commit import.';
+      const isExpired = err?.statusCode === 404 || msg.includes('expired') || msg.includes('not found');
+      setError(isExpired ? 'The uploaded file expired. Please upload it again.' : msg);
+      setStatus(isExpired ? 'idle' : 'review');
+      if (isExpired) { setFile(null); setInspection(null); }
     }
   };
 
@@ -87,6 +161,7 @@ const BulkImportCenter = ({ onSuccess }) => {
     setStatus('idle');
     setSummary(null);
     setError(null);
+    setMappingState({});
   };
 
   if (status === 'success' && summary) {
@@ -175,9 +250,9 @@ const BulkImportCenter = ({ onSuccess }) => {
             <DashboardCard className="p-6">
               <div className="flex items-center justify-between mb-6 border-b border-black/10 pb-4">
                 <div className="flex items-center gap-3">
-                  <FileSpreadsheet className="text-accent" size={24} />
+                  <Settings className="text-accent" size={24} />
                   <div>
-                    <h3 className="font-bold">{inspection.fileName}</h3>
+                    <h3 className="font-bold">Map Columns: {inspection.fileName}</h3>
                     <p className="text-xs text-secondary">{inspection.sheets.reduce((acc, s) => acc + s.rowCount, 0)} total rows detected</p>
                   </div>
                 </div>
@@ -195,30 +270,41 @@ const BulkImportCenter = ({ onSuccess }) => {
                       Skipped: {sheet.errorMessage || 'No valid headers found'}
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-xs font-bold mb-2">Mapped Columns ({Object.keys(sheet.mapping).length})</p>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(sheet.mapping).map(([field, index]) => (
-                            <div key={field} className="bg-accent/10 border border-accent/20 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2">
-                              <span className="font-bold text-black/60">{sheet.headers[index]}</span>
-                              <ChevronRight size={12} className="text-black/30" />
-                              <span className="font-bold">{field}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      {sheet.unmappedHeaders?.length > 0 && (
-                        <div>
-                          <p className="text-xs font-bold mb-2 text-secondary">Unmapped ({sheet.unmappedHeaders.length})</p>
-                          <div className="flex flex-wrap gap-2">
-                            {sheet.unmappedHeaders.map((h, j) => (
-                              <div key={j} className="bg-black/5 px-2 py-1 rounded md text-[10px] text-black/50">{h}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm border-collapse">
+                        <thead>
+                          <tr className="border-b border-black/10 text-xs uppercase tracking-wider text-secondary">
+                            <th className="py-3 pr-4 font-bold">Source Column</th>
+                            <th className="py-3 pr-4 font-bold">Target Field</th>
+                            <th className="py-3 font-bold text-black/40">Sample Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sheet.headers.map((header, j) => {
+                            const currentTarget = mappingState[sheet.name]?.[header] || 'ignore';
+                            const sampleValue = sheet.sampleRows?.[0]?.[j];
+                            return (
+                              <tr key={j} className="border-b border-black/5 last:border-0 hover:bg-black/5">
+                                <td className="py-3 pr-4 font-bold text-black/80">{header}</td>
+                                <td className="py-3 pr-4">
+                                  <select
+                                    value={currentTarget}
+                                    onChange={(e) => handleMappingChange(sheet.name, header, e.target.value)}
+                                    className="w-full rounded-lg border border-black/20 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                                  >
+                                    {ALLOWED_TARGET_FIELDS.map(f => (
+                                      <option key={f} value={f}>{f}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="py-3 text-black/50 truncate max-w-[200px]" title={String(sampleValue || '')}>
+                                  {String(sampleValue || '-')}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
@@ -229,14 +315,29 @@ const BulkImportCenter = ({ onSuccess }) => {
           <div className="space-y-6">
             <DashboardCard className="p-6">
               <h3 className="font-bold mb-4">Ready to Import?</h3>
-              <p className="text-sm text-secondary mb-6">
-                Rows will be normalized and deduplicated against the global catalog automatically. Unmapped columns will be stored in raw data notes.
-              </p>
+              
+              {validationIssues.length > 0 ? (
+                <div className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-700 space-y-2">
+                  <div className="font-bold flex items-center gap-2">
+                    <AlertCircle size={16} /> 
+                    Please fix mapping errors:
+                  </div>
+                  <ul className="list-disc pl-6 opacity-90 text-xs">
+                    {validationIssues.map((issue, idx) => (
+                      <li key={idx}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-sm text-secondary mb-6">
+                  Rows will be normalized and deduplicated against the global catalog automatically. Ignored columns will not be imported.
+                </p>
+              )}
               
               <button 
                 onClick={handleCommit} 
-                disabled={status === 'committing'}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white hover:bg-accent hover:text-black transition-colors disabled:opacity-50"
+                disabled={status === 'committing' || validationIssues.length > 0}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white hover:bg-accent hover:text-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === 'committing' ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} fill="currentColor" />}
                 {status === 'committing' ? 'Importing...' : 'Start Import'}

@@ -8,6 +8,8 @@ import { getSourceStatusesWithRuntime } from './source.service.js';
 import { getDashboardSummary, getCampaignAnalytics } from './dashboard.service.js';
 import { enrichWebsiteUrl, mergeSignals } from './websiteEnrichment.service.js';
 import { enqueueJob, markJobFailed } from '../jobs/jobQueue.service.js';
+import { deductCredits } from '../credits/credit.service.js';
+import { runRuleBasedAnalysis } from './analysis.service.js';
 import {
   getSupportedJordanGovernorates,
   leadMatchesGovernorate,
@@ -108,12 +110,13 @@ const mapCatalogLeadForResponse = (catalogLead, item = {}) => ({
   rating: catalogLead.rating,
   reviewCount: catalogLead.reviewCount,
   importedAt: catalogLead.importedAt,
-  status: 'NEW',
+  status: item.status || 'NEW',
+  notes: item.notes || null,
   detectedSignals: catalogLead.detectedSignals,
   enrichmentData: catalogLead.enrichmentData,
   createdAt: item.createdAt || catalogLead.createdAt,
-  updatedAt: catalogLead.updatedAt,
-  analyses: [],
+  updatedAt: item.updatedAt || catalogLead.updatedAt,
+  analyses: item.analyses || [],
   listRank: item.rank,
   localDatasetScore: item.score,
 });
@@ -559,6 +562,7 @@ export const getLeads = asyncHandler(async (req, res) => {
         lead: {
           include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
         },
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }],
       skip: pagination.skip,
@@ -748,6 +752,227 @@ export const enrichLeadWebsite = asyncHandler(async (req, res) => {
   });
 
   return successResponse(res, { lead: updatedLead }, 'Website enrichment completed.');
+});
+
+// ═══════════════════════════════════════
+// LEAD LIST ITEMS (Catalog-backed workflow)
+// ═══════════════════════════════════════
+
+export const updateListItemStatus = asyncHandler(async (req, res) => {
+  const { listId, itemId } = req.validated.params;
+  const { status } = req.validated.body;
+
+  const leadList = await prisma.leadList.findFirst({
+    where: { id: listId, userId: req.user.id },
+  });
+
+  if (!leadList) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+
+  const updated = await prisma.leadListLead.updateMany({
+    where: { id: itemId, leadListId: listId },
+    data: { status },
+  });
+
+  if (updated.count !== 1) {
+    throw new AppError(errorCodes.NOT_FOUND, 'List item not found.', 404);
+  }
+
+  const item = await prisma.leadListLead.findFirst({
+    where: { id: itemId, leadListId: listId },
+  });
+
+  return successResponse(res, { item }, 'Lead list item status updated.');
+});
+
+export const updateListItemNotes = asyncHandler(async (req, res) => {
+  const { listId, itemId } = req.validated.params;
+  const { notes } = req.validated.body;
+
+  const leadList = await prisma.leadList.findFirst({
+    where: { id: listId, userId: req.user.id },
+  });
+
+  if (!leadList) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+
+  const updated = await prisma.leadListLead.updateMany({
+    where: { id: itemId, leadListId: listId },
+    data: { notes },
+  });
+
+  if (updated.count !== 1) {
+    throw new AppError(errorCodes.NOT_FOUND, 'List item not found.', 404);
+  }
+
+  const item = await prisma.leadListLead.findFirst({
+    where: { id: itemId, leadListId: listId },
+  });
+
+  return successResponse(res, { item }, 'Lead list item notes updated.');
+});
+
+export const analyzeListItem = asyncHandler(async (req, res) => {
+  const { listId, itemId } = req.validated.params;
+
+  const item = await prisma.leadListLead.findFirst({
+    where: { id: itemId, leadListId: listId },
+    include: {
+      leadList: { include: { campaign: { include: { serviceProfile: true } } } },
+      lead: true,
+      catalogLead: true,
+      analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
+    },
+  });
+
+  if (!item || item.leadList.userId !== req.user.id) {
+    throw new AppError(errorCodes.NOT_FOUND, 'List item not found or you do not have permission.', 404);
+  }
+
+  if (item.analyses.length > 0) {
+    return successResponse(res, { analysis: item.analyses[0], reused: true, creditsUsed: 0 }, 'Existing item analysis loaded.');
+  }
+
+  const sourceLead = item.lead || item.catalogLead;
+  if (!sourceLead) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'List item has no lead data.', 400);
+  }
+
+  const profile = item.leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
+
+  const result = await prisma.$transaction(async (tx) => {
+    await deductCredits({
+      tx,
+      userId: req.user.id,
+      workspaceId: item.leadList.workspaceId,
+      amount: 1,
+      type: 'CREDIT_USED',
+      reason: `Analyzed lead list item: ${sourceLead.businessName}`,
+      referenceType: 'LeadListLead',
+      referenceId: item.id,
+    });
+
+    const analysis = await runRuleBasedAnalysis({
+      tx,
+      lead: sourceLead,
+      profile,
+      userId: req.user.id,
+      workspaceId: item.leadList.workspaceId,
+      campaignId: item.leadList.campaignId,
+      leadListLeadId: item.id,
+    });
+
+    await tx.leadListLead.update({
+      where: { id: item.id },
+      data: {
+        analysisStatus: 'COMPLETED',
+        analyzedAt: new Date(),
+        score: analysis.opportunityScore,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAD_LIST_ITEM_ANALYZED',
+        entityType: 'LeadListLead',
+        entityId: item.id,
+        metadata: {
+          workspaceId: item.leadList.workspaceId,
+          analysisId: analysis.id,
+          creditsUsed: 1,
+        },
+      },
+    });
+
+    return analysis;
+  });
+
+  return successResponse(res, { analysis: result, reused: false, creditsUsed: 1 }, 'Lead list item analysis completed.');
+});
+
+export const analyzeListItems = asyncHandler(async (req, res) => {
+  const { id: listId } = req.validated.params;
+
+  const leadList = await prisma.leadList.findFirst({
+    where: { id: listId, userId: req.user.id },
+    include: { campaign: { include: { serviceProfile: true } } },
+  });
+
+  if (!leadList) {
+    throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+  }
+
+  const items = await prisma.leadListLead.findMany({
+    where: {
+      leadListId: listId,
+      analyses: { none: {} },
+    },
+    include: { lead: true, catalogLead: true },
+    take: 100,
+  });
+
+  if (items.length === 0) {
+    return successResponse(res, { analyzedCount: 0, creditsUsed: 0 }, 'No items require analysis or list empty.');
+  }
+
+  const profile = leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
+
+  const result = await prisma.$transaction(async (tx) => {
+    await deductCredits({
+      tx,
+      userId: req.user.id,
+      workspaceId: leadList.workspaceId,
+      amount: items.length,
+      type: 'CREDIT_USED',
+      reason: `Analyzed lead list items: ${leadList.name}`,
+      referenceType: 'LeadList',
+      referenceId: leadList.id,
+    });
+
+    const analyses = [];
+    for (const item of items) {
+      const sourceLead = item.lead || item.catalogLead;
+      if (!sourceLead) continue;
+
+      const analysis = await runRuleBasedAnalysis({
+        tx,
+        lead: sourceLead,
+        profile,
+        userId: req.user.id,
+        workspaceId: leadList.workspaceId,
+        campaignId: leadList.campaignId,
+        leadListLeadId: item.id,
+      });
+
+      await tx.leadListLead.update({
+        where: { id: item.id },
+        data: {
+          analysisStatus: 'COMPLETED',
+          analyzedAt: new Date(),
+          score: analysis.opportunityScore,
+        },
+      });
+
+      analyses.push(analysis);
+    }
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAD_LIST_ANALYZED',
+        entityType: 'LeadList',
+        entityId: leadList.id,
+        metadata: {
+          workspaceId: leadList.workspaceId,
+          analyzedCount: analyses.length,
+          creditsUsed: items.length,
+        },
+      },
+    });
+
+    return analyses;
+  });
+
+  return successResponse(res, { analyzedCount: result.length, creditsUsed: items.length }, 'Lead list analysis completed.');
 });
 
 // ═══════════════════════════════════════

@@ -22,13 +22,37 @@ const SERVICE_CATEGORIES = ['clinic', 'dental', 'doctor', 'lawyer', 'accounting'
 const FOOD_CATEGORIES = ['restaurant', 'cafe', 'bakery', 'coffee', 'pizza', 'burger', 'food', 'kitchen', 'catering', 'bar', 'grill', 'sushi', 'shawarma', 'falafel'];
 const BOOKING_CATEGORIES = ['salon', 'spa', 'clinic', 'dental', 'doctor', 'gym', 'fitness', 'yoga', 'therapy', 'massage', 'hotel'];
 
-export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspaceId, campaignId }) => {
+export const normalizeLeadForAnalysis = (input) => {
+  return {
+    businessName: input.businessName,
+    category: input.category,
+    country: input.country,
+    city: input.city,
+    address: input.address,
+    websiteUrl: input.websiteUrl,
+    instagramUrl: input.instagramUrl,
+    instagramUsername: input.instagramUsername,
+    facebookUrl: input.facebookUrl,
+    googleMapsUrl: input.googleMapsUrl,
+    phone: input.phone,
+    whatsappNumber: input.whatsappNumber,
+    email: input.email,
+    rating: input.rating,
+    reviewCount: input.reviewCount,
+    detectedSignals: input.detectedSignals || [],
+    rawData: input.rawData,
+    source: input.source,
+  };
+};
+
+export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspaceId, campaignId, leadListLeadId }) => {
   let opportunityScore = 0;
   let fitScore = 0;
   const detectedSignals = [];
   const reasons = [];
 
-  const categoryStr = (lead.category || '').toLowerCase();
+  const normalizedLead = normalizeLeadForAnalysis(lead);
+  const categoryStr = (normalizedLead.category || '').toLowerCase();
   const serviceType = (profile?.serviceType || '').toLowerCase();
 
   // ═══════════════════════════════════════
@@ -36,7 +60,7 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   // ═══════════════════════════════════════
 
   // Website signals
-  if (!lead.websiteUrl) {
+  if (!normalizedLead.websiteUrl) {
     detectedSignals.push('NO_WEBSITE');
     opportunityScore += 30;
     reasons.push('No website listed — strong opportunity for web development services.');
@@ -59,37 +83,37 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   }
 
   // Rating signals
-  if (lead.rating != null) {
+  if (normalizedLead.rating != null) {
     detectedSignals.push('HAS_GOOGLE_RATING');
-    if (lead.rating >= 4.2) {
+    if (normalizedLead.rating >= 4.2) {
       detectedSignals.push('HIGH_RATING');
       opportunityScore += 15;
-      reasons.push(`Strong reputation with ${lead.rating}★ rating — established business worth serving.`);
-    } else if (lead.rating >= 3.0) {
+      reasons.push(`Strong reputation with ${normalizedLead.rating}★ rating — established business worth serving.`);
+    } else if (normalizedLead.rating >= 3.0) {
       opportunityScore += 8;
-      reasons.push(`Moderate ${lead.rating}★ rating — business may benefit from reputation improvement.`);
+      reasons.push(`Moderate ${normalizedLead.rating}★ rating — business may benefit from reputation improvement.`);
     }
   }
 
   // Review signals
-  if (lead.reviewCount != null) {
-    if (lead.reviewCount >= 100) {
+  if (normalizedLead.reviewCount != null) {
+    if (normalizedLead.reviewCount >= 100) {
       detectedSignals.push('HIGH_REVIEW_COUNT');
       detectedSignals.push('STRONG_LOCAL_PRESENCE');
       opportunityScore += 15;
-      reasons.push(`${lead.reviewCount} reviews indicate a well-established local business.`);
-    } else if (lead.reviewCount >= 30) {
+      reasons.push(`${normalizedLead.reviewCount} reviews indicate a well-established local business.`);
+    } else if (normalizedLead.reviewCount >= 30) {
       detectedSignals.push('HIGH_REVIEW_COUNT');
       opportunityScore += 10;
-      reasons.push(`${lead.reviewCount} reviews — active customer base.`);
-    } else if (lead.reviewCount < 10) {
+      reasons.push(`${normalizedLead.reviewCount} reviews — active customer base.`);
+    } else if (normalizedLead.reviewCount < 10) {
       detectedSignals.push('LOW_REVIEW_COUNT');
       opportunityScore += 3;
     }
   }
 
   // Phone / contact signals
-  if (lead.phone) {
+  if (normalizedLead.phone) {
     detectedSignals.push('HAS_PHONE');
     detectedSignals.push('CONTACT_AVAILABLE');
     detectedSignals.push('OUTREACH_READY');
@@ -154,7 +178,7 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   // ═══════════════════════════════════════
   let suggestedService = profile?.serviceType || 'Digital Presence Improvement';
 
-  if (!lead.websiteUrl && !profile?.serviceType) {
+  if (!normalizedLead.websiteUrl && !profile?.serviceType) {
     suggestedService = 'Website Development';
   } else if (detectedSignals.includes('NEEDS_DIGITAL_MENU_POSSIBLE')) {
     suggestedService = 'Digital Menu';
@@ -166,23 +190,23 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   // OUTREACH ANGLE
   // ═══════════════════════════════════════
   let outreachAngle;
-  if (!lead.websiteUrl) {
-    outreachAngle = `${lead.businessName} has no website despite ${lead.reviewCount ? lead.reviewCount + ' Google reviews' : 'being listed on Google'}. Offer a quick, professional web presence to capture more local traffic.`;
-  } else if (lead.rating >= 4.0) {
-    outreachAngle = `Compliment their ${lead.rating}★ rating and suggest ways to turn that reputation into more online bookings or leads through an upgraded digital presence.`;
+  if (!normalizedLead.websiteUrl) {
+    outreachAngle = `${normalizedLead.businessName} has no website despite ${normalizedLead.reviewCount ? normalizedLead.reviewCount + ' Google reviews' : 'being listed on Google'}. Offer a quick, professional web presence to capture more local traffic.`;
+  } else if (normalizedLead.rating >= 4.0) {
+    outreachAngle = `Compliment their ${normalizedLead.rating}★ rating and suggest ways to turn that reputation into more online bookings or leads through an upgraded digital presence.`;
   } else {
-    outreachAngle = `${lead.businessName} is an active local business in ${lead.city || 'the area'}. Position your service as a way to stand out from competitors and attract more customers.`;
+    outreachAngle = `${normalizedLead.businessName} is an active local business in ${normalizedLead.city || 'the area'}. Position your service as a way to stand out from competitors and attract more customers.`;
   }
 
   // ═══════════════════════════════════════
   // MESSAGE DRAFT
   // ═══════════════════════════════════════
-  const greeting = `Hi ${lead.businessName}`;
+  const greeting = `Hi ${normalizedLead.businessName}`;
   let body;
-  if (!lead.websiteUrl) {
-    body = `I noticed you don't have a website yet — but your ${lead.rating ? lead.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more local searches and convert more visitors into customers.`;
+  if (!normalizedLead.websiteUrl) {
+    body = `I noticed you don't have a website yet — but your ${normalizedLead.rating ? normalizedLead.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more local searches and convert more visitors into customers.`;
   } else {
-    body = `I came across your business${lead.rating ? ` and noticed your impressive ${lead.rating}-star rating` : ''}. I think there's an opportunity to strengthen your online presence and attract more customers.`;
+    body = `I came across your business${normalizedLead.rating ? ` and noticed your impressive ${normalizedLead.rating}-star rating` : ''}. I think there's an opportunity to strengthen your online presence and attract more customers.`;
   }
   const cta = `I specialize in ${suggestedService.toLowerCase()} for businesses like yours. Would you be open to a quick chat this week?`;
   const messageDraft = `${greeting},\n\n${body}\n\n${cta}\n\nBest regards`;
@@ -203,11 +227,16 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
     nextBestAction = 'Research business further';
   }
 
+  if (!leadListLeadId && !lead.id) {
+    throw new Error('Analysis requires either a leadId or a leadListLeadId');
+  }
+
   return tx.leadAnalysis.create({
     data: {
       userId,
       workspaceId,
-      leadId: lead.id,
+      leadId: leadListLeadId ? null : lead.id,
+      leadListLeadId: leadListLeadId || null,
       campaignId,
       fitScore,
       opportunityScore,

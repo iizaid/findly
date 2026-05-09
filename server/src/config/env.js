@@ -65,6 +65,7 @@ const envSchema = z.object({
   JOB_STALE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(0).max(86400).default(300),
   LOG_LEVEL: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),
+  IMPORT_UPLOAD_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== 'production') return;
 
