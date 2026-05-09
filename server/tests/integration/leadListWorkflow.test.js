@@ -13,8 +13,6 @@ let agent1;
 let agent2;
 let user1Id;
 let workspace1Id;
-let user2Id;
-let workspace2Id;
 let leadListId;
 let listItems = [];
 
@@ -39,13 +37,13 @@ beforeAll(async () => {
   await agent1.post('/api/auth/register').send({
     name: 'User 1',
     email: `u1.${unique}@test.local`,
-    password: 'Secure12345',
+    password: 'Secure12345@#$',
   });
   
   const dbUser1 = await prisma.user.findUnique({ where: { email: `u1.${unique}@test.local` } });
   user1Id = dbUser1.id;
   await agent1.post('/api/auth/verify-email').send({ token: verificationTokenFor(dbUser1.email) });
-  await agent1.post('/api/auth/login').send({ email: `u1.${unique}@test.local`, password: 'Secure12345' });
+  await agent1.post('/api/auth/login').send({ email: `u1.${unique}@test.local`, password: 'Secure12345@#$' });
   const me1 = await agent1.get('/api/auth/me');
   workspace1Id = me1.body.data.workspace.id;
 
@@ -54,14 +52,11 @@ beforeAll(async () => {
   await agent2.post('/api/auth/register').send({
     name: 'User 2',
     email: `u2.${unique}@test.local`,
-    password: 'Secure12345',
+    password: 'Secure12345@#$',
   });
   const dbUser2 = await prisma.user.findUnique({ where: { email: `u2.${unique}@test.local` } });
-  user2Id = dbUser2.id;
   await agent2.post('/api/auth/verify-email').send({ token: verificationTokenFor(dbUser2.email) });
-  await agent2.post('/api/auth/login').send({ email: `u2.${unique}@test.local`, password: 'Secure12345' });
-  const me2 = await agent2.get('/api/auth/me');
-  workspace2Id = me2.body.data.workspace.id;
+  await agent2.post('/api/auth/login').send({ email: `u2.${unique}@test.local`, password: 'Secure12345@#$' });
 
   // Create Campaign & LeadList for User 1
   const campaign = await prisma.searchCampaign.create({

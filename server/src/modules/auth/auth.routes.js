@@ -10,7 +10,7 @@ export const authRouter = Router();
 authRouter.post('/register', signupRateLimiter, validate(registerSchema), register);
 authRouter.post('/login', loginRateLimiter, validate(loginSchema), login);
 authRouter.post('/verify-email', authRateLimiter, validate(verifyEmailSchema), verifyEmail);
-authRouter.use(authRateLimiter);
+authRouter.post('/resend-verification', authRateLimiter, requireAuth, validate(emptyAuthBodySchema), resendVerification);
+
 authRouter.post('/logout', requireAuth, logout);
-authRouter.post('/resend-verification', requireAuth, validate(emptyAuthBodySchema), resendVerification);
 authRouter.get('/me', requireAuth, me);

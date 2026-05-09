@@ -2,14 +2,14 @@ import { env } from '../../config/env.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
 import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
-import { clearCookieOptions, cookieOptions } from '../sessions/session.service.js';
+import { clearCookieOptions, getCookieOptions } from '../sessions/session.service.js';
 import { loginUser, logoutUser, registerUser } from './auth.service.js';
 import { resendVerificationEmail, verifyEmailToken } from './emailVerification.service.js';
 
 export const register = asyncHandler(async (req, res) => {
   const result = await registerUser(req.validated.body, req);
 
-  res.cookie(env.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(true));
 
   return successResponse(
     res,
@@ -17,6 +17,7 @@ export const register = asyncHandler(async (req, res) => {
       user: result.user,
       workspace: result.workspace,
       requiresEmailVerification: result.requiresEmailVerification,
+      emailSent: result.emailSent,
     },
     'Account created. Check your email to verify your account.',
     201,
@@ -26,8 +27,10 @@ export const register = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const result = await loginUser(req.validated.body, req);
   const workspace = await getDefaultWorkspace(result.user.id);
+  
+  const remember = req.validated.body.remember ?? true;
 
-  res.cookie(env.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(remember));
 
   return successResponse(
     res,
@@ -74,6 +77,8 @@ export const resendVerification = asyncHandler(async (req, res) => {
 
 export const verifyEmail = asyncHandler(async (req, res) => {
   const result = await verifyEmailToken(req.validated.body, req);
+  
+  const isAuthenticated = Boolean(req.user && req.user.id === result.user.id);
 
   return successResponse(
     res,
@@ -82,8 +87,9 @@ export const verifyEmail = asyncHandler(async (req, res) => {
       workspace: result.workspace,
       alreadyVerified: result.alreadyVerified,
       creditsGranted: result.creditsGranted,
-      authenticated: false,
+      authenticated: isAuthenticated,
+      nextAction: isAuthenticated ? 'ENTER_DASHBOARD' : 'LOGIN_REQUIRED',
     },
-    result.alreadyVerified ? 'Email is already verified. Log in to continue.' : 'Email verified successfully. Log in to continue.',
+    result.alreadyVerified ? 'Email is already verified.' : 'Email verified successfully.',
   );
 });

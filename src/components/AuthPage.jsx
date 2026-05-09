@@ -112,7 +112,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
 
     if (form.password.length < 10) {
       next.password = 'Password must be at least 10 characters.';
-    } else if (isSignup && passwordScore < 4) {
+    } else if (isSignup && passwordScore < 5) {
       next.password = 'Use uppercase, lowercase, numbers, and a symbol.';
     } else if (isSignup && COMMON_PASSWORDS.has(password)) {
       next.password = 'Choose a less common password.';
@@ -238,6 +238,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
             : {
                 email,
                 password: form.password,
+                remember: form.remember,
               },
         ),
       });
@@ -247,7 +248,11 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
       if (isSignup) {
         setAccountEmail(email);
         setScreen('check-email');
-        setStatus(null);
+        if (response.data && response.data.emailSent === false) {
+          setStatus({ type: 'error', message: 'Account created, but the verification email could not be sent. Try resend.' });
+        } else {
+          setStatus(null);
+        }
         return;
       }
 

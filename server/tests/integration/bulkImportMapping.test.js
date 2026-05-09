@@ -37,7 +37,7 @@ beforeAll(async () => {
   await agent.post('/api/auth/register').send({
     name: 'Admin Mapping Test',
     email: adminEmail,
-    password: 'SecurePassword123',
+    password: 'Secure12345@#$',
   });
 
   await prisma.user.update({
@@ -47,7 +47,7 @@ beforeAll(async () => {
 
   await agent.post('/api/auth/login').send({
     email: adminEmail,
-    password: 'SecurePassword123',
+    password: 'Secure12345@#$',
   });
 
   csrfToken = await getCsrfToken(agent);

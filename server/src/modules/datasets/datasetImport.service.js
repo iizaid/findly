@@ -61,7 +61,7 @@ const normalizeSheetRows = ({ fileName, sheet }) => {
   };
 };
 
-export const inspectDatasetFile = async (filePath, customMapping = null) => {
+export const inspectDatasetFile = async (filePath, _customMapping = null) => {
   const workbook = await readDatasetWorkbook(filePath);
   const sheets = workbook.sheets.map((sheet) => {
     // If a custom mapping is provided for this sheet, override it.

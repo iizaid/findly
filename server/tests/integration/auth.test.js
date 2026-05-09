@@ -36,7 +36,7 @@ if (!process.env.DATABASE_URL) {
 
 const unique = Date.now().toString(36);
 const email = `test.${unique}@findly.local`;
-const password = 'Secure12345';
+const password = 'Secure12345@#$';
 
 let createApp;
 let prisma;
@@ -212,6 +212,7 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(verifyResponse.body.data.user.creditsBalance).toBe(50);
     expect(verifyResponse.body.data.creditsGranted).toBe(true);
     expect(verifyResponse.body.data.authenticated).toBe(false);
+    expect(verifyResponse.body.data.nextAction).toBe('LOGIN_REQUIRED');
     expect(verifyResponse.headers['set-cookie']).toBeUndefined();
 
     await verificationAgent.get('/api/dashboard').expect(401);

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { AlertCircle, Database, FileSpreadsheet, Loader2, Search, ShieldCheck, Users, PlusCircle, CheckCircle2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, Database, Loader2, Search, ShieldCheck, Users, PlusCircle, CheckCircle2 } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest, ApiError } from '../../../lib/api';
@@ -188,7 +188,19 @@ const CatalogTab = () => {
     }
   };
 
-  useEffect(() => { loadLeads(search); }, []);
+  useEffect(() => {
+    let active = true;
+    const fetchInitial = async () => {
+      try {
+        const res = await apiRequest(`/api/admin/catalog/leads?limit=20`);
+        if (active) setData({ leads: res.data.leads || [], loading: false });
+      } catch {
+        if (active) setData({ leads: [], loading: false });
+      }
+    };
+    fetchInitial();
+    return () => { active = false; };
+  }, []);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -227,26 +239,39 @@ const LiveActivityTab = () => {
   const [data, setData] = useState({ logs: [], loading: true });
   const [filters, setFilters] = useState({ search: '', category: '', severity: '' });
   
-  const loadLogs = async () => {
-    setData(d => ({ ...d, loading: true }));
+  const fetchLogs = useCallback(async (currentFilters) => {
     try {
       const q = new URLSearchParams({ limit: '100' });
-      if (filters.search) q.set('search', filters.search);
-      if (filters.category) q.set('category', filters.category);
-      if (filters.severity) q.set('severity', filters.severity);
-      
+      if (currentFilters.search) q.set('search', currentFilters.search);
+      if (currentFilters.category) q.set('category', currentFilters.category);
+      if (currentFilters.severity) q.set('severity', currentFilters.severity);
       const res = await apiRequest(`/api/admin/activity?${q.toString()}`);
-      setData({ logs: res.data.activity || [], loading: false });
+      return res.data.activity || [];
     } catch {
-      setData({ logs: [], loading: false });
+      return [];
     }
-  };
+  }, []);
 
-  useEffect(() => { loadLogs(); }, [filters.category, filters.severity]);
+  const refreshLogs = useCallback(async (currentFilters) => {
+    setData(d => ({ ...d, loading: true }));
+    const logs = await fetchLogs(currentFilters);
+    setData({ logs, loading: false });
+  }, [fetchLogs]);
 
-  const handleSearch = (e) => {
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      const logs = await fetchLogs(filters);
+      if (active) setData({ logs, loading: false });
+    };
+    run();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.category, filters.severity, fetchLogs]);
+
+  const handleSearch = async (e) => {
     e.preventDefault();
-    loadLogs();
+    await refreshLogs(filters);
   };
   
   const handleCopy = (id) => {
@@ -284,7 +309,7 @@ const LiveActivityTab = () => {
             <option value="warning">Warning</option>
             <option value="critical">Critical</option>
           </select>
-          <button onClick={loadLogs} className="rounded-xl bg-white border border-black/10 px-4 text-sm font-bold text-black hover:bg-black/5">Refresh</button>
+          <button onClick={() => refreshLogs(filters)} className="rounded-xl bg-white border border-black/10 px-4 text-sm font-bold text-black hover:bg-black/5">Refresh</button>
         </div>
       </div>
       
@@ -357,44 +382,57 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const [state, setState] = useState({ status: 'loading' });
   const [activeTab, setActiveTab] = useState('overview');
 
-  const loadData = async () => {
+  const fetchAdminData = useCallback(async () => {
+    const [summary, users, catalog, imports, campaigns, security, errors, systemStatusRes] = await Promise.all([
+      apiRequest('/api/admin/summary'),
+      apiRequest('/api/admin/users?limit=20'),
+      apiRequest('/api/admin/catalog/stats'),
+      apiRequest('/api/admin/imports?limit=20'),
+      apiRequest('/api/admin/campaigns?limit=20'),
+      apiRequest('/api/admin/security/events?limit=20'),
+      apiRequest('/api/admin/errors?limit=20'),
+      apiRequest('/api/admin/system/status'),
+    ]);
+    return {
+      summary: summary.data,
+      users: users.data.users || [],
+      catalog: catalog.data,
+      imports: imports.data.imports || [],
+      campaigns: campaigns.data.campaigns || [],
+      security: security.data.events || [],
+      errors: errors.data.errors || [],
+      systemStatus: systemStatusRes.data,
+    };
+  }, []);
+
+  const loadData = useCallback(async () => {
     try {
-      const [summary, users, catalog, imports, campaigns, security, errors, systemStatusRes] = await Promise.all([
-        apiRequest('/api/admin/summary'),
-        apiRequest('/api/admin/users?limit=20'),
-        apiRequest('/api/admin/catalog/stats'),
-        apiRequest('/api/admin/imports?limit=20'),
-        apiRequest('/api/admin/campaigns?limit=20'),
-        apiRequest('/api/admin/security/events?limit=20'),
-        apiRequest('/api/admin/errors?limit=20'),
-        apiRequest('/api/admin/system/status'),
-      ]);
-      setState({
-        status: 'ready',
-        data: {
-          summary: summary.data,
-          users: users.data.users || [],
-          catalog: catalog.data,
-          imports: imports.data.imports || [],
-          campaigns: campaigns.data.campaigns || [],
-          security: security.data.events || [],
-          errors: errors.data.errors || [],
-          systemStatus: systemStatusRes.data,
-        },
-      });
+      const data = await fetchAdminData();
+      setState({ status: 'ready', data });
     } catch (error) {
       setState({
         status: error instanceof ApiError && error.status === 403 ? 'denied' : 'error',
         message: error instanceof ApiError ? error.message : 'Could not load admin operations.',
       });
     }
-  };
+  }, [fetchAdminData]);
 
   useEffect(() => {
     let active = true;
-    if (active) loadData();
+    const run = async () => {
+      try {
+        const data = await fetchAdminData();
+        if (active) setState({ status: 'ready', data });
+      } catch (error) {
+        if (active) setState({
+          status: error instanceof ApiError && error.status === 403 ? 'denied' : 'error',
+          message: error instanceof ApiError ? error.message : 'Could not load admin operations.',
+        });
+      }
+    };
+    run();
     return () => { active = false; };
-  }, []);
+  }, [fetchAdminData]);
 
   if (user?.role !== 'ADMIN' || state.status === 'denied') {
     return (

@@ -4,22 +4,42 @@ import { createSessionToken, hashSessionToken } from '../../utils/crypto.js';
 
 const msPerDay = 24 * 60 * 60 * 1000;
 
-export const cookieOptions = {
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: env.IS_PRODUCTION,
-  path: '/',
-  maxAge: env.SESSION_TTL_DAYS * msPerDay,
+const getBaseCookieOptions = () => {
+  const options = {
+    httpOnly: true,
+    sameSite: env.COOKIE_SAME_SITE,
+    secure: env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.IS_PRODUCTION,
+    path: '/',
+  };
+  
+  if (env.COOKIE_DOMAIN) {
+    options.domain = env.COOKIE_DOMAIN;
+  }
+  
+  if (options.sameSite === 'none' && !options.secure) {
+    options.secure = true;
+  }
+  
+  return options;
 };
 
-export const clearCookieOptions = {
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: env.IS_PRODUCTION,
-  path: '/',
+export const getCookieOptions = (remember = true) => {
+  const options = getBaseCookieOptions();
+  const maxAgeMs = remember 
+    ? env.SESSION_TTL_DAYS * msPerDay 
+    : env.SESSION_SHORT_TTL_HOURS * 60 * 60 * 1000;
+  options.maxAge = maxAgeMs;
+  return options;
 };
 
-const sessionExpiry = () => new Date(Date.now() + env.SESSION_TTL_DAYS * msPerDay);
+export const clearCookieOptions = getBaseCookieOptions();
+
+const sessionExpiry = (remember = true) => {
+  const maxAgeMs = remember 
+    ? env.SESSION_TTL_DAYS * msPerDay 
+    : env.SESSION_SHORT_TTL_HOURS * 60 * 60 * 1000;
+  return new Date(Date.now() + maxAgeMs);
+};
 
 const pruneOldActiveSessions = async (userId, keepSessionId) => {
   const activeSessions = await prisma.session.findMany({
@@ -59,7 +79,7 @@ const pruneOldActiveSessions = async (userId, keepSessionId) => {
   });
 };
 
-export const createSession = async ({ userId, userAgent, ipAddress }) => {
+export const createSession = async ({ userId, userAgent, ipAddress, remember = true }) => {
   const token = createSessionToken();
   const tokenHash = hashSessionToken(token);
 
@@ -69,7 +89,7 @@ export const createSession = async ({ userId, userAgent, ipAddress }) => {
       tokenHash,
       userAgent,
       ipAddress,
-      expiresAt: sessionExpiry(),
+      expiresAt: sessionExpiry(remember),
     },
   });
 

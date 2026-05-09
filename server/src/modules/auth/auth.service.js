@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js';
 import { prisma } from '../../db/prisma.js';
 import { createSession, revokeSession } from '../sessions/session.service.js';
 import { toSafeUser } from '../users/user.mapper.js';
@@ -20,10 +21,25 @@ const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
+const pruneFailedLogins = () => {
+  const now = Date.now();
+  for (const [key, value] of failedLoginAttempts.entries()) {
+    if (value.expiresAt < now) {
+      failedLoginAttempts.delete(key);
+    }
+  }
+};
+
 const recordFailedLogin = async ({ tx = prisma, userId = null, email, context }) => {
+  pruneFailedLogins();
   const key = failedLoginKey(email, context.ipAddress);
-  const currentAttempts = failedLoginAttempts.get(key) || 0;
-  failedLoginAttempts.set(key, Math.min(currentAttempts + 1, 10));
+  const current = failedLoginAttempts.get(key) || { attempts: 0, expiresAt: 0 };
+  const newAttempts = Math.min(current.attempts + 1, 10);
+  
+  failedLoginAttempts.set(key, {
+    attempts: newAttempts,
+    expiresAt: Date.now() + (env.FAILED_LOGIN_ATTEMPT_TTL_MINUTES * 60 * 1000),
+  });
 
   await tx.auditLog.create({
     data: {
@@ -37,7 +53,7 @@ const recordFailedLogin = async ({ tx = prisma, userId = null, email, context })
     },
   });
 
-  const delayMs = Math.min(150 * currentAttempts, 1500);
+  const delayMs = Math.min(150 * newAttempts, 1500);
   if (delayMs > 0) await sleep(delayMs);
 };
 
@@ -100,20 +116,28 @@ export const registerUser = async ({ name, email, password }, req) => {
       },
     });
 
-    await sendVerificationForUser({
-      user,
-      req,
-      tx,
-      resend: false,
-    });
-
     return { user, workspace };
   });
+
+  let emailSent = true;
+  try {
+    await sendVerificationForUser({
+      user: result.user,
+      req,
+      tx: prisma,
+      resend: false,
+    });
+  } catch (err) {
+    // Log safely, don't fail registration
+    console.error('Failed to send verification email during signup:', err.message);
+    emailSent = false;
+  }
 
   const sessionResult = await createSession({
     userId: result.user.id,
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
+    remember: true, // signup default
   });
 
   return {
@@ -121,10 +145,11 @@ export const registerUser = async ({ name, email, password }, req) => {
     user: toSafeUser(result.user),
     workspace: result.workspace,
     requiresEmailVerification: true,
+    emailSent,
   };
 };
 
-export const loginUser = async ({ email, password }, req) => {
+export const loginUser = async ({ email, password, remember = true }, req) => {
   const context = requestContext(req);
   const user = await prisma.user.findUnique({
     where: { email },
@@ -149,6 +174,7 @@ export const loginUser = async ({ email, password }, req) => {
     userId: user.id,
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
+    remember,
   });
 
   await prisma.auditLog.create({

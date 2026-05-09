@@ -13,8 +13,13 @@ const envSchema = z.object({
     .min(32, 'SESSION_SECRET must be at least 32 characters')
     .refine((value) => !value.includes('replace-with'), 'SESSION_SECRET must not use the example placeholder.'),
   COOKIE_NAME: z.string().min(1).default('findly_session'),
+  COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
+  COOKIE_DOMAIN: z.string().optional(),
+  COOKIE_SECURE: z.coerce.boolean().optional(),
   CSRF_COOKIE_NAME: z.string().min(1).default('findly_csrf'),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  SESSION_SHORT_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(2),
+  FAILED_LOGIN_ATTEMPT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),

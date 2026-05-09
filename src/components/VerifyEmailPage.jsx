@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 import { apiRequest, ApiError } from '../lib/api';
 
-const VerifyEmailPage = ({ token, currentUser, onNavigate, onAuthOpen, onSessionChange }) => {
+const VerifyEmailPage = ({ token, onNavigate, onAuthOpen, onSessionChange }) => {
   const [state, setState] = useState({ status: 'verifying', message: 'Verifying your Findly account...' });
 
   useEffect(() => {
@@ -25,19 +25,13 @@ const VerifyEmailPage = ({ token, currentUser, onNavigate, onAuthOpen, onSession
         setState({
           status: 'success',
           message: response.message || 'Your email has been verified.',
+          nextAction: response.data.nextAction,
         });
-        
-        // Refresh session to get updated verified status and check if user is logged in
-        try {
-          const sessionRes = await apiRequest('/api/auth/me');
-          if (active && onSessionChange) {
-            onSessionChange(sessionRes.data.user);
-          }
-        } catch (e) {
-          // If 401, they are not logged in. This is expected if they don't have a session.
-          if (active && onSessionChange) {
-            onSessionChange(null);
-          }
+
+        if (active && onSessionChange && response.data.authenticated) {
+          onSessionChange(response.data.user);
+        } else if (active && onSessionChange) {
+          onSessionChange(null);
         }
       } catch (error) {
         if (!active) return;
@@ -47,17 +41,11 @@ const VerifyEmailPage = ({ token, currentUser, onNavigate, onAuthOpen, onSession
           setState({
             status: 'success',
             message: 'Your email is already verified.',
+            nextAction: 'LOGIN_REQUIRED', // default to login if it was an error response with no data
           });
           
-          try {
-            const sessionRes = await apiRequest('/api/auth/me');
-            if (active && onSessionChange) {
-              onSessionChange(sessionRes.data.user);
-            }
-          } catch (e) {
-            if (active && onSessionChange) {
-              onSessionChange(null);
-            }
+          if (active && onSessionChange) {
+            onSessionChange(null);
           }
           return;
         }
@@ -100,7 +88,7 @@ const VerifyEmailPage = ({ token, currentUser, onNavigate, onAuthOpen, onSession
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           {isSuccess ? (
-            currentUser ? (
+            state.nextAction === 'ENTER_DASHBOARD' ? (
               <button
                 type="button"
                 onClick={() => onNavigate('/dashboard')}

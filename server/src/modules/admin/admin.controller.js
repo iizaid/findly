@@ -379,7 +379,7 @@ export const getCatalogLeads = asyncHandler(async (req, res) => {
 
     const filtered = allCandidates.filter((lead) => leadMatchesGovernorate(lead, governorate));
     const total = filtered.length;
-    const leads = filtered.slice(skip, skip + limit).map(({ rawData, ...rest }) => rest);
+    const leads = filtered.slice(skip, skip + limit).map(({ rawData: _rawData, ...rest }) => rest);
 
     return successResponse(res, {
       leads,
@@ -467,15 +467,14 @@ export const createCatalogLead = asyncHandler(async (req, res) => {
 });
 
 export const getSystemStatus = asyncHandler(async (_req, res) => {
-  let dbStatus = 'offline';
-  let dbMessage = 'Database connection failed.';
+  const dbInfo = { status: 'offline', message: 'Database connection failed.' };
   try {
     await prisma.$queryRaw`SELECT 1`;
-    dbStatus = 'online';
-    dbMessage = 'Database is connected and responsive.';
+    dbInfo.status = 'online';
+    dbInfo.message = 'Database is connected and responsive.';
   } catch {
-    dbStatus = 'degraded';
-    dbMessage = 'Database is experiencing issues.';
+    dbInfo.status = 'degraded';
+    dbInfo.message = 'Database is experiencing issues.';
   }
 
   let totalCatalogLeads = 0;
@@ -499,9 +498,9 @@ export const getSystemStatus = asyncHandler(async (_req, res) => {
 
   const systemStatus = {
     database: {
-      status: dbStatus,
+      status: dbInfo.status,
       label: 'Database',
-      message: dbMessage,
+      message: dbInfo.message,
       checkedAt: new Date().toISOString()
     },
     localDataset: {

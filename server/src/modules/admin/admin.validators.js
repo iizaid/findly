@@ -59,8 +59,6 @@ export const ALLOWED_TARGET_FIELDS = new Set([
   'rating', 'reviewCount', 'notes', 'sourceUrl', 'sourceType',
 ]);
 
-// Fields that may only be mapped once (unique-per-sheet)
-const UNIQUE_TARGET_FIELDS = new Set([...ALLOWED_TARGET_FIELDS].filter(f => f !== 'ignore'));
 
 const mappingColumnSchema = z.object({
   sourceHeader: z.string().min(1).max(200),

@@ -44,7 +44,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
   const [analyzingList, setAnalyzingList] = useState(false);
   const [editingNotes, setEditingNotes] = useState(null);
   const [notesValue, setNotesValue] = useState('');
-  const [signals, setSignals] = useState([]);
   const [activeList, setActiveList] = useState(null);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
 
@@ -82,12 +81,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       .then((res) => setActiveList(res.data.list || null))
       .catch(() => setActiveList(null));
   }, [selectedListId]);
-
-  useEffect(() => {
-    apiRequest('/api/search/opportunity-signals?limit=5')
-      .then((res) => setSignals(res.data.signals || []))
-      .catch(() => setSignals([]));
-  }, []);
 
   const cities = useMemo(() => [...new Set(leads.map((l) => l.city).filter(Boolean))], [leads]);
   const sources = useMemo(() => [...new Set(leads.map((l) => l.source).filter(Boolean))], [leads]);
@@ -184,7 +177,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       const res = await apiRequest(`/api/search/lists/${selectedListId}/analyze`, { method: 'POST' });
       if (res?.data?.analyzedCount > 0) {
         // Refresh leads to show new analyses
-        const refreshParams = new URLSearchParams(window.location.search);
         const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
         setLeads(refRes.data.leads || []);
       }

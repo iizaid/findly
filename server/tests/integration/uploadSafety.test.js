@@ -128,10 +128,10 @@ describe('Upload cleanup service', () => {
     uploadFileFilter(null, { originalname: 'data.xlsx' }, (err, accept) => {
       if (accept) accepted.push('xlsx'); else rejected.push('xlsx');
     });
-    uploadFileFilter(null, { originalname: 'data.exe' }, (err, accept) => {
+    uploadFileFilter(null, { originalname: 'data.exe' }, (err, _accept) => {
       if (err) rejected.push('exe'); else accepted.push('exe');
     });
-    uploadFileFilter(null, { originalname: 'data.txt' }, (err, accept) => {
+    uploadFileFilter(null, { originalname: 'data.txt' }, (err, _accept) => {
       if (err) rejected.push('txt'); else accepted.push('txt');
     });
 

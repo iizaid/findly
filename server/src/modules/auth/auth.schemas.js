@@ -14,11 +14,12 @@ const commonPasswords = new Set([
 
 const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters.')
+  .min(10, 'Password must be at least 10 characters.')
   .max(128, 'Password must be 128 characters or fewer.')
   .refine((value) => /[a-z]/.test(value), 'Password must include a lowercase letter.')
   .refine((value) => /[A-Z]/.test(value), 'Password must include an uppercase letter.')
   .refine((value) => /\d/.test(value), 'Password must include a number.')
+  .refine((value) => /[^a-zA-Z0-9]/.test(value), 'Password must include a symbol.')
   .refine((value) => !commonPasswords.has(value.toLowerCase()), 'Password is too common.');
 
 export const registerSchema = z.object({
@@ -56,6 +57,7 @@ export const loginSchema = z.object({
   body: z.object({
     email: z.string().email().max(255).transform(normalizeEmail),
     password: z.string().min(1).max(128),
+    remember: z.boolean().optional().default(true),
   }).strict(),
   params: z.object({}).optional(),
   query: z.object({}).optional(),

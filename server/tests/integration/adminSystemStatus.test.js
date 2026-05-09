@@ -32,14 +32,14 @@ beforeAll(async () => {
   await agentUser.post('/api/auth/register').send({
     name: 'Normal User',
     email: userEmail,
-    password: 'SecurePassword123'
+    password: 'Secure12345@#$'
   });
 
   // Create admin user
   await agentAdmin.post('/api/auth/register').send({
     name: 'Admin User',
     email: adminEmail,
-    password: 'SecurePassword123'
+    password: 'Secure12345@#$'
   });
 
   await prisma.user.updateMany({
@@ -54,12 +54,12 @@ beforeAll(async () => {
 
   await agentUser.post('/api/auth/login').send({
     email: userEmail,
-    password: 'SecurePassword123'
+    password: 'Secure12345@#$'
   });
 
   await agentAdmin.post('/api/auth/login').send({
     email: adminEmail,
-    password: 'SecurePassword123'
+    password: 'Secure12345@#$'
   });
 });
 

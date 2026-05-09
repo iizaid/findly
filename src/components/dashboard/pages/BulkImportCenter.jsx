@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Play, ChevronRight, Settings } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, Play, Settings } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import { apiRequest, ApiError } from '../../../lib/api';
 
@@ -98,7 +98,7 @@ const BulkImportCenter = ({ onSuccess }) => {
       const targetCounts = {};
       let hasBusinessName = false;
       
-      Object.entries(sheetMapping).forEach(([header, target]) => {
+      Object.entries(sheetMapping).forEach(([_header, target]) => {
         if (target === 'ignore') return;
         targetCounts[target] = (targetCounts[target] || 0) + 1;
         if (target === 'businessName') hasBusinessName = true;
