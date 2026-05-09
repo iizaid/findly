@@ -6,6 +6,8 @@ export const toSafeUser = (user) => ({
   plan: user.plan,
   creditsBalance: user.creditsBalance,
   emailVerified: user.emailVerified,
+  emailVerifiedAt: user.emailVerifiedAt,
+  initialCreditsGrantedAt: user.initialCreditsGrantedAt,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });

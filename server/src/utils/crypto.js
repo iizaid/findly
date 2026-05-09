@@ -10,10 +10,19 @@ export const verifyPassword = (password, passwordHash) => bcrypt.compare(passwor
 
 export const createSessionToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
 
+export const createEmailVerificationToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
+
 export const hashSessionToken = (token) => {
   return crypto
     .createHmac('sha256', env.SESSION_SECRET)
     .update(token)
+    .digest('hex');
+};
+
+export const hashEmailVerificationToken = (token) => {
+  return crypto
+    .createHmac('sha256', env.SESSION_SECRET)
+    .update(`email-verification:${token}`)
     .digest('hex');
 };
 

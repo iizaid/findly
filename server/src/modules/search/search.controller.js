@@ -1,0 +1,784 @@
+import { asyncHandler } from '../../utils/asyncHandler.js';
+import { successResponse } from '../../utils/apiResponse.js';
+import { prisma } from '../../db/prisma.js';
+import { AppError, errorCodes } from '../../utils/AppError.js';
+import { toPagination } from '../../utils/pagination.js';
+import { analyzeCampaign, analyzeLead, createCampaign, estimateCampaignCost, runCampaign } from './search.service.js';
+import { getSourceStatusesWithRuntime } from './source.service.js';
+import { getDashboardSummary, getCampaignAnalytics } from './dashboard.service.js';
+import { enrichWebsiteUrl, mergeSignals } from './websiteEnrichment.service.js';
+import { enqueueJob, markJobFailed } from '../jobs/jobQueue.service.js';
+import {
+  getSupportedJordanGovernorates,
+  leadMatchesGovernorate,
+  normalizeCountry,
+} from './locationNormalization.js';
+
+const servicePresets = [
+  'Website Development',
+  'Website Redesign',
+  'Digital Menu',
+  'Booking System',
+  'E-commerce Store',
+  'Product Catalog',
+  'Automation',
+  'CRM Setup',
+  'SEO',
+  'Social Media Management',
+  'Branding / Design',
+  'Landing Page',
+  'Lead Capture System',
+  'Digital Presence Improvement',
+];
+
+const businessTypePresets = [
+  'Cafes',
+  'Restaurants',
+  'Perfume Stores',
+  'Cosmetics Stores',
+  'Clothing Stores',
+  'Clinics',
+  'Dental Clinics',
+  'Salons',
+  'Gyms',
+  'Real Estate',
+  'Electronics Stores',
+  'Home Supplies',
+  'Electrical Supplies',
+  'Bakeries',
+  'Dessert Shops',
+  'Car Services',
+  'Hotels',
+  'Travel Agencies',
+  'Other',
+];
+
+const countryPresets = ['Jordan'];
+const searchGoalPresets = [
+  'Find businesses without websites',
+  'Find businesses with weak online presence',
+  'Find businesses with strong social presence but weak website',
+  'Find businesses with high ratings but weak digital infrastructure',
+  'Find businesses that may need a booking system',
+  'Find businesses that may need a digital menu',
+  'Find businesses with contact info',
+  'Find Instagram-first businesses',
+  'General opportunity discovery',
+];
+
+const titleCase = (value) => (value || '')
+  .toString()
+  .trim()
+  .replace(/\s+/g, ' ')
+  .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const normalizeBusinessTypeOption = (value) => {
+  const compact = (value || '').toString().trim().toLowerCase();
+  if (!compact) return null;
+  if (/(cafe|coffee|coffee shop|كافيه|قهوة)/.test(compact)) return 'Cafes';
+  if (/(restaurant|food|مطعم)/.test(compact)) return 'Restaurants';
+  if (/(perfume|fragrance|عطر)/.test(compact)) return 'Perfume Stores';
+  if (/(cosmetic|beauty|makeup|تجميل)/.test(compact)) return 'Cosmetics Stores';
+  if (/(clothing|fashion|apparel|ملابس)/.test(compact)) return 'Clothing Stores';
+  return titleCase(value);
+};
+
+const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+const mapCatalogLeadForResponse = (catalogLead, item = {}) => ({
+  id: catalogLead.id,
+  catalogLeadId: catalogLead.id,
+  leadListItemId: item.id,
+  catalogOnly: true,
+  businessName: catalogLead.businessName,
+  category: catalogLead.category,
+  country: catalogLead.country,
+  city: catalogLead.city,
+  address: catalogLead.address,
+  phone: catalogLead.phone,
+  whatsappNumber: catalogLead.whatsappNumber,
+  email: catalogLead.email,
+  websiteUrl: catalogLead.websiteUrl,
+  websiteStatus: catalogLead.websiteStatus,
+  instagramUrl: catalogLead.instagramUrl,
+  instagramUsername: catalogLead.instagramUsername,
+  facebookUrl: catalogLead.facebookUrl,
+  googleMapsUrl: catalogLead.googleMapsUrl,
+  source: catalogLead.source,
+  sourceFile: catalogLead.sourceFile,
+  rating: catalogLead.rating,
+  reviewCount: catalogLead.reviewCount,
+  importedAt: catalogLead.importedAt,
+  status: 'NEW',
+  detectedSignals: catalogLead.detectedSignals,
+  enrichmentData: catalogLead.enrichmentData,
+  createdAt: item.createdAt || catalogLead.createdAt,
+  updatedAt: catalogLead.updatedAt,
+  analyses: [],
+  listRank: item.rank,
+  localDatasetScore: item.score,
+});
+
+const leadMatchesFilters = (lead, { source, city, status, missingWebsite, scoreLevel }) => {
+  if (source && lead.source !== source) return false;
+  if (city && !leadMatchesGovernorate(lead, city)) return false;
+  if (status && lead.status !== status) return false;
+  if (missingWebsite === 'true' && lead.websiteUrl) return false;
+  if (scoreLevel && lead.analyses?.[0]?.scoreLevel !== scoreLevel) return false;
+  return true;
+};
+
+// ═══════════════════════════════════════
+// SOURCE STATUS
+// ═══════════════════════════════════════
+export const getSourceStatus = asyncHandler(async (_req, res) => {
+  const sources = await getSourceStatusesWithRuntime({ userId: _req.user.id });
+  return successResponse(res, { sources }, 'Source statuses loaded.');
+});
+
+export const getSearchOptions = asyncHandler(async (req, res) => {
+  const workspace = await prisma.workspaceMember.findFirst({
+    where: { userId: req.user.id },
+    select: { workspaceId: true },
+  });
+
+  const workspaceId = workspace?.workspaceId || null;
+  const leadWhere = {
+    source: { in: ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET'] },
+  };
+
+  const [leads, totalDatasetLeads, sources] = await Promise.all([
+    prisma.leadCatalog.findMany({
+      where: leadWhere,
+      select: {
+        category: true,
+        country: true,
+        city: true,
+        source: true,
+        sourceFile: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    }),
+    prisma.leadCatalog.count({ where: leadWhere }).catch(() => 0),
+    getSourceStatusesWithRuntime({ userId: req.user.id, workspaceId }),
+  ]);
+
+  const datasetBusinessTypes = leads.map((lead) => normalizeBusinessTypeOption(lead.category));
+  const countries = uniqueSorted([
+    ...countryPresets,
+    ...leads.map((lead) => normalizeCountry(lead.country)),
+  ]);
+  const governorates = getSupportedJordanGovernorates();
+  const cities = governorates;
+
+  return successResponse(res, {
+    services: servicePresets,
+    businessTypes: uniqueSorted([...businessTypePresets, ...datasetBusinessTypes]),
+    countries,
+    governorates,
+    cities,
+    searchGoals: searchGoalPresets,
+    sources,
+    maxResultsOptions: [10, 20, 50, 100],
+    datasetStats: {
+      totalLeads: totalDatasetLeads,
+      sources: uniqueSorted(leads.map((lead) => lead.source)),
+      filesCount: new Set(leads.map((lead) => lead.sourceFile).filter(Boolean)).size,
+    },
+  }, 'Search options loaded.');
+});
+
+// ═══════════════════════════════════════
+// DASHBOARD SUMMARY
+// ═══════════════════════════════════════
+export const getDashboardIntelligence = asyncHandler(async (req, res) => {
+  const workspace = await prisma.workspaceMember.findFirst({
+    where: { userId: req.user.id },
+    select: { workspaceId: true },
+  });
+  if (!workspace) return successResponse(res, {}, 'No workspace found.');
+
+  const summary = await getDashboardSummary(req.user.id, workspace.workspaceId);
+  const sources = await getSourceStatusesWithRuntime({ userId: req.user.id, workspaceId: workspace.workspaceId });
+  return successResponse(res, { summary, sources }, 'Intelligence dashboard loaded.');
+});
+
+// ═══════════════════════════════════════
+// SERVICE PROFILES
+// ═══════════════════════════════════════
+export const getServiceProfiles = asyncHandler(async (req, res) => {
+  const profiles = await prisma.serviceProfile.findMany({ where: { userId: req.user.id } });
+  return successResponse(res, { profiles }, 'Profiles loaded.');
+});
+
+export const createServiceProfile = asyncHandler(async (req, res) => {
+  const { name, serviceType, targetBusinessTypes, targetLocations, offerDescription, idealSignals, workspaceId } = req.validated.body;
+  
+  const workspace = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: req.user.id } }
+  });
+  if (!workspace) throw new AppError(errorCodes.FORBIDDEN, 'You do not have access to this workspace.', 403);
+
+  const profile = await prisma.serviceProfile.create({
+    data: {
+      userId: req.user.id,
+      workspaceId,
+      name,
+      serviceType,
+      targetBusinessTypes,
+      targetLocations,
+      offerDescription,
+      idealSignals,
+    },
+  });
+  return successResponse(res, { profile }, 'Profile created.', 201);
+});
+
+// ═══════════════════════════════════════
+// CAMPAIGNS
+// ═══════════════════════════════════════
+export const getCampaigns = asyncHandler(async (req, res) => {
+  const pagination = toPagination(req.validated.query);
+  const where = { userId: req.user.id };
+  const [campaigns, total] = await prisma.$transaction([
+    prisma.searchCampaign.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+      select: {
+        id: true, name: true, status: true, resultCount: true, creditsUsed: true,
+        city: true, country: true, sources: true, createdAt: true, startedAt: true, completedAt: true,
+        failedAt: true, errorCode: true, errorMessage: true, progressCurrent: true, progressTotal: true, lastStep: true,
+        _count: { select: { leads: true } },
+      },
+    }),
+    prisma.searchCampaign.count({ where }),
+  ]);
+  return successResponse(res, { campaigns, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Campaigns loaded.');
+});
+
+export const createNewCampaign = asyncHandler(async (req, res) => {
+  const data = req.validated.body;
+  
+  const workspace = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: data.workspaceId, userId: req.user.id } }
+  });
+  if (!workspace) throw new AppError(errorCodes.FORBIDDEN, 'You do not have access to this workspace.', 403);
+
+  if (data.serviceProfileId) {
+    const profile = await prisma.serviceProfile.findFirst({
+      where: {
+        id: data.serviceProfileId,
+        userId: req.user.id,
+        workspaceId: data.workspaceId,
+      },
+      select: { id: true },
+    });
+
+    if (!profile) {
+      throw new AppError(errorCodes.FORBIDDEN, 'You do not have access to this service profile.', 403);
+    }
+  }
+
+  const campaign = await createCampaign({ userId: req.user.id, workspaceId: data.workspaceId, data });
+  return successResponse(res, { campaign }, 'Campaign created.', 201);
+});
+
+export const getCampaignById = asyncHandler(async (req, res) => {
+  const campaign = await prisma.searchCampaign.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    include: {
+      _count: { select: { leads: true, leadAnalyses: true } },
+      serviceProfile: { select: { id: true, name: true, serviceType: true } },
+    },
+  });
+  if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+  return successResponse(res, { campaign }, 'Campaign loaded.');
+});
+
+export const runExistingCampaign = asyncHandler(async (req, res) => {
+  const campaign = await prisma.searchCampaign.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    select: { id: true, workspaceId: true, status: true },
+  });
+  if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+
+  const job = await enqueueJob({
+    userId: req.user.id,
+    workspaceId: campaign.workspaceId,
+    campaignId: campaign.id,
+    type: 'SEARCH_CAMPAIGN_RUN',
+    payload: { campaignId: campaign.id },
+  });
+
+  try {
+    const result = await runCampaign(req.validated.params.id, req.user.id, { jobId: job.id });
+    return successResponse(res, { ...result, campaignId: campaign.id, jobId: job.id, status: 'COMPLETED' }, 'Campaign run completed.');
+  } catch (error) {
+    const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
+    const errorMessage = error instanceof AppError ? error.message : 'Campaign run failed.';
+
+    await markJobFailed({
+      jobId: job.id,
+      errorCode,
+      errorMessage,
+    }).catch(() => {});
+
+    if ([errorCodes.SOURCE_NOT_CONFIGURED, errorCodes.SOURCE_UNAVAILABLE, errorCodes.PROVIDER_NOT_CONFIGURED, errorCodes.PROVIDER_AUTH_FAILED, errorCodes.PROVIDER_RATE_LIMITED, errorCodes.PROVIDER_TIMEOUT, errorCodes.PROVIDER_BAD_RESPONSE, errorCodes.PROVIDER_UNAVAILABLE].includes(errorCode)) {
+      await prisma.searchCampaign.updateMany({
+        where: {
+          id: campaign.id,
+          userId: req.user.id,
+          status: { in: ['DRAFT', 'QUEUED'] },
+        },
+        data: {
+          status: 'FAILED',
+          failedAt: new Date(),
+          errorCode,
+          errorMessage,
+        },
+      }).catch(() => {});
+    }
+
+    throw error;
+  }
+});
+
+export const getCampaignStatus = asyncHandler(async (req, res) => {
+  const campaign = await prisma.searchCampaign.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    select: {
+      id: true,
+      status: true,
+      resultCount: true,
+      creditsUsed: true,
+      startedAt: true,
+      completedAt: true,
+      failedAt: true,
+      errorCode: true,
+      errorMessage: true,
+      progressCurrent: true,
+      progressTotal: true,
+      lastStep: true,
+      jobs: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          attempts: true,
+          startedAt: true,
+          completedAt: true,
+          failedAt: true,
+          errorCode: true,
+          errorMessage: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+
+  return successResponse(res, {
+    campaign: {
+      ...campaign,
+      job: campaign.jobs?.[0] || null,
+      jobs: undefined,
+    },
+  }, 'Campaign status loaded.');
+});
+
+export const getCampaignLeads = asyncHandler(async (req, res) => {
+  const campaign = await prisma.searchCampaign.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    select: { id: true },
+  });
+  if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+
+  const leads = await prisma.lead.findMany({
+    where: { campaignId: campaign.id, userId: req.user.id },
+    include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    orderBy: { createdAt: 'desc' },
+  });
+  return successResponse(res, { leads }, 'Campaign leads loaded.');
+});
+
+export const getCampaignAnalyticsData = asyncHandler(async (req, res) => {
+  const analytics = await getCampaignAnalytics(req.validated.params.id, req.user.id);
+  if (!analytics) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+  return successResponse(res, { analytics }, 'Campaign analytics loaded.');
+});
+
+export const analyzeExistingCampaign = asyncHandler(async (req, res) => {
+  const result = await analyzeCampaign({
+    campaignId: req.validated.params.id,
+    userId: req.user.id,
+  });
+
+  return successResponse(res, result, 'Campaign analysis completed.');
+});
+
+// ═══════════════════════════════════════
+// LEAD LISTS
+// ═══════════════════════════════════════
+export const getLeadLists = asyncHandler(async (req, res) => {
+  const pagination = toPagination(req.validated.query);
+  const where = { userId: req.user.id };
+  const [lists, total] = await prisma.$transaction([
+    prisma.leadList.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+      include: { _count: { select: { leads: true, leadItems: true } } },
+    }),
+    prisma.leadList.count({ where }),
+  ]);
+  const mapped = lists.map((list) => ({
+    ...list,
+    leadCount: list._count.leadItems || list._count.leads || 0,
+  }));
+  return successResponse(res, { lists: mapped, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Lead lists loaded.');
+});
+
+export const getLeadListById = asyncHandler(async (req, res) => {
+  const list = await prisma.leadList.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    include: {
+      campaign: { select: { id: true, name: true, status: true, city: true, country: true, businessTypes: true } },
+      _count: { select: { leads: true, leadItems: true } },
+    },
+  });
+
+  if (!list) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+
+  return successResponse(res, {
+    list: {
+      ...list,
+      leadCount: list._count.leadItems || list._count.leads || 0,
+    },
+  }, 'Lead list loaded.');
+});
+
+export const getOpportunitySignals = asyncHandler(async (req, res) => {
+  const pagination = toPagination(req.validated.query);
+  const where = { userId: req.user.id };
+  const [signals, total] = await prisma.$transaction([
+    prisma.opportunitySignal.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+      select: {
+        id: true,
+        campaignId: true,
+        source: true,
+        sourceUrl: true,
+        title: true,
+        snippet: true,
+        subreddit: true,
+        postedAt: true,
+        score: true,
+        commentCount: true,
+        matchedKeywords: true,
+        detectedIntent: true,
+        confidence: true,
+        createdAt: true,
+      },
+    }),
+    prisma.opportunitySignal.count({ where }),
+  ]);
+
+  return successResponse(res, {
+    signals,
+    pagination: { page: pagination.page, limit: pagination.limit, total },
+  }, 'Opportunity signals loaded.');
+});
+
+// ═══════════════════════════════════════
+// LEADS
+// ═══════════════════════════════════════
+export const getLeads = asyncHandler(async (req, res) => {
+  const { campaignId, source, city, scoreLevel, status, missingWebsite, sortBy, sortOrder } = req.validated.query;
+  const listId = req.validated.query.listId || req.validated.params?.id;
+  const pagination = toPagination(req.validated.query);
+  const where = { userId: req.user.id };
+  if (listId) where.leadListId = listId;
+  if (campaignId) where.campaignId = campaignId;
+  if (source) where.source = source;
+  if (city) where.city = { contains: city, mode: 'insensitive' };
+  if (status) where.status = status;
+  if (missingWebsite === 'true') where.websiteUrl = null;
+
+  let orderBy = { createdAt: 'desc' };
+  if (sortBy === 'rating') orderBy = { rating: sortOrder === 'asc' ? 'asc' : 'desc' };
+  else if (sortBy === 'reviewCount') orderBy = { reviewCount: sortOrder === 'asc' ? 'asc' : 'desc' };
+  else if (sortBy === 'createdAt') orderBy = { createdAt: sortOrder === 'asc' ? 'asc' : 'desc' };
+
+  if (listId) {
+    const list = await prisma.leadList.findFirst({
+      where: { id: listId, userId: req.user.id },
+      select: { id: true },
+    });
+    if (!list) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+
+    const items = await prisma.leadListLead.findMany({
+      where: { leadListId: listId },
+      include: {
+        catalogLead: {
+          select: {
+            id: true,
+            businessName: true,
+            category: true,
+            country: true,
+            city: true,
+            address: true,
+            phone: true,
+            whatsappNumber: true,
+            email: true,
+            websiteUrl: true,
+            websiteStatus: true,
+            instagramUrl: true,
+            instagramUsername: true,
+            facebookUrl: true,
+            googleMapsUrl: true,
+            source: true,
+            sourceFile: true,
+            rating: true,
+            reviewCount: true,
+            importedAt: true,
+            detectedSignals: true,
+            enrichmentData: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        lead: {
+          include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
+        },
+      },
+      orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }],
+      skip: pagination.skip,
+      take: pagination.take,
+    });
+    const totalItems = await prisma.leadListLead.count({ where: { leadListId: listId } });
+    const mapped = items
+      .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
+      .filter(Boolean)
+      .filter((lead) => leadMatchesFilters(lead, { source, city, status, missingWebsite, scoreLevel }));
+
+    return successResponse(res, { leads: mapped, pagination: { page: pagination.page, limit: pagination.limit, total: totalItems } }, 'Leads loaded.');
+  }
+
+  const [leads, total] = await prisma.$transaction([
+    prisma.lead.findMany({
+      where,
+      select: {
+        id: true,
+        businessName: true,
+        category: true,
+        country: true,
+        city: true,
+        address: true,
+        phone: true,
+        whatsappNumber: true,
+        email: true,
+        websiteUrl: true,
+        websiteStatus: true,
+        instagramUrl: true,
+        instagramUsername: true,
+        facebookUrl: true,
+        googleMapsUrl: true,
+        source: true,
+        sourceFile: true,
+        rating: true,
+        reviewCount: true,
+        importedAt: true,
+        status: true,
+        detectedSignals: true,
+        enrichmentData: true,
+        createdAt: true,
+        updatedAt: true,
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy,
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+    prisma.lead.count({ where }),
+  ]);
+
+  // Filter by scoreLevel client-side since it's on the analysis relation
+  let filtered = leads;
+  if (scoreLevel) {
+    filtered = leads.filter((l) => l.analyses?.[0]?.scoreLevel === scoreLevel);
+  }
+
+  return successResponse(res, { leads: filtered, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Leads loaded.');
+});
+
+export const getLeadDetail = asyncHandler(async (req, res) => {
+  const lead = await prisma.lead.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    include: {
+      analyses: { orderBy: { createdAt: 'desc' } },
+      leadList: { select: { id: true, name: true } },
+    },
+  });
+  if (!lead) throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+  return successResponse(res, { lead }, 'Lead detail loaded.');
+});
+
+export const analyzeExistingLead = asyncHandler(async (req, res) => {
+  const result = await analyzeLead({
+    leadId: req.validated.params.id,
+    userId: req.user.id,
+  });
+
+  return successResponse(res, result, result.reused ? 'Existing lead analysis loaded.' : 'Lead analysis completed.');
+});
+
+export const getLeadsForMap = asyncHandler(async (req, res) => {
+  const leads = await prisma.lead.findMany({
+    where: {
+      userId: req.user.id,
+      latitude: { not: null },
+      longitude: { not: null },
+    },
+    select: {
+      id: true,
+      businessName: true,
+      category: true,
+      city: true,
+      latitude: true,
+      longitude: true,
+      rating: true,
+      reviewCount: true,
+      websiteUrl: true,
+      phone: true,
+      status: true,
+      source: true,
+      analyses: { orderBy: { createdAt: 'desc' }, take: 1, select: { opportunityScore: true, scoreLevel: true, suggestedService: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  });
+  return successResponse(res, { leads }, 'Map leads loaded.');
+});
+
+export const updateLeadStatus = asyncHandler(async (req, res) => {
+  const { status } = req.validated.body;
+  const updated = await prisma.lead.updateMany({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    data: { status },
+  });
+
+  if (updated.count !== 1) {
+    throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+  }
+
+  const lead = await prisma.lead.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+  });
+
+  return successResponse(res, { lead }, 'Lead updated.');
+});
+
+export const deleteLead = asyncHandler(async (req, res) => {
+  const deleted = await prisma.lead.deleteMany({
+    where: { id: req.validated.params.id, userId: req.user.id },
+  });
+
+  if (deleted.count !== 1) {
+    throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+  }
+
+  return successResponse(res, {}, 'Lead deleted.');
+});
+
+export const enrichLeadWebsite = asyncHandler(async (req, res) => {
+  const lead = await prisma.lead.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    select: {
+      id: true,
+      workspaceId: true,
+      websiteUrl: true,
+      detectedSignals: true,
+    },
+  });
+
+  if (!lead) throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+  if (!lead.websiteUrl) throw new AppError(errorCodes.VALIDATION_ERROR, 'Lead does not have a website URL to enrich.', 400);
+
+  const enrichment = await enrichWebsiteUrl(lead.websiteUrl);
+  const detectedSignals = mergeSignals(lead.detectedSignals, enrichment.detectedSignals);
+
+  const updatedLead = await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      websiteStatus: enrichment.websiteStatus,
+      enrichmentData: enrichment,
+      detectedSignals,
+    },
+    select: {
+      id: true,
+      websiteStatus: true,
+      enrichmentData: true,
+      detectedSignals: true,
+      updatedAt: true,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'LEAD_WEBSITE_ENRICHED',
+      entityType: 'Lead',
+      entityId: lead.id,
+      metadata: {
+        workspaceId: lead.workspaceId,
+        websiteStatus: enrichment.websiteStatus,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { lead: updatedLead }, 'Website enrichment completed.');
+});
+
+// ═══════════════════════════════════════
+// CREDITS
+// ═══════════════════════════════════════
+export const getCreditsHistory = asyncHandler(async (req, res) => {
+  const ledger = await prisma.creditLedger.findMany({
+    where: { userId: req.user.id },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { creditsBalance: true } });
+  return successResponse(res, { balance: user?.creditsBalance || 0, ledger }, 'Credits loaded.');
+});
+
+export const estimateSearchCost = asyncHandler(async (req, res) => {
+  const { requestedLimit, sources, enrichment, analysis } = req.validated.query;
+  const limit = parseInt(requestedLimit, 10) || 20;
+  const selectedSources = sources ? sources.split(',').map((source) => source.trim()).filter(Boolean) : [];
+  const estimate = estimateCampaignCost({
+    requestedLimit: limit,
+    sources: selectedSources,
+    enrichment: enrichment === 'true',
+    analysis: analysis === 'true',
+  });
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { creditsBalance: true } });
+  const canAfford = (user?.creditsBalance || 0) >= estimate.estimatedMax;
+
+  return successResponse(res, {
+    ...estimate,
+    currentBalance: user?.creditsBalance || 0,
+    canAfford,
+  }, 'Cost estimate calculated.');
+});

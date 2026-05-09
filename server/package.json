@@ -10,7 +10,10 @@
     "lint": "node scripts/check-syntax.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "import:datasets": "node scripts/import-datasets.js",
+    "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
+    "admin:promote": "node scripts/promote-admin.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -20,7 +23,11 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
+    "fast-xml-parser": "^5.7.3",
     "helmet": "^8.1.0",
+    "jszip": "^3.10.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^8.0.7",
     "zod": "^4.1.13"
   },
   "devDependencies": {

@@ -21,10 +21,63 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(20),
   SIGNUP_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(8),
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(8),
+  SEARCH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(20),
+  ANALYSIS_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
+  SEARCH_RUN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).optional(),
+  ANALYSIS_RUN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).optional(),
   JSON_BODY_LIMIT: z.string().min(1).default('100kb'),
   URLENCODED_BODY_LIMIT: z.string().min(1).default('50kb'),
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),
   MAX_ACTIVE_SESSIONS: z.coerce.number().int().min(1).max(50).default(10),
+  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+  VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
+  APP_URL: z.string().url().default('http://localhost:4000'),
+  CLIENT_URL: z.string().url().default('http://localhost:5173'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  GOOGLE_PLACES_API_KEY: z.string().optional(),
+  YELP_API_KEY: z.string().optional(),
+  SERPAPI_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  REDDIT_CLIENT_ID: z.string().optional(),
+  REDDIT_CLIENT_SECRET: z.string().optional(),
+  REDDIT_USER_AGENT: z.string().optional(),
+  REDDIT_REFRESH_TOKEN: z.string().optional(),
+  REDDIT_ACCESS_TOKEN_URL: z.string().url().default('https://www.reddit.com/api/v1/access_token'),
+  REDDIT_API_BASE_URL: z.string().url().default('https://oauth.reddit.com'),
+  REDDIT_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(10000),
+  REDDIT_MAX_RESULTS_DEFAULT: z.coerce.number().int().min(1).max(100).default(25),
+  REDDIT_MAX_RESULTS_HARD_LIMIT: z.coerce.number().int().min(1).max(100).default(50),
+  DATASET_IMPORT_DIR: z.string().optional(),
+  DATASET_IMPORT_MODE: z.enum(['global']).default('global'),
+  IMPORT_AS_ADMIN: z.coerce.boolean().default(true),
+  IMPORT_USER_EMAIL: z.string().email().optional(),
+  IMPORT_WORKSPACE_ID: z.string().optional(),
+  WEBSITE_FETCH_TIMEOUT_MS: z.coerce.number().int().min(500).max(20000).default(5000),
+  SOURCE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(10000),
+  SOURCE_MAX_RESULTS_DEFAULT: z.coerce.number().int().min(1).max(100).default(20),
+  SOURCE_MAX_RESULTS_HARD_LIMIT: z.coerce.number().int().min(1).max(200).default(100),
+  JOB_STALE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+  CACHE_TTL_SECONDS: z.coerce.number().int().min(0).max(86400).default(300),
+  LOG_LEVEL: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),
+}).superRefine((value, ctx) => {
+  if (value.NODE_ENV !== 'production') return;
+
+  const requiredSmtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'];
+  for (const field of requiredSmtpFields) {
+    if (!value[field]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [field],
+        message: `${field} is required in production.`,
+      });
+    }
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -36,6 +89,8 @@ if (!parsed.success) {
 
 export const env = {
   ...parsed.data,
+  SEARCH_RATE_LIMIT_MAX: parsed.data.SEARCH_RUN_RATE_LIMIT_MAX ?? parsed.data.SEARCH_RATE_LIMIT_MAX,
+  ANALYSIS_RATE_LIMIT_MAX: parsed.data.ANALYSIS_RUN_RATE_LIMIT_MAX ?? parsed.data.ANALYSIS_RATE_LIMIT_MAX,
   IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
   CLIENT_ORIGINS: parsed.data.CLIENT_ORIGIN.split(',')
     .map((origin) => origin.trim())

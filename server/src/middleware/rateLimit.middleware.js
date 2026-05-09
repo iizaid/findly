@@ -64,3 +64,17 @@ export const loginRateLimiter = makeRateLimit({
   limit: env.LOGIN_RATE_LIMIT_MAX,
   message: 'Too many login attempts. Please try again later.',
 });
+
+export const searchRateLimiter = makeRateLimit({
+  name: 'search',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.SEARCH_RATE_LIMIT_MAX,
+  message: 'Too many search requests. Please try again later.',
+});
+
+export const analysisRateLimiter = makeRateLimit({
+  name: 'analysis',
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.ANALYSIS_RATE_LIMIT_MAX,
+  message: 'Too many analysis requests. Please try again later.',
+});

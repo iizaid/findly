@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { prisma } from '../db/prisma.js';
 import { getActiveSessionByToken } from '../modules/sessions/session.service.js';
 import { toSafeUser } from '../modules/users/user.mapper.js';
 import { AppError, errorCodes } from '../utils/AppError.js';
@@ -24,6 +25,52 @@ export const requireAuth = async (req, _res, next) => {
     };
     req.user = toSafeUser(session.user);
     req.userRecord = session.user;
+
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const requireVerifiedEmail = async (req, _res, next) => {
+  try {
+    if (!req.user?.emailVerified) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user?.id,
+          action: 'DASHBOARD_ACCESS_DENIED_UNVERIFIED',
+          entityType: 'User',
+          entityId: req.user?.id,
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') || null,
+        },
+      });
+
+      throw new AppError(errorCodes.EMAIL_NOT_VERIFIED, 'Verify your email to continue.', 403);
+    }
+
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const requireAdmin = async (req, _res, next) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user?.id,
+          action: 'ADMIN_ACCESS_DENIED',
+          entityType: 'User',
+          entityId: req.user?.id,
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') || null,
+        },
+      }).catch(() => {});
+
+      throw new AppError(errorCodes.FORBIDDEN, 'Admin access required.', 403);
+    }
 
     return next();
   } catch (error) {

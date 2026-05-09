@@ -3,7 +3,12 @@ import { AppError, errorCodes } from '../utils/AppError.js';
 import { verifyCsrfToken } from '../utils/crypto.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const EXEMPT_PATHS = new Set(['/api/auth/register', '/api/auth/login', '/api/csrf-token']);
+const EXEMPT_PATHS = new Set([
+  '/api/auth/register',
+  '/api/auth/login',
+  '/api/auth/verify-email',
+  '/api/csrf-token',
+]);
 
 export const csrfCookieOptions = {
   httpOnly: false,

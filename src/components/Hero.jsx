@@ -7,7 +7,16 @@ const scrollToSection = (target) => {
   element.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-const Hero = ({ ready = false, onAuthOpen }) => {
+const Hero = ({ ready = false, currentUser, onAuthOpen, onNavigate }) => {
+  const handlePrimaryCta = () => {
+    if (currentUser) {
+      onNavigate?.('/dashboard');
+      return;
+    }
+
+    onAuthOpen?.('signup');
+  };
+
   return (
     <section id="hero" className="relative flex min-h-[100svh] flex-grow items-center justify-center overflow-hidden bg-white px-4 pb-12 pt-24 sm:px-6 md:min-h-screen md:pt-28">
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center text-center md:mt-12">
@@ -38,10 +47,10 @@ const Hero = ({ ready = false, onAuthOpen }) => {
         >
           <button
             type="button"
-            onClick={() => onAuthOpen?.('signup')}
+            onClick={handlePrimaryCta}
             className="w-full rounded-full bg-primary px-8 py-4 text-sm font-bold tracking-wide text-white transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-auto md:px-10 md:py-5 md:text-base"
           >
-            Start Finding Leads
+            {currentUser ? 'Open Dashboard' : 'Start Finding Leads'}
           </button>
           <button
             type="button"

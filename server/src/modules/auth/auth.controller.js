@@ -4,6 +4,7 @@ import { successResponse } from '../../utils/apiResponse.js';
 import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { clearCookieOptions, cookieOptions } from '../sessions/session.service.js';
 import { loginUser, logoutUser, registerUser } from './auth.service.js';
+import { resendVerificationEmail, verifyEmailToken } from './emailVerification.service.js';
 
 export const register = asyncHandler(async (req, res) => {
   const result = await registerUser(req.validated.body, req);
@@ -15,8 +16,9 @@ export const register = asyncHandler(async (req, res) => {
     {
       user: result.user,
       workspace: result.workspace,
+      requiresEmailVerification: result.requiresEmailVerification,
     },
-    'Account created successfully.',
+    'Account created. Check your email to verify your account.',
     201,
   );
 });
@@ -54,5 +56,34 @@ export const me = asyncHandler(async (req, res) => {
       workspace,
     },
     'Current user loaded.',
+  );
+});
+
+export const resendVerification = asyncHandler(async (req, res) => {
+  const result = await resendVerificationEmail(req);
+
+  return successResponse(
+    res,
+    {
+      user: result.user,
+      alreadyVerified: result.alreadyVerified,
+    },
+    result.alreadyVerified ? 'Email is already verified.' : 'Verification email sent.',
+  );
+});
+
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const result = await verifyEmailToken(req.validated.body, req);
+
+  return successResponse(
+    res,
+    {
+      user: result.user,
+      workspace: result.workspace,
+      alreadyVerified: result.alreadyVerified,
+      creditsGranted: result.creditsGranted,
+      authenticated: false,
+    },
+    result.alreadyVerified ? 'Email is already verified. Log in to continue.' : 'Email verified successfully. Log in to continue.',
   );
 });

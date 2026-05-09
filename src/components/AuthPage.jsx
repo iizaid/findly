@@ -3,16 +3,28 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
   Eye,
   EyeOff,
   Lock,
   Mail,
+  RefreshCw,
   User,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '../lib/api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ATTEMPT_KEY = 'findly_auth_attempts';
-const EMAILS_KEY = 'findly_registered_emails_demo';
+const COMMON_PASSWORDS = new Set([
+  'password',
+  'password1',
+  'password123',
+  '12345678',
+  '123456789',
+  'qwerty123',
+  'admin123',
+  'findly123',
+]);
 
 const getStoredJson = (key, fallback) => {
   try {
@@ -24,6 +36,14 @@ const getStoredJson = (key, fallback) => {
 };
 
 const normalizeEmail = (email) => email.trim().toLowerCase();
+const stripUnsafeChars = (value) => [...value]
+  .filter((char) => {
+    const code = char.charCodeAt(0);
+    return code > 31 && code !== 127;
+  })
+  .join('')
+  .replace(/[<>]/g, '');
+const normalizeName = (value) => stripUnsafeChars(value).replace(/\s+/g, ' ').trim();
 
 const getPasswordScore = (password) => {
   let score = 0;
@@ -35,7 +55,7 @@ const getPasswordScore = (password) => {
   return score;
 };
 
-const cleanName = (value) => value.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
+const toDisplayText = (value, maxLength) => stripUnsafeChars(value).replace(/\s{2,}/g, ' ').slice(0, maxLength);
 
 const canSubmitAttempt = () => {
   const now = Date.now();
@@ -49,12 +69,15 @@ const recordAttempt = () => {
   window.localStorage.setItem(ATTEMPT_KEY, JSON.stringify([...attempts, now]));
 };
 
-const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) => {
+const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNavigate, onSessionChange }) => {
   const [mode, setMode] = useState(initialMode);
+  const [screen, setScreen] = useState('form');
   const [showPassword, setShowPassword] = useState(false);
-  const [startedAt] = useState(() => Date.now());
   const [status, setStatus] = useState(null);
+  const [accountEmail, setAccountEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [touched, setTouched] = useState({});
   const [form, setForm] = useState({
     name: '',
@@ -65,7 +88,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
     company: '',
     remember: true,
     terms: false,
-    website: '',
+    companyWebsite: '',
   });
 
   const isSignup = mode === 'signup';
@@ -74,8 +97,12 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
   const errors = useMemo(() => {
     const next = {};
     const email = normalizeEmail(form.email);
+    const cleanDisplayName = normalizeName(form.name);
+    const password = form.password.toLowerCase();
+    const emailLocalPart = email.split('@')[0]?.toLowerCase();
+    const nameParts = cleanDisplayName.toLowerCase().split(/\s+/).filter((part) => part.length >= 3);
 
-    if (isSignup && cleanName(form.name).length < 2) {
+    if (isSignup && cleanDisplayName.length < 2) {
       next.name = 'Enter your real name.';
     }
 
@@ -87,10 +114,20 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
       next.password = 'Password must be at least 10 characters.';
     } else if (isSignup && passwordScore < 4) {
       next.password = 'Use uppercase, lowercase, numbers, and a symbol.';
+    } else if (isSignup && COMMON_PASSWORDS.has(password)) {
+      next.password = 'Choose a less common password.';
+    } else if (isSignup && emailLocalPart && password.includes(emailLocalPart)) {
+      next.password = 'Password must not contain your email.';
+    } else if (isSignup && nameParts.some((part) => password.includes(part))) {
+      next.password = 'Password must not contain your name.';
     }
 
     if (isSignup && form.password !== form.confirmPassword) {
       next.confirmPassword = 'Passwords do not match.';
+    }
+
+    if (isSignup && form.companyWebsite.trim()) {
+      next.companyWebsite = 'Submission blocked.';
     }
 
     if (isSignup && !form.terms) {
@@ -109,11 +146,61 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
     setTouched((current) => ({ ...current, [field]: true }));
   };
 
+  const normalizeFieldOnBlur = (field) => {
+    markTouched(field);
+    if (field === 'name' || field === 'company') {
+      updateField(field, normalizeName(form[field]));
+    }
+  };
+
   const showError = (field) => (submitted || touched[field]) && errors[field];
 
-  const handleSubmit = (event) => {
+  const switchMode = (value) => {
+    setMode(value);
+    setScreen('form');
+    setStatus(null);
+    setSubmitted(false);
+    setTouched({});
+  };
+
+  const resendVerification = async () => {
+    setStatus(null);
+    setIsResending(true);
+
+    try {
+      await apiRequest('/api/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setStatus({ type: 'success', message: 'Verification email sent. Check your inbox.' });
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? error.message
+        : 'Could not send a verification email. Please try again.';
+      setStatus({ type: 'error', message });
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await apiRequest('/api/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch {
+      // The user is leaving the auth flow either way.
+    } finally {
+      onSessionChange?.(null);
+      onClose?.();
+    }
+  };
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setSubmitted(true);
+    setStatus(null);
 
     const rate = canSubmitAttempt();
     if (!rate.allowed) {
@@ -121,14 +208,8 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
       return;
     }
 
-    if (form.website.trim()) {
+    if (form.companyWebsite.trim()) {
       setStatus({ type: 'error', message: 'Submission blocked.' });
-      recordAttempt();
-      return;
-    }
-
-    if (Date.now() - startedAt < 1800) {
-      setStatus({ type: 'error', message: 'Please review the form before submitting.' });
       recordAttempt();
       return;
     }
@@ -140,25 +221,58 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
     }
 
     const email = normalizeEmail(form.email);
-    const registeredEmails = getStoredJson(EMAILS_KEY, []);
 
-    if (isSignup && registeredEmails.includes(email)) {
-      setStatus({ type: 'error', message: 'An account already exists for this email.' });
+    setIsSubmitting(true);
+
+    try {
+      const response = await apiRequest(isSignup ? '/api/auth/register' : '/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(
+          isSignup
+            ? {
+                name: normalizeName(form.name),
+                email,
+                password: form.password,
+                companyWebsite: form.companyWebsite,
+              }
+            : {
+                email,
+                password: form.password,
+              },
+        ),
+      });
+
       recordAttempt();
-      return;
-    }
 
-    if (isSignup) {
-      window.localStorage.setItem(EMAILS_KEY, JSON.stringify([...registeredEmails, email]));
-    }
+      if (isSignup) {
+        setAccountEmail(email);
+        setScreen('check-email');
+        setStatus(null);
+        return;
+      }
 
-    recordAttempt();
-    setStatus({
-      type: 'success',
-      message: isSignup
-        ? 'Account request validated. Connect this form to your backend auth provider next.'
-        : 'Login form validated. Backend session verification should run next.',
-    });
+      if (response.data?.user?.emailVerified) {
+        onSessionChange?.(response.data.user);
+        onNavigate?.('/dashboard');
+        return;
+      }
+
+      onSessionChange?.(response.data?.user || null);
+      setAccountEmail(response.data?.user?.email || email);
+      setScreen('verification-required');
+      setStatus({
+        type: 'success',
+        message: 'Login successful. Verify your email before entering the dashboard.',
+      });
+    } catch (error) {
+      recordAttempt();
+      const message = error instanceof ApiError
+        ? error.message
+        : 'Could not reach the secure auth server. Please try again.';
+      setStatus({ type: 'error', message });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -218,10 +332,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                   <button
                     type="button"
                     key={value}
-                    onClick={() => {
-                      setMode(value);
-                      setStatus(null);
-                    }}
+                    onClick={() => switchMode(value)}
                     className={`relative flex-1 rounded-full px-4 py-3 text-sm font-bold transition-colors duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                       mode === value ? 'text-black' : 'text-secondary hover:text-black'
                     }`}
@@ -238,16 +349,87 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                 ))}
               </div>
 
-              <div>
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-secondary">
-                  {isSignup ? 'Create your workspace' : 'Welcome back'}
-                </p>
-                <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
-                  {isSignup ? 'Start finding better opportunities.' : 'Continue your lead research.'}
-                </h2>
-              </div>
+              {screen === 'check-email' ? (
+                <div className="min-h-[650px] pt-10">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-black">
+                    <CheckCircle2 size={26} />
+                  </div>
+                  <p className="mt-8 text-sm font-bold uppercase tracking-[0.2em] text-secondary">Check your email</p>
+                  <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
+                    Verify your account to continue.
+                  </h2>
+                  <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-secondary">
+                    We sent a secure verification link to <span className="text-black">{accountEmail}</span>. Your dashboard and free Opportunity Credits unlock after verification.
+                  </p>
+                  {status && (
+                    <div className={`mt-6 rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
+                      {status.message}
+                    </div>
+                  )}
+                  <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={resendVerification}
+                      disabled={isResending}
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <RefreshCw size={16} />
+                      {isResending ? 'Sending...' : 'Resend verification email'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Back to site
+                    </button>
+                  </div>
+                </div>
+              ) : screen === 'verification-required' ? (
+                <div className="min-h-[650px] pt-10">
+                  <p className="text-sm font-bold uppercase tracking-[0.2em] text-secondary">Email verification required</p>
+                  <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
+                    Verify your email to continue.
+                  </h2>
+                  <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-secondary">
+                    Your account is secure, but the dashboard stays locked until <span className="text-black">{accountEmail}</span> is verified.
+                  </p>
+                  {status && (
+                    <div className={`mt-6 rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
+                      {status.message}
+                    </div>
+                  )}
+                  <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={resendVerification}
+                      disabled={isResending}
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-accent px-6 text-sm font-bold text-black transition-colors hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <RefreshCw size={16} />
+                      {isResending ? 'Sending...' : 'Send verification email'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-secondary">
+                      {isSignup ? 'Create your workspace' : 'Welcome back'}
+                    </p>
+                    <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
+                      {isSignup ? 'Start finding better opportunities.' : 'Continue your lead research.'}
+                    </h2>
+                  </div>
 
-              <form className="mt-8 min-h-[650px] space-y-5" onSubmit={handleSubmit} noValidate>
+                  <form className="mt-8 min-h-[650px] space-y-5" onSubmit={handleSubmit} noValidate>
                 {isSignup && planContext && (
                   <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3 text-sm font-bold text-black">
                     Selected plan: {planContext}
@@ -258,8 +440,8 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                   type="text"
                   tabIndex={-1}
                   autoComplete="off"
-                  value={form.website}
-                  onChange={(event) => updateField('website', event.target.value)}
+                  value={form.companyWebsite}
+                  onChange={(event) => updateField('companyWebsite', event.target.value)}
                   className="hidden"
                   aria-hidden="true"
                 />
@@ -270,16 +452,22 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                     <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
                       <User size={18} className="text-secondary" />
                       <input
+                        id="findly-full-name"
+                        name="name"
                         value={form.name}
-                        onChange={(event) => updateField('name', cleanName(event.target.value))}
-                        onBlur={() => markTouched('name')}
+                        onChange={(event) => updateField('name', toDisplayText(event.target.value, 80))}
+                        onBlur={() => normalizeFieldOnBlur('name')}
                         maxLength={80}
+                        minLength={2}
+                        required
+                        aria-invalid={Boolean(showError('name'))}
+                        aria-describedby={showError('name') ? 'findly-name-error' : undefined}
                         className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-secondary/50"
                         placeholder="Your name"
                         autoComplete="name"
                       />
                     </div>
-                    {showError('name') && <p className="mt-2 text-xs font-bold text-red-600">{errors.name}</p>}
+                    {showError('name') && <p id="findly-name-error" className="mt-2 text-xs font-bold text-red-600">{errors.name}</p>}
                   </div>
                 )}
 
@@ -288,17 +476,23 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                   <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
                     <Mail size={18} className="text-secondary" />
                     <input
+                      id="findly-email"
+                      name="email"
                       value={form.email}
                       onChange={(event) => updateField('email', event.target.value)}
                       onBlur={() => markTouched('email')}
-                      maxLength={120}
+                      maxLength={255}
+                      required
+                      type="email"
+                      aria-invalid={Boolean(showError('email'))}
+                      aria-describedby={showError('email') ? 'findly-email-error' : undefined}
                       className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-secondary/50"
                       placeholder="you@company.com"
                       autoComplete="email"
                       inputMode="email"
                     />
                   </div>
-                  {showError('email') && <p className="mt-2 text-xs font-bold text-red-600">{errors.email}</p>}
+                  {showError('email') && <p id="findly-email-error" className="mt-2 text-xs font-bold text-red-600">{errors.email}</p>}
                 </div>
 
                 <div>
@@ -306,11 +500,17 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                   <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
                     <Lock size={18} className="text-secondary" />
                     <input
+                      id="findly-password"
+                      name="password"
                       value={form.password}
                       onChange={(event) => updateField('password', event.target.value)}
                       onBlur={() => markTouched('password')}
                       maxLength={128}
+                      minLength={10}
+                      required
                       type={showPassword ? 'text' : 'password'}
+                      aria-invalid={Boolean(showError('password'))}
+                      aria-describedby={showError('password') ? 'findly-password-error' : undefined}
                       className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-secondary/50"
                       placeholder="Minimum 10 characters"
                       autoComplete={isSignup ? 'new-password' : 'current-password'}
@@ -324,7 +524,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
-                  {showError('password') && <p className="mt-2 text-xs font-bold text-red-600">{errors.password}</p>}
+                  {showError('password') && <p id="findly-password-error" className="mt-2 text-xs font-bold text-red-600">{errors.password}</p>}
                   {isSignup && (
                     <div className="mt-3 grid grid-cols-5 gap-1">
                       {[0, 1, 2, 3, 4].map((step) => (
@@ -341,23 +541,30 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                       <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
                         <Lock size={18} className="text-secondary" />
                         <input
+                          id="findly-confirm-password"
+                          name="confirmPassword"
                           value={form.confirmPassword}
                           onChange={(event) => updateField('confirmPassword', event.target.value)}
                           onBlur={() => markTouched('confirmPassword')}
                           maxLength={128}
+                          required
                           type={showPassword ? 'text' : 'password'}
+                          aria-invalid={Boolean(showError('confirmPassword'))}
+                          aria-describedby={showError('confirmPassword') ? 'findly-confirm-password-error' : undefined}
                           className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-secondary/50"
                           placeholder="Repeat password"
                           autoComplete="new-password"
                         />
                       </div>
-                      {showError('confirmPassword') && <p className="mt-2 text-xs font-bold text-red-600">{errors.confirmPassword}</p>}
+                      {showError('confirmPassword') && <p id="findly-confirm-password-error" className="mt-2 text-xs font-bold text-red-600">{errors.confirmPassword}</p>}
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-2 block text-sm font-bold text-black">Primary role</label>
                         <select
+                          id="findly-role"
+                          name="role"
                           value={form.role}
                           onChange={(event) => updateField('role', event.target.value)}
                           className="h-12 w-full rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-sm font-semibold outline-none"
@@ -372,10 +579,12 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                       <div>
                         <label className="mb-2 block text-sm font-bold text-black">Company</label>
                         <input
-                        value={form.company}
-                        onChange={(event) => updateField('company', cleanName(event.target.value))}
-                        onBlur={() => markTouched('company')}
-                        maxLength={90}
+                          id="findly-company"
+                          name="company"
+                          value={form.company}
+                          onChange={(event) => updateField('company', toDisplayText(event.target.value, 90))}
+                          onBlur={() => normalizeFieldOnBlur('company')}
+                          maxLength={90}
                           className="h-12 w-full rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-sm font-semibold outline-none placeholder:text-secondary/50"
                           placeholder="Optional"
                           autoComplete="organization"
@@ -390,6 +599,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                     <label className="flex items-center gap-3 text-sm font-semibold text-secondary">
                       <input
                         type="checkbox"
+                        name="remember"
                         checked={form.remember}
                         onChange={(event) => updateField('remember', event.target.checked)}
                         className="h-4 w-4 accent-black"
@@ -402,6 +612,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                     <label className="flex items-start gap-3 text-sm font-semibold leading-6 text-secondary">
                       <input
                         type="checkbox"
+                        name="terms"
                         checked={form.terms}
                         onChange={(event) => {
                           markTouched('terms');
@@ -441,11 +652,14 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice }) =>
                 <button
                   type="submit"
                   className="group inline-flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white transition-all duration-300 hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  disabled={isSubmitting}
                 >
-                  {isSignup ? 'Create secure account' : 'Log in'}
+                  {isSubmitting ? 'Securing request...' : isSignup ? 'Create secure account' : 'Log in'}
                   <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1" />
                 </button>
-              </form>
+                  </form>
+                </>
+              )}
 
 
             </motion.div>

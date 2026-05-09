@@ -34,6 +34,7 @@ enum SearchSource {
   INSTAGRAM
   FACEBOOK
   GOOGLE_MAPS
+  REDDIT
   LINKEDIN
   TIKTOK
   WEBSITE
@@ -45,18 +46,37 @@ enum SearchSource {
   OTHER
 }
 
-enum SearchJobStatus {
+enum JobType {
+  SEARCH_CAMPAIGN_RUN
+  CAMPAIGN_ANALYSIS_RUN
+  WEBSITE_ENRICHMENT_RUN
+  EXPORT_RUN
+}
+
+enum JobStatus {
   QUEUED
   RUNNING
   COMPLETED
   FAILED
-  CANCELED
+  CANCELLED
+}
+
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 enum LeadStatus {
   NEW
-  SAVED
+  REVIEWED
   CONTACTED
+  INTERESTED
+  NOT_A_FIT
+  SAVED
   QUALIFIED
   DISQUALIFIED
   ARCHIVED
@@ -69,28 +89,71 @@ enum ScoreLevel {
   GOLD
 }
 
-model User {
-  id             String          @id @default(cuid())
-  name           String
-  email          String          @unique
-  passwordHash   String
-  role           UserRole        @default(USER)
-  plan           Plan            @default(FREE)
-  creditsBalance Int             @default(0)
-  emailVerified  Boolean         @default(false)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+enum DatasetImportStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
 
-  sessions         Session[]
-  ownedWorkspaces  Workspace[]      @relation("WorkspaceOwner")
-  workspaceMembers WorkspaceMember[]
-  auditLogs        AuditLog[]
-  creditLedger     CreditLedger[]
-  searchJobs       SearchJob[]
-  leads            Lead[]
-  leadAnalyses     LeadAnalysis[]
+enum DatasetImportRowStatus {
+  IMPORTED
+  SKIPPED
+  DUPLICATE
+  ERROR
+}
+
+model User {
+  id                          String    @id @default(cuid())
+  name                        String
+  email                       String    @unique
+  passwordHash                String
+  role                        UserRole  @default(USER)
+  plan                        Plan      @default(FREE)
+  creditsBalance              Int       @default(0)
+  emailVerified               Boolean   @default(false)
+  emailVerifiedAt             DateTime?
+  lastVerificationEmailSentAt DateTime?
+  initialCreditsGrantedAt     DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  sessions                Session[]
+  emailVerificationTokens EmailVerificationToken[]
+  ownedWorkspaces         Workspace[]              @relation("WorkspaceOwner")
+  workspaceMembers        WorkspaceMember[]
+  auditLogs               AuditLog[]
+  creditLedger            CreditLedger[]
+  serviceProfiles         ServiceProfile[]
+  searchCampaigns         SearchCampaign[]
+  leadLists               LeadList[]
+  leads                   Lead[]
+  leadAnalyses            LeadAnalysis[]
+  opportunitySignals      OpportunitySignal[]
+  jobs                    Job[]
+  datasetImports          DatasetImport[]
+  backendErrorLogs        BackendErrorLog[]
 
   @@index([createdAt])
+  @@index([emailVerified])
+  @@index([initialCreditsGrantedAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@index([userId, usedAt, expiresAt])
 }
 
 model Session {
@@ -118,12 +181,17 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner        User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members      WorkspaceMember[]
-  creditLedger CreditLedger[]
-  searchJobs   SearchJob[]
-  leads        Lead[]
-  leadAnalyses LeadAnalysis[]
+  owner           User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members         WorkspaceMember[]
+  creditLedger    CreditLedger[]
+  serviceProfiles ServiceProfile[]
+  searchCampaigns SearchCampaign[]
+  leadLists       LeadList[]
+  leads           Lead[]
+  leadAnalyses    LeadAnalysis[]
+  opportunitySignals OpportunitySignal[]
+  jobs            Job[]
+  datasetImports  DatasetImport[]
 
   @@index([ownerId])
 }
@@ -160,6 +228,27 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model BackendErrorLog {
+  id           String   @id @default(cuid())
+  requestId    String?
+  userId       String?
+  route        String?
+  method       String?
+  statusCode   Int
+  errorCode    String
+  message      String
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([statusCode])
+  @@index([errorCode])
+  @@index([createdAt])
+}
+
 model CreditLedger {
   id            String           @id @default(cuid())
   userId        String
@@ -180,60 +269,325 @@ model CreditLedger {
   @@index([createdAt])
 }
 
-model SearchJob {
-  id          String          @id @default(cuid())
-  userId      String
-  workspaceId String
-  source      SearchSource
-  query       String
-  status      SearchJobStatus @default(QUEUED)
-  filters     Json?
-  resultCount Int             @default(0)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+model ServiceProfile {
+  id                  String   @id @default(cuid())
+  userId              String
+  workspaceId         String
+  name                String
+  serviceType         String
+  targetBusinessTypes Json?
+  targetLocations     Json?
+  offerDescription    String?
+  idealSignals        Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaigns SearchCampaign[]
+
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model SearchCampaign {
+  id               String         @id @default(cuid())
+  userId           String
+  workspaceId      String
+  serviceProfileId String?
+  name             String
+  query            String?
+  country          String?
+  city             String?
+  businessTypes    Json?
+  sources          Json?
+  filters          Json?
+  status           CampaignStatus @default(DRAFT)
+  requestedLimit   Int            @default(50)
+  resultCount      Int            @default(0)
+  creditsReserved  Int            @default(0)
+  creditsUsed      Int            @default(0)
+  startedAt        DateTime?
+  lockedAt         DateTime?
+  lockedBy         String?
+  errorMessage     String?
+  errorCode        String?
+  failedAt         DateTime?
+  progressCurrent  Int            @default(0)
+  progressTotal    Int            @default(0)
+  lastStep         String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  completedAt      DateTime?
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  serviceProfile ServiceProfile? @relation(fields: [serviceProfileId], references: [id], onDelete: SetNull)
+  leadLists      LeadList[]
+  leads          Lead[]
+  leadAnalyses   LeadAnalysis[]
+  opportunitySignals OpportunitySignal[]
+  jobs           Job[]
 
   @@index([userId])
   @@index([workspaceId])
   @@index([status])
+  @@index([createdAt])
+  @@index([workspaceId, status, createdAt])
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  campaignId  String?
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  payload     Json?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  lockedAt    DateTime?
+  lockedBy    String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  errorCode   String?
+  errorMessage String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([type, status, createdAt])
+  @@index([status, lockedAt])
+}
+
+model LeadList {
+  id              String   @id @default(cuid())
+  userId          String
+  workspaceId     String
+  campaignId      String?
+  name            String
+  sourceRequested String?
+  sourceUsed      String?
+  fallbackUsed    Boolean  @default(false)
+  searchMode      String?
+  filters         Json?
+  resultCount     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  leads     Lead[]
+  leadItems LeadListLead[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([sourceUsed])
+  @@index([createdAt])
+}
+
+model LeadListLead {
+  id        String   @id @default(cuid())
+  leadListId String
+  leadId    String?
+  catalogLeadId String?
+  rank      Int      @default(0)
+  score     Int?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  leadList LeadList @relation(fields: [leadListId], references: [id], onDelete: Cascade)
+  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  catalogLead LeadCatalog? @relation(fields: [catalogLeadId], references: [id], onDelete: Cascade)
+
+  @@unique([leadListId, leadId])
+  @@unique([leadListId, catalogLeadId])
+  @@index([leadListId])
+  @@index([leadId])
+  @@index([catalogLeadId])
+}
+
+model DatasetImport {
+  id            String              @id @default(cuid())
+  userId        String?
+  workspaceId   String?
+  fileName      String
+  filePath      String?
+  sourceType    String
+  status        DatasetImportStatus @default(RUNNING)
+  totalRows     Int                 @default(0)
+  importedRows  Int                 @default(0)
+  skippedRows   Int                 @default(0)
+  duplicateRows Int                 @default(0)
+  errorRows     Int                 @default(0)
+  mapping       Json?
+  summary       Json?
+  startedAt     DateTime            @default(now())
+  completedAt   DateTime?
+  failedAt      DateTime?
+  errorMessage  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  user      User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  rows      DatasetImportRow[]
+  leads     Lead[]
+  catalogLeads LeadCatalog[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([sourceType])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DatasetImportRow {
+  id             String                 @id @default(cuid())
+  importId       String
+  rowNumber      Int
+  sheetName      String?
+  status         DatasetImportRowStatus
+  rawData        Json
+  normalizedData Json?
+  errorMessage   String?
+  leadId         String?
+  catalogLeadId  String?
+  createdAt      DateTime               @default(now())
+
+  import DatasetImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  lead   Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  catalogLead LeadCatalog? @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
+
+  @@index([importId])
+  @@index([leadId])
+  @@index([catalogLeadId])
+  @@index([status])
+}
+
+model LeadCatalog {
+  id              String     @id @default(cuid())
+  datasetImportId String?
+  businessName    String
+  category        String?
+  country         String?
+  city            String?
+  address         String?
+  phone           String?
+  whatsappNumber  String?
+  email           String?
+  websiteUrl      String?
+  websiteStatus   String?
+  instagramUrl    String?
+  instagramUsername String?
+  facebookUrl     String?
+  googleMapsUrl   String?
+  source          String?
+  sourceId        String?
+  sourceFile      String?
+  rating          Float?
+  reviewCount     Int?
+  latitude        Float?
+  longitude       Float?
+  normalizedFingerprint String?
+  rawData         Json?
+  detectedSignals Json?
+  enrichmentData  Json?
+  importedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  datasetImport DatasetImport? @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
+  datasetImportRows DatasetImportRow[]
+  leadListItems LeadListLead[]
+
+  @@index([datasetImportId])
   @@index([source])
-  @@index([userId, workspaceId, status])
+  @@index([sourceId])
+  @@index([sourceFile])
+  @@index([instagramUsername])
+  @@index([normalizedFingerprint])
+  @@index([category])
+  @@index([city])
+  @@index([country])
+  @@index([country, city])
+  @@index([importedAt])
   @@index([createdAt])
 }
 
 model Lead {
-  id             String     @id @default(cuid())
-  userId         String
-  workspaceId    String
-  businessName   String
-  country        String
-  city           String
-  businessType   String
-  websiteUrl     String?
-  instagramUrl   String?
-  facebookUrl    String?
-  googleMapsUrl  String?
-  whatsappNumber String?
-  source         String?
-  rawData        Json?
-  status         LeadStatus @default(NEW)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id              String     @id @default(cuid())
+  userId          String
+  workspaceId     String
+  leadListId      String?
+  campaignId      String?
+  datasetImportId String?
+  businessName    String
+  category        String?
+  country         String?
+  city            String?
+  address         String?
+  phone           String?
+  whatsappNumber  String?
+  email           String?
+  websiteUrl      String?
+  websiteStatus   String?
+  instagramUrl    String?
+  instagramUsername String?
+  facebookUrl     String?
+  googleMapsUrl   String?
+  source          String?
+  sourceId        String?
+  sourceFile      String?
+  rating          Float?
+  reviewCount     Int?
+  latitude        Float?
+  longitude       Float?
+  normalizedFingerprint String?
+  rawData         Json?
+  detectedSignals Json?
+  enrichmentData  Json?
+  status          LeadStatus @default(NEW)
+  importedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadList  LeadList?       @relation(fields: [leadListId], references: [id], onDelete: SetNull)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  datasetImport DatasetImport? @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
+  datasetImportRows DatasetImportRow[]
   analyses  LeadAnalysis[]
+  leadListItems LeadListLead[]
 
   @@index([userId])
   @@index([workspaceId])
+  @@index([leadListId])
+  @@index([campaignId])
+  @@index([datasetImportId])
   @@index([status])
-  @@index([businessType])
+  @@index([source])
+  @@index([sourceId])
+  @@index([sourceFile])
+  @@index([instagramUsername])
+  @@index([normalizedFingerprint])
+  @@index([category])
   @@index([city])
   @@index([country])
   @@index([userId, workspaceId, status])
+  @@index([workspaceId, source, sourceId])
   @@index([country, city])
+  @@index([importedAt])
   @@index([createdAt])
 }
 
@@ -242,21 +596,65 @@ model LeadAnalysis {
   userId           String
   workspaceId      String
   leadId           String
+  campaignId       String?
+  fitScore         Int?
   opportunityScore Int
   scoreLevel       ScoreLevel
   detectedSignals  Json
   reasons          Json
   suggestedService String
   outreachAngle    String
+  messageDraft     String?
+  confidence       String?
+  nextBestAction   String?
   createdAt        DateTime   @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead      Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([workspaceId])
   @@index([leadId])
+  @@index([campaignId])
   @@index([scoreLevel])
   @@index([createdAt])
+}
+
+model OpportunitySignal {
+  id              String   @id @default(cuid())
+  userId          String
+  workspaceId     String
+  campaignId      String?
+  source          String
+  sourceId        String
+  sourceUrl       String?
+  title           String
+  snippet         String?
+  authorHash      String?
+  subreddit       String?
+  postedAt        DateTime?
+  score           Int?
+  commentCount    Int?
+  matchedKeywords Json?
+  detectedIntent  String?
+  confidence      Int      @default(0)
+  rawData         Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([source])
+  @@index([sourceId])
+  @@index([subreddit])
+  @@index([detectedIntent])
+  @@index([createdAt])
+  @@unique([workspaceId, source, sourceId])
 }

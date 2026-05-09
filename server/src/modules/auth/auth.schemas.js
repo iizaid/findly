@@ -60,3 +60,17 @@ export const loginSchema = z.object({
   params: z.object({}).optional(),
   query: z.object({}).optional(),
 });
+
+export const verifyEmailSchema = z.object({
+  body: z.object({
+    token: z.string().min(32, 'Verification token is required.').max(256),
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const emptyAuthBodySchema = z.object({
+  body: z.object({}).strict().optional(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});

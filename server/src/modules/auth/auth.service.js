@@ -3,8 +3,8 @@ import { createSession, revokeSession } from '../sessions/session.service.js';
 import { toSafeUser } from '../users/user.mapper.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { hashAuditValue, hashPassword, verifyPassword } from '../../utils/crypto.js';
+import { sendVerificationForUser } from './emailVerification.service.js';
 
-const INITIAL_CREDITS = 50;
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
 const DUMMY_PASSWORD_HASH = '$2b$10$NLcXp1cWaAG/68QxrfVK0O7GHN3vtnlM8kAOqNtfI/Ki4r2a3Q1bS';
 const failedLoginAttempts = new Map();
@@ -64,7 +64,8 @@ export const registerUser = async ({ name, email, password }, req) => {
         name,
         email,
         passwordHash,
-        creditsBalance: INITIAL_CREDITS,
+        creditsBalance: 0,
+        emailVerified: false,
       },
     });
 
@@ -83,33 +84,6 @@ export const registerUser = async ({ name, email, password }, req) => {
       },
     });
 
-    await tx.creditLedger.create({
-      data: {
-        userId: user.id,
-        workspaceId: workspace.id,
-        type: 'CREDIT_GRANTED',
-        amount: INITIAL_CREDITS,
-        balanceAfter: INITIAL_CREDITS,
-        reason: 'Initial Opportunity Credits',
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'CREDIT_GRANTED',
-        entityType: 'CreditLedger',
-        metadata: {
-          amount: INITIAL_CREDITS,
-          balanceAfter: INITIAL_CREDITS,
-          reason: 'Initial Opportunity Credits',
-          workspaceId: workspace.id,
-        },
-        ipAddress: context.ipAddress,
-        userAgent: context.userAgent,
-      },
-    });
-
     await tx.auditLog.create({
       data: {
         userId: user.id,
@@ -117,12 +91,20 @@ export const registerUser = async ({ name, email, password }, req) => {
         entityType: 'User',
         entityId: user.id,
         metadata: {
-          initialCredits: INITIAL_CREDITS,
+          emailVerified: false,
+          initialCreditsGranted: false,
           workspaceId: workspace.id,
         },
         ipAddress: context.ipAddress,
         userAgent: context.userAgent,
       },
+    });
+
+    await sendVerificationForUser({
+      user,
+      req,
+      tx,
+      resend: false,
     });
 
     return { user, workspace };
@@ -138,6 +120,7 @@ export const registerUser = async ({ name, email, password }, req) => {
     token: sessionResult.token,
     user: toSafeUser(result.user),
     workspace: result.workspace,
+    requiresEmailVerification: true,
   };
 };
 

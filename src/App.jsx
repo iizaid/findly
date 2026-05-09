@@ -10,11 +10,30 @@ import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
 import AuthPage from './components/AuthPage';
 import NoticeModal from './components/NoticeModal';
+import VerifyEmailPage from './components/VerifyEmailPage';
+import DashboardPage from './components/DashboardPage';
+import { apiRequest, ApiError } from './lib/api';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [authState, setAuthState] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [route, setRoute] = useState(() => ({
+    pathname: window.location.pathname,
+    search: window.location.search,
+  }));
+
+  const navigate = useCallback((path) => {
+    window.history.pushState({}, '', path);
+    setRoute({
+      pathname: window.location.pathname,
+      search: window.location.search,
+    });
+    setAuthState(null);
+    setNotice(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const openAuth = useCallback((mode = 'signup', plan = null) => {
     setNotice(null);
@@ -24,6 +43,56 @@ function App() {
   const openNotice = useCallback((nextNotice) => {
     setNotice(nextNotice);
   }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await apiRequest('/api/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch {
+      // Clearing local UI state is still correct if the server session is already gone.
+    } finally {
+      setCurrentUser(null);
+      navigate('/');
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoute({
+        pathname: window.location.pathname,
+        search: window.location.search,
+      });
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSession = async () => {
+      try {
+        const response = await apiRequest('/api/auth/me');
+        if (active) setCurrentUser(response.data.user);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401 && active) {
+          setCurrentUser(null);
+          return;
+        }
+
+        if (active) setCurrentUser(null);
+      }
+    };
+
+    loadSession();
+
+    return () => {
+      active = false;
+    };
+  }, [route.pathname]);
 
   useEffect(() => {
     if (isLoading || !window.location.hash) return;
@@ -36,6 +105,21 @@ function App() {
     return () => clearTimeout(timer);
   }, [isLoading]);
 
+  if (route.pathname.startsWith('/dashboard') && !authState) {
+    return (
+      <MotionConfig reducedMotion="user">
+        <DashboardPage
+          routePath={route.pathname}
+          onNavigate={navigate}
+          onAuthOpen={openAuth}
+          onSessionChange={setCurrentUser}
+          onNotice={openNotice}
+        />
+        <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+      </MotionConfig>
+    );
+  }
+
   if (authState) {
     return (
       <MotionConfig reducedMotion="user">
@@ -44,6 +128,25 @@ function App() {
           planContext={authState.plan}
           onClose={() => setAuthState(null)}
           onNotice={openNotice}
+          onNavigate={navigate}
+          onSessionChange={setCurrentUser}
+        />
+        <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+      </MotionConfig>
+    );
+  }
+
+  if (route.pathname === '/verify-email') {
+    const token = new URLSearchParams(route.search).get('token') || '';
+
+    return (
+      <MotionConfig reducedMotion="user">
+        <VerifyEmailPage 
+          token={token} 
+          currentUser={currentUser} 
+          onNavigate={navigate} 
+          onAuthOpen={openAuth} 
+          onSessionChange={setCurrentUser} 
         />
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />
       </MotionConfig>
@@ -56,8 +159,14 @@ function App() {
         <LoadingScreen onComplete={() => setIsLoading(false)} />
       )}
       <div className="min-h-screen flex flex-col bg-white text-primary relative">
-        <Navbar ready={!isLoading} onAuthOpen={openAuth} />
-        <Hero ready={!isLoading} onAuthOpen={openAuth} />
+        <Navbar
+          ready={!isLoading}
+          currentUser={currentUser}
+          onAuthOpen={openAuth}
+          onNavigate={navigate}
+          onLogout={logout}
+        />
+        <Hero ready={!isLoading} currentUser={currentUser} onAuthOpen={openAuth} onNavigate={navigate} />
         <SearchSourcesStrip />
         <ProductFilmSection />
         <OpportunityEngineSection onNotice={openNotice} />

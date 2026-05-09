@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
+import { LayoutDashboard, Menu, X } from 'lucide-react';
 
 const navItems = [
   { label: 'Film', target: 'product-film' },
@@ -14,7 +14,7 @@ const scrollToSection = (target) => {
   element.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-const Navbar = ({ ready = false, onAuthOpen }) => {
+const Navbar = ({ ready = false, currentUser, onAuthOpen, onNavigate, onLogout }) => {
   const [active, setActive] = useState('hero');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -51,6 +51,16 @@ const Navbar = ({ ready = false, onAuthOpen }) => {
   const handleAuthClick = (mode) => {
     setMobileOpen(false);
     onAuthOpen?.(mode);
+  };
+
+  const handleDashboardClick = () => {
+    setMobileOpen(false);
+    onNavigate?.('/dashboard');
+  };
+
+  const handleLogoutClick = () => {
+    setMobileOpen(false);
+    onLogout?.();
   };
 
   return (
@@ -111,20 +121,42 @@ const Navbar = ({ ready = false, onAuthOpen }) => {
 
         {/* Right: CTA */}
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleAuthClick('login')}
-            className="hidden rounded-full px-5 py-2.5 text-[13px] font-bold text-black transition-colors duration-300 hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:inline-flex"
-          >
-            Log in
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAuthClick('signup')}
-            className="rounded-full bg-black px-5 py-2.5 text-[13px] font-bold text-white transition-all duration-300 hover:scale-[1.02] hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:px-7 md:py-3.5"
-          >
-            Create account
-          </button>
+          {currentUser ? (
+            <>
+              <button
+                type="button"
+                onClick={handleDashboardClick}
+                className="hidden items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-bold text-black transition-colors duration-300 hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:inline-flex"
+              >
+                <LayoutDashboard size={15} />
+                {currentUser.emailVerified ? 'Dashboard' : 'Verify email'}
+              </button>
+              <button
+                type="button"
+                onClick={handleLogoutClick}
+                className="rounded-full bg-black px-5 py-2.5 text-[13px] font-bold text-white transition-all duration-300 hover:scale-[1.02] hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:px-6 md:py-3.5"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleAuthClick('login')}
+                className="hidden rounded-full px-5 py-2.5 text-[13px] font-bold text-black transition-colors duration-300 hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:inline-flex"
+              >
+                Log in
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAuthClick('signup')}
+                className="rounded-full bg-black px-5 py-2.5 text-[13px] font-bold text-white transition-all duration-300 hover:scale-[1.02] hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:px-7 md:py-3.5"
+              >
+                Create account
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setMobileOpen((current) => !current)}
@@ -168,22 +200,41 @@ const Navbar = ({ ready = false, onAuthOpen }) => {
               })}
             </nav>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/[0.06] pt-3">
-              <button
-                type="button"
-                onClick={() => handleAuthClick('login')}
-                className="rounded-2xl border border-black/[0.08] px-4 py-3.5 text-sm font-bold text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Log in
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAuthClick('signup')}
-                className="rounded-2xl bg-black px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Create account
-              </button>
-            </div>
+            {currentUser ? (
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/[0.06] pt-3">
+                <button
+                  type="button"
+                  onClick={handleDashboardClick}
+                  className="rounded-2xl border border-black/[0.08] px-4 py-3.5 text-sm font-bold text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  {currentUser.emailVerified ? 'Dashboard' : 'Verify email'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogoutClick}
+                  className="rounded-2xl bg-black px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Log out
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/[0.06] pt-3">
+                <button
+                  type="button"
+                  onClick={() => handleAuthClick('login')}
+                  className="rounded-2xl border border-black/[0.08] px-4 py-3.5 text-sm font-bold text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAuthClick('signup')}
+                  className="rounded-2xl bg-black px-4 py-3.5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Create account
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
