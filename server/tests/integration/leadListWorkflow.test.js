@@ -110,6 +110,20 @@ beforeAll(async () => {
     }
   });
 
+  await prisma.leadCatalog.create({
+    data: {
+      businessName: `Specialty Roastery ${unique}`,
+      category: 'Coffee Shop',
+      country: 'Jordan',
+      city: 'Amman',
+      source: 'INSTAGRAM_DATASET',
+      sourceId: `coffee-shop-${unique}`,
+      normalizedFingerprint: `coffee-shop-fingerprint-${unique}`,
+      instagramUsername: `roastery_${unique}`,
+      detectedSignals: ['HAS_INSTAGRAM', 'NO_WEBSITE'],
+    }
+  });
+
   const item1 = await prisma.leadListLead.create({
     data: {
       leadListId: leadListId,
@@ -249,5 +263,36 @@ describe('LeadList Workflow Architecture', () => {
     expect(runData.platformsRequested).toContain('GOOGLE_MAPS');
     expect(runData.leadListId).toBeDefined();
     expect(runData.leadsReturned).toBeGreaterThanOrEqual(1); // Should match our global catalog
+  });
+
+  it('matches smart business type aliases such as Cafes to Coffee Shop leads', async () => {
+    const csrfToken = await getCsrfToken(agent1);
+
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Cafe alias intelligence search',
+        query: 'cafes in Amman without websites',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafes'],
+        sources: ['INSTAGRAM'],
+        filters: { goal: 'Find businesses without websites' },
+        requestedLimit: 5,
+      });
+
+    expect(campaignRes.status).toBe(201);
+    const campaignId = campaignRes.body.data.campaign.id;
+
+    const runRes = await agent1.post(`/api/search/campaigns/${campaignId}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(200);
+
+    const runData = runRes.body.data;
+    expect(runData.sourceMode).toBe('AVAILABLE_INTELLIGENCE');
+    expect(runData.leadsReturned).toBeGreaterThanOrEqual(1);
+    expect(runData.matchedLeads.some((lead) => lead.businessName.includes('Specialty Roastery'))).toBe(true);
   });
 });
