@@ -237,8 +237,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
             <div>
               <h3 className="text-xl font-bold tracking-tight">{activeList.name}</h3>
               <p className="mt-1 text-sm font-semibold text-secondary">
-                Source requested: {activeList.sourceRequested || 'Local Dataset'} · Source used: {activeList.sourceUsed || 'Local Dataset'}
-                {activeList.fallbackUsed ? ' · dataset fallback' : ''}
+                Platforms: {activeList.filters?.platformsRequested?.join(', ') || activeList.sourceRequested || 'Available Signals'}
               </p>
             </div>
             <span className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black">

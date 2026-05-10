@@ -105,9 +105,9 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = sources.map((source) => ({ source, ...getRunnableAdapter(source) }));
   const unavailable = runnableSources.find((source) => !source.runnable);
-  const sourceRequested = sources[0];
-  const fallbackSourceRequested = LOCAL_FALLBACK_SOURCE_KEYS.includes(sourceRequested);
-  const shouldUseLocalDataset = localDatasetRequested || (fallbackSourceRequested && unavailable?.source === sourceRequested);
+  
+  const fallbackSourcesRequested = sources.some(s => LOCAL_FALLBACK_SOURCE_KEYS.includes(s));
+  const shouldUseLocalDataset = localDatasetRequested || (fallbackSourcesRequested && unavailable);
 
   if (shouldUseLocalDataset) {
     return runLocalDatasetCampaign({
@@ -115,7 +115,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       userId,
       jobId,
       fallbackUsed: !localDatasetRequested,
-      sourceRequested: localDatasetRequested ? 'LOCAL_DATASET' : sourceRequested,
+      platformsRequested: sources,
     });
   }
 
@@ -277,7 +277,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   }
 };
 
-const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, sourceRequested }) => {
+const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, platformsRequested }) => {
   await markCampaignRunning({
     campaignId: campaign.id,
     userId,
@@ -292,26 +292,20 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     ...campaign,
     filters: {
       ...(campaign.filters || {}),
-      sourceRequested,
+      platformsRequested,
     },
   });
   const matchedLeads = await adapter.run();
   const leadsReturned = matchedLeads.length;
-  const fallbackReason = fallbackUsed ? `${sourceRequested}_NOT_CONNECTED` : null;
-  const sourceLabel = sourceLabels[sourceRequested] || sourceRequested;
-  const warning = fallbackUsed
-    ? 'Findly used your available stored business data for this search.'
-    : null;
+  const fallbackReason = fallbackUsed ? `PROVIDERS_NOT_CONNECTED` : null;
   const message = leadsReturned > 0
-    ? (warning || 'Results loaded from your Local Dataset.')
-    : (fallbackUsed
-      ? 'No matching leads found in your imported dataset.'
-      : 'No matching leads found in your imported dataset.');
+    ? 'Search completed across selected platforms.'
+    : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
 
   const listNameParts = [
     Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
     campaign.city,
-    fallbackUsed ? `${sourceLabel} fallback` : 'Local Dataset',
+    'Platform Signals',
   ].filter(Boolean);
 
   const leadList = await prisma.$transaction(async (tx) => {
@@ -320,17 +314,17 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         userId,
         workspaceId: campaign.workspaceId,
         campaignId: campaign.id,
-        name: listNameParts.join(' - ') || `${campaign.name} - Local Dataset`,
-        sourceRequested,
+        name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
+        sourceRequested: platformsRequested.join(','),
         sourceUsed: 'LOCAL_DATASET',
         fallbackUsed,
-        searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'LOCAL_DATASET',
+        searchMode: 'AVAILABLE_INTELLIGENCE',
         filters: {
           country: campaign.country,
           city: campaign.city,
           businessTypes: campaign.businessTypes,
           goal: campaign.filters?.goal || null,
-          sourceRequested,
+          platformsRequested,
           sourceUsed: 'LOCAL_DATASET',
           fallbackReason,
         },
@@ -346,7 +340,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
           rank: index + 1,
           score: lead.localDatasetScore || null,
           metadata: {
-            sourceRequested,
+            platformsRequested,
             sourceUsed: 'LOCAL_DATASET',
             fallbackUsed,
             fallbackReason,
@@ -372,7 +366,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         entityId: campaign.id,
         metadata: {
           workspaceId: campaign.workspaceId,
-          sourceRequested,
+          platformsRequested,
           sourceUsed: 'LOCAL_DATASET',
           fallbackUsed,
           fallbackReason,
@@ -391,7 +385,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       jobId,
       payload: {
         campaignId: campaign.id,
-        sourceRequested,
+        platformsRequested,
         sourceUsed: 'LOCAL_DATASET',
         fallbackUsed,
         fallbackReason,
@@ -404,7 +398,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
   logger.info('campaign.local_dataset.completed', {
     userId,
     campaignId: campaign.id,
-    sourceRequested,
+    platformsRequested,
     fallbackUsed,
     leadsReturned,
   });
@@ -413,16 +407,16 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     success: true,
     campaignId: campaign.id,
     leadListId: leadList.id,
-    sourceRequested,
+    platformsRequested,
+    sourceMode: 'AVAILABLE_INTELLIGENCE',
     sourceUsed: 'LOCAL_DATASET',
     fallbackUsed,
     fallbackReason,
-    searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'LOCAL_DATASET',
+    searchMode: 'AVAILABLE_INTELLIGENCE',
     leadsFound: leadsReturned,
     leadsReturned,
     resultCount: leadsReturned,
     creditsUsed: 0,
-    warning,
     message,
     matchedLeads: matchedLeads.map(safeLeadPreview),
     jobId,

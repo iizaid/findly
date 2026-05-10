@@ -181,7 +181,7 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     governorates,
     cities,
     searchGoals: searchGoalPresets,
-    sources,
+    sources: sources.filter(s => s.key !== 'LOCAL_DATASET'),
     maxResultsOptions: [10, 20, 50, 100],
     datasetStats: {
       totalLeads: totalDatasetLeads,

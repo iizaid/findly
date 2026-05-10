@@ -3,7 +3,18 @@ import { ArrowRight, CheckCircle2, Globe2, Goal, MapPin, Search, Sparkles, Loade
 import DashboardCard from '../DashboardCard';
 import { apiRequest, ApiError } from '../../../lib/api';
 
-const preferredSourceOrder = ['LOCAL_DATASET', 'GOOGLE_MAPS', 'WEBSITE', 'REDDIT', 'YELP', 'SERPAPI', 'INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'TIKTOK', 'TRIPADVISOR', 'YOUTUBE', 'X'];
+const preferredSourceOrder = [
+  'INSTAGRAM',
+  'GOOGLE_MAPS',
+  'FACEBOOK',
+  'WEBSITE',
+  'TIKTOK',
+  'LINKEDIN',
+  'YOUTUBE',
+  'TRIPADVISOR',
+  'YELP',
+  'X'
+];
 const datasetBackedSources = new Set(['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK']);
 
 const defaultGoals = ['General opportunity discovery'];
@@ -11,7 +22,7 @@ const defaultGoals = ['General opportunity discovery'];
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'This source is not connected yet. Search your Local Dataset or select a dataset-backed source.';
+      return 'This platform is not connected yet. Select another platform or try again later.';
     }
     if (error.code === 'VALIDATION_ERROR') {
       return 'Check the search setup fields and try again.';
@@ -23,7 +34,7 @@ const friendlyErrorMessage = (error) => {
 };
 
 const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
-  const [selectedSources, setSelectedSources] = useState(['GOOGLE_MAPS']);
+  const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
   const [sourceOptions, setSourceOptions] = useState([]);
   const [searchOptions, setSearchOptions] = useState({
     services: [],
@@ -68,13 +79,13 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
             id: source.key,
             name: source.label,
             canRun: (source.key === 'GOOGLE_MAPS' && (source.available || source.fallbackAvailable))
-              || (source.key === 'LOCAL_DATASET' && (source.searchable || source.available))
               || (datasetBackedSources.has(source.key) && source.fallbackAvailable),
           }));
         setSourceOptions(ordered);
 
         if (ordered.length > 0) {
-          const preferred = ordered.find((source) => source.key === 'LOCAL_DATASET' && source.canRun)
+          const preferred = ordered.find((source) => source.key === 'INSTAGRAM' && source.canRun)
+            || ordered.find((source) => source.key === 'GOOGLE_MAPS' && source.canRun)
             || ordered.find((source) => source.canRun);
           if (preferred) {
             setSelectedSources((current) => (
@@ -108,21 +119,32 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
     };
   }, []);
 
+  const MAX_SELECTED_PLATFORMS = 5;
+
   const toggleSource = (sourceObj) => {
     if (!sourceObj.canRun) {
       onNotice?.({
-        title: sourceObj.key === 'LOCAL_DATASET'
-          ? 'Local datasets import from the server'
-          : (sourceObj.key === 'REDDIT' ? 'Reddit signals are not connected yet' : 'Source not connected yet'),
-        message: sourceObj.key === 'LOCAL_DATASET'
-          ? 'Local Dataset is available as a real internal source. Run npm run import:datasets from the server to import Excel/CSV files, then review them in Lead Lists.'
-          : (sourceObj.key === 'REDDIT'
-            ? 'Reddit will search public demand signals after compliant API access is connected. For now, use Local Dataset search for stored business leads.'
-            : 'This source is not connected yet. You can still search your Local Dataset for stored business records.'),
+        title: sourceObj.key === 'REDDIT' ? 'Signals not connected yet' : 'Platform not connected yet',
+        message: sourceObj.key === 'REDDIT'
+          ? 'Reddit will search public demand signals after compliant API access is connected.'
+          : 'This platform is not connected yet. You can still search available platform intelligence for others.',
       });
       return;
     }
-    setSelectedSources([sourceObj.id]);
+    
+    setSelectedSources((current) => {
+      if (current.includes(sourceObj.id)) {
+        return current.length === 1 ? current : current.filter((id) => id !== sourceObj.id);
+      }
+      if (current.length >= MAX_SELECTED_PLATFORMS) {
+        onNotice?.({
+          title: 'Maximum platforms reached',
+          message: `You can select up to ${MAX_SELECTED_PLATFORMS} platforms per search.`,
+        });
+        return current;
+      }
+      return [...current, sourceObj.id];
+    });
   };
 
   const [formState, setFormState] = useState(() => {
@@ -149,15 +171,20 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
 
     const { service, businessType, goal, country, city, maxResults } = formState;
     
-    if (selectedSources.length !== 1) {
-      setError('Please select one runnable source to proceed.');
+    if (selectedSources.length < 1) {
+      setError('Please select at least one platform to proceed.');
       setIsSubmitting(false);
       return;
     }
 
-    const selectedSource = sourceOptions.find((source) => source.id === selectedSources[0]);
-    if (!selectedSource?.canRun) {
-      setError(selectedSource?.reason || 'This source is not ready to run yet.');
+    const unreadySource = selectedSources.find(id => {
+      const s = sourceOptions.find(opt => opt.id === id);
+      return !s?.canRun;
+    });
+
+    if (unreadySource) {
+      const selectedSource = sourceOptions.find((source) => source.id === unreadySource);
+      setError(selectedSource?.reason || 'One of the selected platforms is not ready to run yet.');
       setIsSubmitting(false);
       return;
     }
@@ -199,9 +226,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
 
       const campaignId = campaignRes.data.campaign.id;
 
-      setSearchStage(selectedSource?.fallbackAvailable || selectedSource?.key === 'LOCAL_DATASET'
-        ? 'Matching imported business records...'
-        : 'Searching available data sources...');
+      setSearchStage('Searching available platform signals...');
       // 3. Run the campaign
       const runRes = await apiRequest(`/api/search/campaigns/${campaignId}/run`, {
         method: 'POST',
@@ -209,20 +234,15 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
 
       const runData = runRes.data || {};
       setSearchStage('Building lead list...');
-      if (runData.fallbackUsed) {
+      if (runData.message) {
         onNotice?.({
-          title: 'Stored data search completed',
-          message: 'Findly used your available stored business data for this search.',
-        });
-      } else if (runData.sourceUsed === 'LOCAL_DATASET') {
-        onNotice?.({
-          title: 'Local Dataset search completed',
-          message: runData.message || 'Results loaded from your Local Dataset.',
+          title: 'Search completed',
+          message: runData.message,
         });
       }
 
       if ((runData.leadsReturned ?? runData.savedLeadsCount ?? 0) === 0) {
-        setError('No matching leads found in your imported dataset. Try a broader category, remove the city filter, or import more data.');
+        setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
         return;
       }
 
@@ -234,9 +254,8 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       setResultSummary({
         leadListId: runData.leadListId,
         count: runData.leadsReturned ?? runData.savedLeadsCount ?? 0,
-        fallbackUsed: runData.fallbackUsed,
-        sourceRequested: runData.sourceRequested,
-        sourceUsed: runData.sourceUsed,
+        platformsRequested: runData.platformsRequested || selectedSources,
+        sourceMode: runData.sourceMode,
       });
       
     } catch (err) {
@@ -256,7 +275,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
         <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Search campaign</p>
         <h2 className="mt-3 text-4xl font-bold tracking-tighter md:text-5xl">Tell Findly who to search for.</h2>
         <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-secondary">
-          Define the service you sell, the business type you want, and the public sources to search.
+          Define the service you sell, the business type you want, and the platforms to scan.
         </p>
 
         {error && (
@@ -343,7 +362,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
           </label>
 
           <fieldset className="md:col-span-2">
-            <legend className="mb-3 text-sm font-bold">Sources to search</legend>
+            <legend className="mb-3 text-sm font-bold">Platforms to scan</legend>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {sourcesLoading && (
                 <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3 text-sm font-bold text-secondary">
@@ -356,11 +375,9 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
                 const usesDataset = sourceObj.fallbackAvailable && datasetBackedSources.has(sourceObj.key) && !sourceObj.available;
                 const statusLabel = sourceObj.key === 'REDDIT'
                   ? 'Signals'
-                  : (sourceObj.key === 'LOCAL_DATASET'
-                    ? (sourceObj.searchable ? 'Ready' : 'Import')
-                    : (usesDataset
-                      ? 'Uses local data'
-                      : (sourceObj.canRun ? 'Ready' : (sourceObj.key === 'WEBSITE' ? 'Enrich' : (sourceObj.comingSoon ? 'Later' : 'Needs key')))));
+                  : (usesDataset
+                      ? 'Available'
+                      : (sourceObj.canRun ? 'Ready' : (sourceObj.key === 'WEBSITE' ? 'Enrich' : (sourceObj.comingSoon ? 'Later' : 'Connect later'))));
 
                 return (
                   <button
@@ -379,11 +396,8 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
                       {sourceObj.key === 'REDDIT' && (
                         <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-secondary">Opportunity Signals</span>
                       )}
-                      {sourceObj.key === 'LOCAL_DATASET' && (
-                        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-secondary">Excel / CSV import</span>
-                      )}
                       {usesDataset && (
-                        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-secondary">Dataset-backed</span>
+                        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-secondary">Platform signals available</span>
                       )}
                     </span>
                     <span className="shrink-0 text-[10px] uppercase text-secondary">{statusLabel}</span>
@@ -423,9 +437,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
                       {resultSummary.count} matching lead{resultSummary.count === 1 ? '' : 's'} saved to a lead list.
                     </p>
                     <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
-                      {resultSummary.fallbackUsed
-                        ? 'Results were loaded from available stored business data.'
-                        : 'Search results are ready for review.'}
+                      Search completed across selected platforms.
                     </p>
                     <button
                       type="button"
@@ -448,13 +460,13 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Campaign preview</p>
           <h3 className="mt-3 text-3xl font-bold tracking-tighter">Live Opportunity Search.</h3>
           <p className="mt-3 text-sm font-semibold leading-7 text-secondary">
-            Findly uses connected official sources when available. When external providers are not connected, it searches your imported Local Dataset so you can test the product with real stored leads.
+            Findly uses selected platform signals and available business intelligence to find matching opportunities. Connected official sources can be added later without changing your workflow.
           </p>
           <div className="mt-6 grid gap-3">
             {[
               [Sparkles, 'Service fit', 'Searches will be guided by what the user sells.'],
               [MapPin, 'Location intent', 'Country and city will shape source queries.'],
-              [Globe2, 'Source mix', `Using ${selectedSources.length} selected source.`],
+              [Globe2, 'Platform mix', `Using ${selectedSources.length} selected platform${selectedSources.length === 1 ? '' : 's'}.`],
               [Goal, 'Search goal', 'Finding real opportunities with actionable signals.'],
             ].map(([Icon, title, description]) => (
               <div key={title} className="flex gap-3 rounded-2xl bg-[#F7F8F6] p-4">
@@ -474,10 +486,10 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">Credits</p>
           <h3 className="mt-3 text-2xl font-bold tracking-tighter">Usage cost</h3>
           <p className="mt-3 text-sm font-semibold leading-7 text-white/58">
-            Local Dataset searches and fallback searches cost 0 credits during testing. Analysis keeps using the normal Opportunity Credit rules.
+            Searches using available platform intelligence are free during testing. Analysis still uses normal Opportunity Credit rules.
           </p>
           <p className="mt-4 rounded-2xl bg-white/8 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em] text-white/70">
-            Imported dataset leads: {searchOptions.datasetStats?.totalLeads || 0}
+            Available lead intelligence: {searchOptions.datasetStats?.totalLeads || 0}
           </p>
         </DashboardCard>
       </div>

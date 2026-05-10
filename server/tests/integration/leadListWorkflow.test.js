@@ -67,7 +67,7 @@ beforeAll(async () => {
       query: 'cafes',
       country: 'Jordan',
       city: 'Amman',
-      sources: ['LOCAL_DATASET'],
+      sources: ['INSTAGRAM', 'GOOGLE_MAPS'],
       status: 'COMPLETED',
     }
   });
@@ -78,7 +78,7 @@ beforeAll(async () => {
       workspaceId: workspace1Id,
       campaignId: campaign.id,
       name: `Test List ${unique}`,
-      sourceRequested: 'LOCAL_DATASET',
+      sourceRequested: 'INSTAGRAM, GOOGLE_MAPS',
       sourceUsed: 'LOCAL_DATASET',
       resultCount: 2,
     }
@@ -214,5 +214,40 @@ describe('LeadList Workflow Architecture', () => {
 
     const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
     expect(afterCredits).toBe(beforeCredits - 1);
+  });
+
+  it('runs a multi-platform campaign and returns correct available intelligence metadata', async () => {
+    const csrfToken = await getCsrfToken(agent1);
+    
+    // Create Campaign
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Multi-platform Search',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM', 'GOOGLE_MAPS'],
+        requestedLimit: 5,
+      });
+
+    expect(campaignRes.status).toBe(201);
+    const newCampaignId = campaignRes.body.data.campaign.id;
+
+    // Run Campaign
+    const runRes = await agent1.post(`/api/search/campaigns/${newCampaignId}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({});
+
+    expect(runRes.status).toBe(200);
+    const runData = runRes.body.data;
+    
+    expect(runData.sourceMode).toBe('AVAILABLE_INTELLIGENCE');
+    expect(runData.platformsRequested).toContain('INSTAGRAM');
+    expect(runData.platformsRequested).toContain('GOOGLE_MAPS');
+    expect(runData.leadListId).toBeDefined();
+    expect(runData.leadsReturned).toBeGreaterThanOrEqual(1); // Should match our global catalog
   });
 });

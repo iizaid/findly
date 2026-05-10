@@ -42,7 +42,7 @@ const matchesBusinessType = (lead, businessType) => {
 const scoreLead = (lead, input) => {
   const signals = signalSet(lead);
   const goal = goalKey(input.searchGoal || input.filters?.goal);
-  const requestedSource = compact(input.sourceRequested || input.filters?.sourceRequested);
+  const selectedPlatforms = input.platformsRequested || input.filters?.platformsRequested || [];
   let score = 0;
 
   if (input.country && normalizeCountry(lead.country) === normalizeCountry(input.country)) score += 16;
@@ -54,10 +54,26 @@ const scoreLead = (lead, input) => {
   if ((lead.rating || 0) >= 4.2) score += 6;
   if ((lead.reviewCount || 0) >= 50) score += 6;
 
-  if (requestedSource === 'instagram') score += hasInstagram(lead) ? 24 : -12;
-  if (requestedSource === 'facebook') score += hasFacebook(lead) ? 20 : 0;
-  if (requestedSource === 'google_maps') score += lead.googleMapsUrl || lead.source === 'GOOGLE_MAPS_DATASET' ? 12 : 0;
-  if (requestedSource === 'website') score += hasWebsite(lead) ? 14 : 0;
+  const leadMatchesPlatform = (l, platform) => {
+    const sigs = signalSet(l);
+    switch (platform) {
+      case 'INSTAGRAM': return hasInstagram(l);
+      case 'GOOGLE_MAPS': return Boolean(l.googleMapsUrl || sigs.has('HAS_GOOGLE_MAPS') || sigs.has('SOURCE_GOOGLE_MAPS') || l.source === 'GOOGLE_MAPS_DATASET');
+      case 'FACEBOOK': return hasFacebook(l) || sigs.has('HAS_FACEBOOK') || sigs.has('SOURCE_FACEBOOK');
+      case 'WEBSITE': return hasWebsite(l);
+      case 'YOUTUBE': return (l.rawData?.source || '').toLowerCase().includes('youtube');
+      case 'LINKEDIN': return (l.rawData?.source || '').toLowerCase().includes('linkedin');
+      case 'TIKTOK': return (l.rawData?.source || '').toLowerCase().includes('tiktok');
+      case 'X': return (l.rawData?.source || '').toLowerCase().includes('x') || (l.rawData?.source || '').toLowerCase().includes('twitter');
+      default: return false;
+    }
+  };
+
+  const platformMatchCount = selectedPlatforms.filter((platform) => leadMatchesPlatform(lead, platform)).length;
+
+  if (platformMatchCount > 0) score += 18 + platformMatchCount * 8;
+  if (selectedPlatforms.length > 1 && platformMatchCount > 1) score += 10;
+  if (platformMatchCount === 0 && selectedPlatforms.length > 0) score -= 12;
 
   if (goal.includes('without website')) {
     score += (!hasWebsite(lead) || signals.has('NO_WEBSITE')) ? 28 : -30;
@@ -140,7 +156,7 @@ export class LocalDatasetAdapter extends BaseAdapter {
       country: this.campaign.country,
       city: this.campaign.city,
       searchGoal: this.campaign.filters?.goal,
-      sourceRequested: this.campaign.filters?.sourceRequested,
+      platformsRequested: this.campaign.filters?.platformsRequested,
       maxResults: this.campaign.requestedLimit || 20,
       filters: this.campaign.filters || {},
     });
