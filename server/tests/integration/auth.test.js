@@ -246,6 +246,76 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(dashboardResponse.body.data.credits.balance).toBe(50);
   });
 
+  it('verifyEmail with an active session for the same user returns ENTER_DASHBOARD and authenticated=true', async () => {
+    // Register & get a fresh verification token for a new account.
+    const sessionEmail = `test.${unique}.withsession@findly.local`;
+    const { agent: sessionAgent } = await registerAccount({ userEmail: sessionEmail, name: 'Session User' });
+    const token = verificationTokenFor(sessionEmail);
+
+    // Agent already has a session cookie from registration.
+    const verifyResponse = await sessionAgent
+      .post('/api/auth/verify-email')
+      .send({ token })
+      .expect(200);
+
+    expect(verifyResponse.body.data.authenticated).toBe(true);
+    expect(verifyResponse.body.data.nextAction).toBe('ENTER_DASHBOARD');
+    expect(verifyResponse.body.data.user.emailVerified).toBe(true);
+  });
+
+  it('verifyEmail without a session cookie returns LOGIN_REQUIRED and authenticated=false', async () => {
+    const noSessionEmail = `test.${unique}.nosession@findly.local`;
+    await registerAccount({ userEmail: noSessionEmail, name: 'No Session User' });
+    const token = verificationTokenFor(noSessionEmail);
+
+    // Fresh agent with no cookie.
+    const verifyResponse = await request(createApp())
+      .post('/api/auth/verify-email')
+      .send({ token })
+      .expect(200);
+
+    expect(verifyResponse.body.data.authenticated).toBe(false);
+    expect(verifyResponse.body.data.nextAction).toBe('LOGIN_REQUIRED');
+  });
+
+  it('verifyEmail with a session belonging to a different user returns LOGIN_REQUIRED', async () => {
+    // Register user A and get their session.
+    const userAEmail = `test.${unique}.sessiona@findly.local`;
+    const { agent: agentA } = await registerAccount({ userEmail: userAEmail, name: 'User A' });
+
+    // Register user B separately (fresh agent, no session).
+    const userBEmail = `test.${unique}.sessionb@findly.local`;
+    await registerAccount({ userEmail: userBEmail, name: 'User B' });
+    const tokenB = verificationTokenFor(userBEmail);
+
+    // Use agentA's session cookie to verify user B's token.
+    const verifyResponse = await agentA
+      .post('/api/auth/verify-email')
+      .send({ token: tokenB })
+      .expect(200);
+
+    // Session belongs to user A, token belongs to user B — must not grant dashboard.
+    expect(verifyResponse.body.data.authenticated).toBe(false);
+    expect(verifyResponse.body.data.nextAction).toBe('LOGIN_REQUIRED');
+  });
+
+  it('verifyEmail with a garbage session cookie does not crash and returns LOGIN_REQUIRED', async () => {
+    const garbageEmail = `test.${unique}.garbage@findly.local`;
+    await registerAccount({ userEmail: garbageEmail, name: 'Garbage Cookie' });
+    const token = verificationTokenFor(garbageEmail);
+
+    const { env: testEnv } = await import('../../src/config/env.js');
+
+    const verifyResponse = await request(createApp())
+      .post('/api/auth/verify-email')
+      .set('Cookie', `${testEnv.COOKIE_NAME}=totally-invalid-garbage-token`)
+      .send({ token })
+      .expect(200);
+
+    expect(verifyResponse.body.data.authenticated).toBe(false);
+    expect(verifyResponse.body.data.nextAction).toBe('LOGIN_REQUIRED');
+  });
+
   it('rejects invalid and expired verification tokens', async () => {
     await request(createApp())
       .post('/api/auth/verify-email')

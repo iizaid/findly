@@ -77,3 +77,29 @@ export const requireAdmin = async (req, _res, next) => {
     return next(error);
   }
 };
+
+/**
+ * Silently attaches req.user, req.userRecord, and req.session if a valid
+ * session cookie is present. Always calls next() — never blocks the request.
+ * Use on routes that work for both authenticated and unauthenticated users.
+ */
+export const attachOptionalAuth = async (req, _res, next) => {
+  try {
+    const token = req.cookies?.[env.COOKIE_NAME];
+    if (token) {
+      const session = await getActiveSessionByToken(token);
+      if (session) {
+        req.session = {
+          id: session.id,
+          expiresAt: session.expiresAt,
+          createdAt: session.createdAt,
+        };
+        req.user = toSafeUser(session.user);
+        req.userRecord = session.user;
+      }
+    }
+  } catch {
+    // Intentionally swallow errors — optional auth must never block the request.
+  }
+  return next();
+};
