@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
@@ -42,7 +42,7 @@ const mockHttpRequest = (mockType, options = {}) => {
     reqModule.request.mockImplementation((reqOpts, callback) => {
       // Simulate calling the custom lookup immediately
       if (reqOpts.lookup) {
-        reqOpts.lookup(reqOpts.hostname, {}, (err, address, family) => {
+        reqOpts.lookup(reqOpts.hostname, {}, (_err, _address, _family) => {
            // lookup called
         });
       }
@@ -227,10 +227,10 @@ describe('safeFetch SSRF protection', () => {
       dns.promises.lookup.mockResolvedValue([{ address: '8.8.8.8' }]);
       
       // We need to mock sequential http requests
-      http.request.mockImplementationOnce((opts, cb) => {
+      http.request.mockImplementationOnce((_opts, cb) => {
         setTimeout(() => cb({ statusCode: 301, headers: { location: 'http://example.com/safe' }, resume: vi.fn(), on: vi.fn(), destroy: vi.fn() }), 0);
         return { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
-      }).mockImplementationOnce((opts, cb) => {
+      }).mockImplementationOnce((_opts, cb) => {
         setTimeout(() => {
           const res = {
             statusCode: 200, headers: { 'content-type': 'text/html' },
@@ -250,7 +250,7 @@ describe('safeFetch SSRF protection', () => {
     it('rejects too many redirects', async () => {
       mockDnsResponse('8.8.8.8');
       
-      http.request.mockImplementation((opts, cb) => {
+      http.request.mockImplementation((_opts, cb) => {
         setTimeout(() => cb({ statusCode: 301, headers: { location: 'http://example.com/loop' }, resume: vi.fn(), on: vi.fn(), destroy: vi.fn() }), 0);
         return { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
       });
