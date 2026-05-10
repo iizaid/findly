@@ -49,9 +49,15 @@ const platformLabel = {
   X: 'X',
 };
 
+const listPlatformLabel = (list) => list?.filters?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
+  || list?.sourceRequested
+  || 'Available Signals';
+
 const DashboardLeadListsPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
+  const [savedLists, setSavedLists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingLists, setIsLoadingLists] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSource, setFilterSource] = useState('');
@@ -71,11 +77,46 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
 
   useEffect(() => {
+    let mounted = true;
+
+    const fetchSavedLists = async () => {
+      try {
+        setIsLoadingLists(true);
+        const res = await apiRequest('/api/search/lists?limit=50');
+        if (!mounted) return;
+        const lists = res.data.lists || [];
+        setSavedLists(lists);
+
+        if (!selectedListId && lists[0]?.id) {
+          onNavigate?.(`/dashboard/lead-lists?listId=${lists[0].id}`);
+        }
+      } catch (err) {
+        if (mounted) setError(err.message || 'Failed to load saved searches');
+      } finally {
+        if (mounted) setIsLoadingLists(false);
+      }
+    };
+
+    fetchSavedLists();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedListId, onNavigate]);
+
+  useEffect(() => {
     const fetchLeads = async () => {
+      if (!selectedListId) {
+        setLeads([]);
+        setActiveList(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         setIsLoading(true);
         const params = new URLSearchParams();
-        if (selectedListId) params.set('listId', selectedListId);
+        params.set('listId', selectedListId);
         if (filterSource) params.set('source', filterSource);
         if (filterCity) params.set('city', filterCity);
         if (filterScore) params.set('scoreLevel', filterScore);
@@ -83,8 +124,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
         if (filterMissingWeb) params.set('missingWebsite', 'true');
         if (sortBy) params.set('sortBy', sortBy);
         if (sortOrder) params.set('sortOrder', sortOrder);
-        const qs = params.toString();
-        const res = await apiRequest(`/api/search/leads${qs ? `?${qs}` : ''}`);
+        const res = await apiRequest(`/api/search/leads?${params.toString()}`);
         setLeads(res.data.leads || []);
       } catch (err) {
         setError(err.message || 'Failed to load leads');
@@ -97,6 +137,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
 
   useEffect(() => {
     if (!selectedListId) {
+      setActiveList(null);
       return;
     }
 
@@ -199,7 +240,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
     try {
       const res = await apiRequest(`/api/search/lists/${selectedListId}/analyze`, { method: 'POST' });
       if (res?.data?.analyzedCount > 0) {
-        // Refresh leads to show new analyses
         const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
         setLeads(refRes.data.leads || []);
       }
@@ -217,13 +257,27 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-black">
             <Table2 size={26} />
           </div>
-          <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Spreadsheet-style lead list</p>
+          <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Saved search results</p>
           <h2 className="mt-3 text-4xl font-bold tracking-tighter md:text-5xl">Lead Lists</h2>
           <p className="mt-4 max-w-3xl text-sm font-semibold leading-7 text-secondary">
-            Search results stored as structured lead rows. Filter, sort, and manage your pipeline.
+            Every search is saved as a structured result set. It stays here until you decide to remove it.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {savedLists.length > 0 && (
+            <select
+              value={selectedListId || ''}
+              onChange={(e) => onNavigate?.(`/dashboard/lead-lists?listId=${e.target.value}`)}
+              className="h-11 min-w-[240px] rounded-full border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none"
+              aria-label="Saved searches"
+            >
+              {savedLists.map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name} · {list.leadCount || 0} leads
+                </option>
+              ))}
+            </select>
+          )}
           {selectedListId && (
             <button
               type="button"
@@ -253,6 +307,13 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
         </div>
       )}
 
+      {isLoadingLists && !selectedListId && (
+        <div className="mt-6 flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-4 text-sm font-bold text-secondary">
+          <Loader2 size={18} className="animate-spin" />
+          Loading saved searches...
+        </div>
+      )}
+
       {selectedListId && activeList && (
         <div className="mt-6 rounded-[20px] border border-accent/40 bg-accent/10 p-4">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Active result set</p>
@@ -260,7 +321,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
             <div>
               <h3 className="text-xl font-bold tracking-tight">{activeList.name}</h3>
               <p className="mt-1 text-sm font-semibold text-secondary">
-                Platforms: {activeList.filters?.platformsRequested?.map(p => platformLabel[p] || p).join(', ') || activeList.sourceRequested || 'Available Signals'}
+                Platforms: {listPlatformLabel(activeList)}
               </p>
             </div>
             <span className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black">
@@ -270,7 +331,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* Filters bar */}
       <div className="mt-6 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary/50" />
@@ -307,7 +367,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
         </label>
       </div>
 
-      {/* Table */}
       <div className="mt-5 overflow-hidden rounded-[20px] border border-black/[0.08] bg-white">
         <div className="overflow-x-auto">
           <div className="min-w-[1200px]">
@@ -402,11 +461,9 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                         </div>
                       </div>
 
-                      {/* Expanded View */}
                       {isExpanded && (
                         <div className="bg-accent/5 px-5 pb-5 pt-2">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Left Column: Analysis */}
                             <div className="rounded-xl border border-black/[0.08] bg-white p-4">
                               <div className="flex items-center justify-between mb-4">
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-secondary">AI Analysis</h4>
@@ -446,9 +503,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                               )}
                             </div>
 
-                            {/* Right Column: Notes & Raw Data */}
                             <div className="space-y-4">
-                              {/* Notes */}
                               {isListItem && (
                                 <div className="rounded-xl border border-black/[0.08] bg-white p-4">
                                   <div className="flex items-center justify-between mb-2">
@@ -488,7 +543,6 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                                 </div>
                               )}
 
-                              {/* Details */}
                               <div className="rounded-xl border border-black/[0.08] bg-white p-4">
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-secondary mb-3">Lead Details</h4>
                                 <div className="grid grid-cols-2 gap-y-2 text-xs">
@@ -515,16 +569,15 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
         {!isLoading && filtered.length === 0 && (
           <div className="border-t border-black/[0.06] p-5">
             <DashboardEmptyState
-              title="No leads found"
-              description={leads.length > 0 ? 'Try adjusting your filters or search query.' : 'Create your first search campaign to start collecting opportunities.'}
-              actionLabel={leads.length > 0 ? 'Clear filters' : 'Create Search Campaign'}
-              onAction={() => leads.length > 0 ? (setSearchQuery(''), setFilterSource(''), setFilterCity(''), setFilterScore(''), setFilterStatus(''), setFilterMissingWeb(false)) : onNavigate('/dashboard/find-leads')}
+              title={savedLists.length > 0 ? 'No leads in this saved search' : 'No saved searches yet'}
+              description={savedLists.length > 0 ? 'Try adjusting your filters or choose another saved search result set.' : 'Create your first search campaign. Every completed search will be saved here.'}
+              actionLabel={savedLists.length > 0 ? 'Clear filters' : 'Create Search Campaign'}
+              onAction={() => savedLists.length > 0 ? (setSearchQuery(''), setFilterSource(''), setFilterCity(''), setFilterScore(''), setFilterStatus(''), setFilterMissingWeb(false)) : onNavigate('/dashboard/find-leads')}
             />
           </div>
         )}
       </div>
 
-      {/* Lead count */}
       {!isLoading && filtered.length > 0 && (
         <p className="mt-3 text-xs font-semibold text-secondary">
           Showing {filtered.length} lead{filtered.length !== 1 ? 's' : ''}{leads.length !== filtered.length ? ` (${leads.length} total)` : ''}
