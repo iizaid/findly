@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Globe2, Goal, MapPin, Search, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Globe2, Goal, MapPin, Search, Sparkles, AlertCircle } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
+import SearchRunningOverlay from '../SearchRunningOverlay';
 import { apiRequest, ApiError } from '../../../lib/api';
 
 const preferredSourceOrder = [
@@ -53,6 +54,8 @@ const SEARCH_STEPS = [
   'Ranking opportunity fit',
   'Building your lead list',
 ];
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
   const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
@@ -210,7 +213,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
     }
 
     try {
-      // 1. Create a service profile
+      await delay(250);
       const profileRes = await apiRequest('/api/search/profiles', {
         method: 'POST',
         body: JSON.stringify({
@@ -226,7 +229,8 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       const profileId = profileRes.data.profile.id;
 
       setSearchStep(1);
-      // 2. Create the campaign
+      await delay(300);
+
       const campaignName = `${businessType} in ${city}`;
       const campaignRes = await apiRequest('/api/search/campaigns', {
         method: 'POST',
@@ -246,13 +250,15 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       const campaignId = campaignRes.data.campaign.id;
 
       setSearchStep(2);
-      // 3. Run the campaign
+      await delay(300);
+
       const runRes = await apiRequest(`/api/search/campaigns/${campaignId}/run`, {
         method: 'POST',
       });
 
       const runData = runRes.data || {};
       setSearchStep(3);
+      await delay(300);
 
       if ((runData.leadsReturned ?? runData.savedLeadsCount ?? 0) === 0) {
         setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
@@ -260,8 +266,8 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       }
 
       setSearchStep(4);
+      await delay(250);
       
-      // Clear the session storage since the campaign was created successfully
       sessionStorage.removeItem('findly_find_leads_state');
       setFormState({ service: '', businessType: '', goal: searchOptions.searchGoals[0] || defaultGoals[0], country: '', city: '', maxResults: 20 });
 
@@ -281,7 +287,15 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
   };
 
   return (
-    <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
+    <>
+      <SearchRunningOverlay
+        isVisible={isSubmitting && searchStep !== null}
+        currentStep={searchStep || 0}
+        steps={SEARCH_STEPS}
+        selectedPlatforms={selectedSources}
+        criteria={formState}
+      />
+      <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)]">
       <DashboardCard className="p-5 md:p-7">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-black">
           <Search size={26} />
@@ -433,31 +447,6 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
               </button>
             )}
             
-            {isSubmitting && searchStep !== null && (
-              <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-5 max-w-lg">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary mb-5">Search in progress</p>
-                <div className="flex flex-col gap-4">
-                  {SEARCH_STEPS.map((stepLabel, index) => {
-                    const isCompleted = searchStep > index;
-                    const isActive = searchStep === index;
-                    const isUpcoming = searchStep < index;
-                    return (
-                      <div key={stepLabel} className={`flex items-center gap-3 text-sm font-bold transition-all ${isUpcoming ? 'text-secondary/40' : (isActive ? 'text-black' : 'text-secondary')}`}>
-                        {isCompleted ? (
-                          <CheckCircle2 size={18} className="text-black" />
-                        ) : isActive ? (
-                          <Loader2 size={18} className="animate-spin text-accent-dark" />
-                        ) : (
-                          <div className="h-[18px] w-[18px] rounded-full border-2 border-secondary/20" />
-                        )}
-                        {stepLabel}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            
             {resultSummary && (
               <div className="rounded-2xl border border-accent/40 bg-accent/10 p-5">
                 <div className="flex flex-col gap-4">
@@ -468,7 +457,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
                         {resultSummary.count} matching lead{resultSummary.count === 1 ? '' : 's'} found
                       </h3>
                       <p className="mt-1.5 text-sm font-semibold leading-relaxed text-secondary">
-                        Search completed across {resultSummary.platformsRequested?.map(p => platformLabel[p] || p).join(', ') || 'selected platforms'}.
+                        Search completed across {resultSummary.platformsRequested?.map(p => platformLabel[p] || p).join(', ') || 'selected platforms'}. Your result set is saved in Lead Lists.
                       </p>
                     </div>
                   </div>
@@ -527,7 +516,8 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
           </p>
         </DashboardCard>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 
