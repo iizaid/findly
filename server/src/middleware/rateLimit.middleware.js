@@ -3,7 +3,20 @@ import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { errorCodes } from '../utils/AppError.js';
 
+const auditCache = new Map();
+const AUDIT_THROTTLE_MS = 60000; // 1 minute
+
 const auditRateLimit = (req, limitName) => {
+  const cacheKey = `${req.ip}:${req.originalUrl}:${limitName}`;
+  const now = Date.now();
+  const lastLogged = auditCache.get(cacheKey) || 0;
+
+  if (now - lastLogged < AUDIT_THROTTLE_MS) return;
+  auditCache.set(cacheKey, now);
+
+  // Clean up cache periodically (very rough garbage collection)
+  if (auditCache.size > 10000) auditCache.clear();
+
   prisma.auditLog.create({
     data: {
       action: 'RATE_LIMIT_TRIGGERED',

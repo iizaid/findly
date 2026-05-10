@@ -130,6 +130,22 @@ export const registerUser = async ({ name, email, password }, req) => {
   } catch (err) {
     // Log safely, don't fail registration
     console.error('Failed to send verification email during signup:', err.message);
+    
+    // Use an isolated transaction/query so it doesn't rollback user creation if the parent is done
+    await prisma.auditLog.create({
+      data: {
+        userId: result.user.id,
+        action: 'EMAIL_VERIFICATION_SEND_FAILED',
+        entityType: 'User',
+        entityId: result.user.id,
+        metadata: {
+          error: 'SMTP error occurred. Account created successfully but email not sent.',
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    }).catch(() => {});
+    
     emailSent = false;
   }
 

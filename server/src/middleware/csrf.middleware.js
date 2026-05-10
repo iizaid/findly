@@ -10,13 +10,27 @@ const EXEMPT_PATHS = new Set([
   '/api/csrf-token',
 ]);
 
-export const csrfCookieOptions = {
-  httpOnly: false,
-  sameSite: 'lax',
-  secure: env.IS_PRODUCTION,
-  path: '/',
-  maxAge: env.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
+const getCsrfCookieOptions = () => {
+  const options = {
+    httpOnly: false, // Needs to be false so frontend can read it
+    sameSite: env.CSRF_COOKIE_SAME_SITE,
+    secure: env.CSRF_COOKIE_SECURE !== undefined ? env.CSRF_COOKIE_SECURE : env.IS_PRODUCTION,
+    path: '/',
+    maxAge: env.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
+  };
+
+  if (env.CSRF_COOKIE_DOMAIN) {
+    options.domain = env.CSRF_COOKIE_DOMAIN;
+  }
+
+  if (options.sameSite === 'none' && !options.secure) {
+    options.secure = true;
+  }
+
+  return options;
 };
+
+export const csrfCookieOptions = getCsrfCookieOptions();
 
 export const csrfProtection = (req, _res, next) => {
   if (SAFE_METHODS.has(req.method)) return next();

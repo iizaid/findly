@@ -633,8 +633,8 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
                     <button
                       type="button"
                       onClick={() => onNotice?.({
-                        title: 'Password reset coming soon',
-                        message: 'Password reset will be available after backend integration.',
+                        title: 'Coming Soon',
+                        message: 'Password reset functionality is under development and will be available in a future update.',
                       })}
                       className="text-left text-sm font-bold text-black hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:text-right"
                     >

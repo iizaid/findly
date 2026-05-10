@@ -199,6 +199,30 @@ describe('Findly auth, verification, and foundation API', () => {
     });
   });
 
+  it('creates a long TTL session when remember=true and short TTL when remember=false', async () => {
+    // 1. Login with remember=true (default)
+    const agentLong = request.agent(createApp());
+    await agentLong.post('/api/auth/login').send({ email, password, remember: true }).expect(200);
+
+    // 2. Login with remember=false
+    const agentShort = request.agent(createApp());
+    await agentShort.post('/api/auth/login').send({ email, password, remember: false }).expect(200);
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { sessions: { orderBy: { createdAt: 'desc' } } },
+    });
+
+    const shortSession = user.sessions[0];
+    const longSession = user.sessions[1];
+
+    const shortTTLHours = (shortSession.expiresAt - shortSession.createdAt) / (1000 * 60 * 60);
+    const longTTLDays = (longSession.expiresAt - longSession.createdAt) / (1000 * 60 * 60 * 24);
+
+    expect(Math.round(shortTTLHours)).toBe(Number(process.env.SESSION_SHORT_TTL_HOURS || 2));
+    expect(Math.round(longTTLDays)).toBe(Number(process.env.SESSION_TTL_DAYS || 30));
+  });
+
   it('verifies email, grants initial credits once, but does not create a login session from the email link', async () => {
     const token = primaryVerificationToken;
 
@@ -792,7 +816,7 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(JSON.stringify(summaryResponse.body.data)).not.toContain('passwordHash');
     expect(JSON.stringify(summaryResponse.body.data)).not.toContain(process.env.SESSION_SECRET);
 
-    const usersResponse = await adminAgent.get('/api/admin/users?limit=10').expect(200);
+    const usersResponse = await adminAgent.get('/api/admin/users?limit=50').expect(200);
     expect(usersResponse.body.data.users.some((item) => item.email === email)).toBe(true);
     expect(JSON.stringify(usersResponse.body.data.users)).not.toContain('passwordHash');
     expect(JSON.stringify(usersResponse.body.data.users)).not.toContain('tokenHash');

@@ -367,3 +367,29 @@ Before production:
 - Add password reset flow.
 - Send structured logs to a production log platform.
 - Add background workers/queues before running long search jobs at scale.
+
+### Auth Production Setup
+
+For proper cross-site deployment (e.g. Vercel frontend, Render backend), configure the following in production:
+
+```bash
+COOKIE_SAME_SITE="none"
+COOKIE_SECURE="true"
+CSRF_COOKIE_SAME_SITE="none"
+CSRF_COOKIE_SECURE="true"
+CLIENT_ORIGIN="https://your-frontend-domain.com"
+```
+
+For same-domain or subdomain deployment (e.g., frontend on `app.findly.com`, backend on `api.findly.com`), use stricter settings:
+
+```bash
+COOKIE_SAME_SITE="lax"
+COOKIE_SECURE="true"
+COOKIE_DOMAIN=".findly.com"
+CSRF_COOKIE_SAME_SITE="lax"
+CSRF_COOKIE_SECURE="true"
+CSRF_COOKIE_DOMAIN=".findly.com"
+CLIENT_ORIGIN="https://app.findly.com"
+```
+
+*Note: Redis or Upstash is recommended for rate-limiting in production multi-instance deployments. Password reset remains pending and is not currently implemented. SMTP must use app passwords or provider-specific secure credentials. Never commit `.env`.*
