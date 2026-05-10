@@ -11,10 +11,9 @@ const normalizeSearchText = (value) => compact(value)
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/[\u064B-\u065F\u0670]/g, '')
   .replace(/[’']/g, '')
-  .replace(/[_\-]+/g, ' ')
+  .replace(/[_-]+/g, ' ')
   .replace(/\s+/g, ' ')
   .trim();
-const includes = (value, query) => normalizeSearchText(value).includes(normalizeSearchText(query));
 const signalSet = (lead) => new Set(Array.isArray(lead.detectedSignals) ? lead.detectedSignals : []);
 
 const businessTypeTaxonomy = {
