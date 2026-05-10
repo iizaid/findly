@@ -26,6 +26,29 @@ const scoreBadge = (analysis) => {
   return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${color}`}>{opportunityScore}</span>;
 };
 
+const formatSignalSource = (source) => {
+  const map = {
+    LOCAL_DATASET: 'Platform Signals',
+    DATASET_IMPORT: 'Platform Signals',
+    INSTAGRAM_DATASET: 'Instagram Signals',
+    GOOGLE_MAPS_DATASET: 'Google Maps Signals',
+  };
+  return map[source] || source?.replace(/_/g, ' ') || 'Available Signals';
+};
+
+const platformLabel = {
+  INSTAGRAM: 'Instagram',
+  GOOGLE_MAPS: 'Google Maps',
+  FACEBOOK: 'Facebook',
+  WEBSITE: 'Website',
+  TIKTOK: 'TikTok',
+  LINKEDIN: 'LinkedIn',
+  YOUTUBE: 'YouTube',
+  TRIPADVISOR: 'TripAdvisor',
+  YELP: 'Yelp',
+  X: 'X',
+};
+
 const DashboardLeadListsPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -237,7 +260,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
             <div>
               <h3 className="text-xl font-bold tracking-tight">{activeList.name}</h3>
               <p className="mt-1 text-sm font-semibold text-secondary">
-                Platforms: {activeList.filters?.platformsRequested?.join(', ') || activeList.sourceRequested || 'Available Signals'}
+                Platforms: {activeList.filters?.platformsRequested?.map(p => platformLabel[p] || p).join(', ') || activeList.sourceRequested || 'Available Signals'}
               </p>
             </div>
             <span className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black">
@@ -260,8 +283,8 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
           />
         </div>
         <select value={filterSource} onChange={(e) => setFilterSource(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
-          <option value="">All Sources</option>
-          {sources.map((s) => <option key={s} value={s}>{s?.replace('_', ' ')}</option>)}
+          <option value="">All Platforms</option>
+          {sources.map((s) => <option key={s} value={s}>{formatSignalSource(s)}</option>)}
         </select>
         <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
           <option value="">All Cities</option>
@@ -292,7 +315,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
               <span>Business</span>
               <span>Category</span>
               <span>City</span>
-              <span>Source</span>
+              <span>Platform</span>
               <span>Website</span>
               <span>Instagram</span>
               <span>Contact</span>
@@ -324,7 +347,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                         </div>
                         <div className="truncate text-xs text-secondary">{lead.category || '-'}</div>
                         <div className="truncate text-xs">{lead.city || '-'}</div>
-                        <div className="truncate text-[10px] font-bold text-secondary">{(lead.source || '-').replace(/_/g, ' ')}</div>
+                        <div className="truncate text-[10px] font-bold text-secondary" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
                         <div className="text-xs">
                           {lead.websiteUrl ? (
                             <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
@@ -473,8 +496,8 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                                   <div className="truncate" title={lead.email}>{lead.email || '-'}</div>
                                   <div className="text-secondary">Address</div>
                                   <div className="truncate" title={lead.address}>{lead.address || '-'}</div>
-                                  <div className="text-secondary">Database</div>
-                                  <div>{isListItem ? 'Catalog Snapshot' : (lead.catalogOnly ? 'Global Catalog' : 'User Workspace')}</div>
+                                  <div className="text-secondary">Record Type</div>
+                                  <div>{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
                                 </div>
                               </div>
                             </div>

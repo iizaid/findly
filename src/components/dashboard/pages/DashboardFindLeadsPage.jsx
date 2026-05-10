@@ -33,6 +33,27 @@ const friendlyErrorMessage = (error) => {
   return 'Search could not be completed.';
 };
 
+const platformLabel = {
+  INSTAGRAM: 'Instagram',
+  GOOGLE_MAPS: 'Google Maps',
+  FACEBOOK: 'Facebook',
+  WEBSITE: 'Website',
+  TIKTOK: 'TikTok',
+  LINKEDIN: 'LinkedIn',
+  YOUTUBE: 'YouTube',
+  TRIPADVISOR: 'TripAdvisor',
+  YELP: 'Yelp',
+  X: 'X',
+};
+
+const SEARCH_STEPS = [
+  'Preparing campaign',
+  'Reading selected platform signals',
+  'Matching businesses by location and category',
+  'Ranking opportunity fit',
+  'Building your lead list',
+];
+
 const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
   const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
   const [sourceOptions, setSourceOptions] = useState([]);
@@ -49,7 +70,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [searchStage, setSearchStage] = useState(null);
+  const [searchStep, setSearchStep] = useState(null);
   const [resultSummary, setResultSummary] = useState(null);
 
   useEffect(() => {
@@ -123,24 +144,21 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
 
   const toggleSource = (sourceObj) => {
     if (!sourceObj.canRun) {
-      onNotice?.({
-        title: sourceObj.key === 'REDDIT' ? 'Signals not connected yet' : 'Platform not connected yet',
-        message: sourceObj.key === 'REDDIT'
+      setError(
+        sourceObj.key === 'REDDIT'
           ? 'Reddit will search public demand signals after compliant API access is connected.'
-          : 'This platform is not connected yet. You can still search available platform intelligence for others.',
-      });
+          : 'This platform is not connected yet. Select an available platform signal to continue.'
+      );
       return;
     }
     
+    setError(null);
     setSelectedSources((current) => {
       if (current.includes(sourceObj.id)) {
         return current.length === 1 ? current : current.filter((id) => id !== sourceObj.id);
       }
       if (current.length >= MAX_SELECTED_PLATFORMS) {
-        onNotice?.({
-          title: 'Maximum platforms reached',
-          message: `You can select up to ${MAX_SELECTED_PLATFORMS} platforms per search.`,
-        });
+        setError(`You can select up to ${MAX_SELECTED_PLATFORMS} platforms per search.`);
         return current;
       }
       return [...current, sourceObj.id];
@@ -167,7 +185,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
     setError(null);
     setResultSummary(null);
     setIsSubmitting(true);
-    setSearchStage('Preparing search...');
+    setSearchStep(0);
 
     const { service, businessType, goal, country, city, maxResults } = formState;
     
@@ -206,7 +224,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       
       const profileId = profileRes.data.profile.id;
 
-      setSearchStage('Building search campaign...');
+      setSearchStep(1);
       // 2. Create the campaign
       const campaignName = `${businessType} in ${city}`;
       const campaignRes = await apiRequest('/api/search/campaigns', {
@@ -226,31 +244,26 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
 
       const campaignId = campaignRes.data.campaign.id;
 
-      setSearchStage('Searching available platform signals...');
+      setSearchStep(2);
       // 3. Run the campaign
       const runRes = await apiRequest(`/api/search/campaigns/${campaignId}/run`, {
         method: 'POST',
       });
 
       const runData = runRes.data || {};
-      setSearchStage('Building lead list...');
-      if (runData.message) {
-        onNotice?.({
-          title: 'Search completed',
-          message: runData.message,
-        });
-      }
+      setSearchStep(3);
 
       if ((runData.leadsReturned ?? runData.savedLeadsCount ?? 0) === 0) {
         setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
         return;
       }
 
+      setSearchStep(4);
+      
       // Clear the session storage since the campaign was created successfully
       sessionStorage.removeItem('findly_find_leads_state');
       setFormState({ service: '', businessType: '', goal: searchOptions.searchGoals[0] || defaultGoals[0], country: '', city: '', maxResults: 20 });
 
-      setSearchStage('Ready.');
       setResultSummary({
         leadListId: runData.leadListId,
         count: runData.leadsReturned ?? runData.savedLeadsCount ?? 0,
@@ -262,7 +275,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       setError(friendlyErrorMessage(err));
     } finally {
       setIsSubmitting(false);
-      setSearchStage(null);
+      setSearchStep(null);
     }
   };
 
@@ -407,45 +420,65 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
             </div>
           </fieldset>
 
-          <div className="md:col-span-2">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-auto disabled:opacity-70 disabled:hover:bg-black disabled:hover:text-white"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Running Search...
-                </>
-              ) : (
-                <>
-                  Start Search
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
-            {searchStage && (
-              <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-secondary">{searchStage}</p>
+          <div className="md:col-span-2 mt-2">
+            {!isSubmitting && !resultSummary && (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-auto disabled:opacity-70 disabled:hover:bg-black disabled:hover:text-white"
+              >
+                Start Search
+                <ArrowRight size={16} />
+              </button>
             )}
+            
+            {isSubmitting && searchStep !== null && (
+              <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-5 max-w-lg">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary mb-5">Search in progress</p>
+                <div className="flex flex-col gap-4">
+                  {SEARCH_STEPS.map((stepLabel, index) => {
+                    const isCompleted = searchStep > index;
+                    const isActive = searchStep === index;
+                    const isUpcoming = searchStep < index;
+                    return (
+                      <div key={stepLabel} className={`flex items-center gap-3 text-sm font-bold transition-all ${isUpcoming ? 'text-secondary/40' : (isActive ? 'text-black' : 'text-secondary')}`}>
+                        {isCompleted ? (
+                          <CheckCircle2 size={18} className="text-black" />
+                        ) : isActive ? (
+                          <Loader2 size={18} className="animate-spin text-accent-dark" />
+                        ) : (
+                          <div className="h-[18px] w-[18px] rounded-full border-2 border-secondary/20" />
+                        )}
+                        {stepLabel}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
             {resultSummary && (
-              <div className="mt-5 rounded-2xl border border-accent/40 bg-accent/10 p-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-black" />
-                  <div>
-                    <p className="text-sm font-bold">
-                      {resultSummary.count} matching lead{resultSummary.count === 1 ? '' : 's'} saved to a lead list.
-                    </p>
-                    <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
-                      Search completed across selected platforms.
-                    </p>
+              <div className="rounded-2xl border border-accent/40 bg-accent/10 p-5">
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={24} className="mt-0.5 shrink-0 text-black" />
+                    <div>
+                      <h3 className="text-xl font-bold tracking-tight">
+                        {resultSummary.count} matching lead{resultSummary.count === 1 ? '' : 's'} found
+                      </h3>
+                      <p className="mt-1.5 text-sm font-semibold leading-relaxed text-secondary">
+                        Search completed across {resultSummary.platformsRequested?.map(p => platformLabel[p] || p).join(', ') || 'selected platforms'}.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex pl-9">
                     <button
                       type="button"
                       onClick={() => onNavigate?.(`/dashboard/lead-lists${resultSummary.leadListId ? `?listId=${resultSummary.leadListId}` : ''}`)}
-                      className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-full bg-black px-4 text-xs font-bold text-white transition-colors hover:bg-accent hover:text-black"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black"
                     >
                       View Lead List
-                      <ArrowRight size={14} />
+                      <ArrowRight size={16} />
                     </button>
                   </div>
                 </div>

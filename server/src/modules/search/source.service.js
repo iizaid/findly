@@ -35,7 +35,7 @@ export const getSourceStatusesWithRuntime = async () => {
         searchable: fallbackAvailable,
         importedLeadCount: localLeadCount,
         reason: fallbackAvailable
-          ? 'Search imported Excel/CSV business datasets.'
+          ? "Platform signals are available from Findly's current business intelligence index."
           : source.reason,
       };
     }
@@ -45,7 +45,7 @@ export const getSourceStatusesWithRuntime = async () => {
         ...source,
         fallbackAvailable,
         reason: fallbackAvailable
-          ? 'Stored Local Dataset results can be used while this source is not connected.'
+          ? 'Available business intelligence can be used for this platform.'
           : source.reason,
       };
     }
