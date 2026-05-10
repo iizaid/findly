@@ -144,7 +144,7 @@ const safeHttpGetText = (parsedUrl, safeIp, options) => {
         Accept: 'text/html,application/xhtml+xml',
         ...(options.headers || {}),
       },
-      lookup: (hostname, dnsOptions, callback) => {
+      lookup: (_hostname, _dnsOptions, callback) => {
         // Pin the connection to the pre-validated safe IP
         // The callback signature expects (err, address, family)
         const family = ipaddr.parse(safeIp).kind() === 'ipv6' ? 6 : 4;
@@ -195,7 +195,7 @@ const safeHttpGetText = (parsedUrl, safeIp, options) => {
         });
       });
       
-      res.on('error', (err) => {
+      res.on('error', (_err) => {
          // If error is just stream destroyed due to truncation, ignore
          if (truncated) {
              const text = new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
@@ -210,7 +210,7 @@ const safeHttpGetText = (parsedUrl, safeIp, options) => {
       reject(new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch timed out.', 504));
     });
 
-    req.on('error', (err) => {
+    req.on('error', (_err) => {
       reject(new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch failed safely.', 502));
     });
 
