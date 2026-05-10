@@ -192,6 +192,7 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
     if (selectedSources.length < 1) {
       setError('Please select at least one platform to proceed.');
       setIsSubmitting(false);
+      setSearchStep(null);
       return;
     }
 
@@ -204,11 +205,11 @@ const DashboardFindLeadsPage = ({ onNotice, workspace, onNavigate }) => {
       const selectedSource = sourceOptions.find((source) => source.id === unreadySource);
       setError(selectedSource?.reason || 'One of the selected platforms is not ready to run yet.');
       setIsSubmitting(false);
+      setSearchStep(null);
       return;
     }
 
     try {
-      setSearchStage('Scanning available sources...');
       // 1. Create a service profile
       const profileRes = await apiRequest('/api/search/profiles', {
         method: 'POST',
