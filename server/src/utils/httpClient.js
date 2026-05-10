@@ -42,6 +42,11 @@ export const fetchJsonWithTimeout = async (url, options = {}) => {
   }
 };
 
+/**
+ * WARNING: Do not use this function for fetching user-controlled URLs.
+ * It uses automatic redirects and does not have SSRF protection.
+ * Use `safeFetchTextWithLimit` from `safeFetch.js` for public website enrichment.
+ */
 export const fetchTextWithLimit = async (url, options = {}) => {
   const timeoutMs = options.timeoutMs ?? 5000;
   const maxBytes = options.maxBytes ?? 512_000;

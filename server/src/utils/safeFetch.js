@@ -1,75 +1,72 @@
 import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
+import ipaddr from 'ipaddr.js';
 import { AppError, errorCodes } from './AppError.js';
 
-// Convert IPv4 string to 32-bit integer for range checking
-const ip4ToInt = (ip) => {
-  return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-};
+const BLOCKED_IPV4_RANGES = [
+  '0.0.0.0/8',
+  '10.0.0.0/8',
+  '100.64.0.0/10',
+  '127.0.0.0/8',
+  '169.254.0.0/16',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '192.0.0.0/24',
+  '192.0.2.0/24',
+  '198.18.0.0/15',
+  '198.51.100.0/24',
+  '203.0.113.0/24',
+  '224.0.0.0/4',
+  '240.0.0.0/4',
+  '255.255.255.255/32',
+].map((r) => ipaddr.parseCIDR(r));
 
-// Private/Internal IPv4 Ranges in CIDR notation
-const PRIVATE_IPV4_RANGES = [
-  ['127.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['172.16.0.0', 12],
-  ['192.168.0.0', 16],
-  ['169.254.0.0', 16],
-  ['0.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4],
-  ['240.0.0.0', 4],
-  ['255.255.255.255', 32],
-].map(([ip, prefixLength]) => {
-  const mask = ~((1 << (32 - prefixLength)) - 1) >>> 0;
-  return { network: ip4ToInt(ip) & mask, mask };
-});
+const BLOCKED_IPV6_RANGES = [
+  '::/128',
+  '::1/128',
+  'fc00::/7',
+  'fe80::/10',
+  'ff00::/8',
+  '100::/64',
+  '2001:db8::/32',
+].map((r) => ipaddr.parseCIDR(r));
 
-const isPrivateIpV4 = (ip) => {
-  const ipInt = ip4ToInt(ip);
-  return PRIVATE_IPV4_RANGES.some(({ network, mask }) => (ipInt & mask) === network);
-};
+// Any IPv4 mapped to IPv6 like ::ffff:127.0.0.1 (::ffff:0:0/96)
+// Will be converted to IPv4 by ipaddr.js if possible and then checked against IPv4 ranges.
 
-// Simplified IPv6 Private/Internal checks
-const isPrivateIpV6 = (ip) => {
-  const lowerIp = ip.toLowerCase();
-  
-  if (lowerIp === '::1' || lowerIp === '::') return true;
-  
-  // Link-local (fe80::/10)
-  if (lowerIp.startsWith('fe8') || lowerIp.startsWith('fe9') || lowerIp.startsWith('fea') || lowerIp.startsWith('feb')) return true;
-  
-  // Unique local (fc00::/7) -> fc or fd
-  if (lowerIp.startsWith('fc') || lowerIp.startsWith('fd')) return true;
-  
-  // Multicast (ff00::/8)
-  if (lowerIp.startsWith('ff')) return true;
-  
-  // IPv4-mapped IPv6
-  if (lowerIp.startsWith('::ffff:')) {
-    const ipv4Part = lowerIp.substring(7);
-    if (ipv4Part.includes('.')) {
-      return isPrivateIpV4(ipv4Part);
-    }
-    return true;
+export const isSafeIp = (ipString) => {
+  let addr;
+  try {
+    addr = ipaddr.parse(ipString);
+  } catch {
+    return false;
   }
-  
-  return false;
-};
 
-export const isSafeIp = (ip, family) => {
-  if (family === 4) return !isPrivateIpV4(ip);
-  if (family === 6) return !isPrivateIpV6(ip);
-  return false;
+  // Handle IPv4-mapped IPv6
+  if (addr.kind() === 'ipv6' && addr.isIPv4MappedAddress()) {
+    addr = addr.toIPv4Address();
+  }
+
+  if (addr.kind() === 'ipv4') {
+    return !BLOCKED_IPV4_RANGES.some((range) => addr.match(range));
+  } else {
+    // Also block IPv6 mapped to IPv4 ranges
+    return !BLOCKED_IPV6_RANGES.some((range) => addr.match(range));
+  }
 };
 
 const BANNED_HOSTNAMES = new Set([
   'localhost',
+  'localhost.localdomain',
   'metadata.google.internal',
-  '169.254.169.254', // also covered by IP check, but good to ban hostname directly
 ]);
+
+const isBannedHostname = (hostname) => {
+  if (BANNED_HOSTNAMES.has(hostname)) return true;
+  if (hostname.endsWith('.localhost')) return true;
+  return false;
+};
 
 export const validateAndResolveSafeUrl = async (urlString) => {
   let parsedUrl;
@@ -88,132 +85,167 @@ export const validateAndResolveSafeUrl = async (urlString) => {
   }
 
   const hostname = parsedUrl.hostname.toLowerCase();
-  
-  // Drop trailing dot for resolution/check
   const cleanHostname = hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
 
-  if (BANNED_HOSTNAMES.has(cleanHostname)) {
+  if (isBannedHostname(cleanHostname)) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Hostname is not allowed.', 400);
   }
 
+  // If the hostname itself parses as an IP address, check it immediately.
+  // This handles direct IP literals like http://127.0.0.1 or http://[::1]
+  // Node's URL parser also normalizes some forms like 0177.0.0.1 to 127.0.0.1.
+  let ipCheckStr = cleanHostname;
+  if (ipCheckStr.startsWith('[') && ipCheckStr.endsWith(']')) {
+    ipCheckStr = ipCheckStr.slice(1, -1);
+  }
+
+  if (ipaddr.isValid(ipCheckStr)) {
+    if (!isSafeIp(ipCheckStr)) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, 'Hostname resolves to a private or internal IP address.', 400);
+    }
+  }
+
   try {
-    // Resolve all IPs for the hostname
     const addresses = await dns.promises.lookup(cleanHostname, { all: true });
     
     if (!addresses || addresses.length === 0) {
       throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'DNS resolution failed or no addresses found.', 400);
     }
 
-    for (const { address, family } of addresses) {
-      if (!isSafeIp(address, family)) {
+    for (const { address } of addresses) {
+      if (!isSafeIp(address)) {
         throw new AppError(errorCodes.VALIDATION_ERROR, 'Hostname resolves to a private or internal IP address.', 400);
       }
     }
+
+    // All resolved IPs are safe. Pick the first one to pin.
+    return { parsedUrl, safeIp: addresses[0].address };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'DNS resolution failed.', 400);
   }
-
-  return parsedUrl;
 };
 
-export const safeFetchTextWithLimit = async (url, options = {}, redirectCount = 0) => {
-  const MAX_REDIRECTS = 5;
-  
-  if (redirectCount > MAX_REDIRECTS) {
-    throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Too many redirects.', 400);
-  }
+const safeHttpGetText = (parsedUrl, safeIp, options) => {
+  return new Promise((resolve, reject) => {
+    const timeoutMs = options.timeoutMs ?? 5000;
+    const maxBytes = options.maxBytes ?? 512_000;
+    const isHttps = parsedUrl.protocol === 'https:';
+    const requestModule = isHttps ? https : http;
 
-  const parsedUrl = await validateAndResolveSafeUrl(url);
-
-  const timeoutMs = options.timeoutMs ?? 5000;
-  const maxBytes = options.maxBytes ?? 512_000;
-  
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(parsedUrl.toString(), {
+    const requestOptions = {
+      protocol: parsedUrl.protocol,
+      hostname: parsedUrl.hostname, // Needed for Host header / SNI
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
       method: 'GET',
-      redirect: 'manual', // Prevent automatic redirects
-      ...options,
       headers: {
         'User-Agent': 'FindlyBot/0.1 (+https://findly.local; compliant public metadata fetch)',
         Accept: 'text/html,application/xhtml+xml',
         ...(options.headers || {}),
       },
-      signal: controller.signal,
+      lookup: (hostname, dnsOptions, callback) => {
+        // Pin the connection to the pre-validated safe IP
+        // The callback signature expects (err, address, family)
+        const family = ipaddr.parse(safeIp).kind() === 'ipv6' ? 6 : 4;
+        callback(null, safeIp, family);
+      },
+      timeout: timeoutMs,
+    };
+
+    const req = requestModule.request(requestOptions, (res) => {
+      const statusCode = res.statusCode;
+      const headers = res.headers;
+      
+      const contentType = headers['content-type'] || '';
+      
+      if (statusCode >= 300 && statusCode < 400) {
+        // Redirect
+        res.resume(); // consume response data to free up memory
+        return resolve({ isRedirect: true, statusCode, headers });
+      }
+
+      if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+        res.resume();
+        return resolve({ ok: statusCode >= 200 && statusCode < 300, status: statusCode, contentType, text: '', truncated: false });
+      }
+
+      const chunks = [];
+      let received = 0;
+      let truncated = false;
+
+      res.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > maxBytes) {
+          truncated = true;
+          res.destroy(); // Cancel stream
+        } else {
+          chunks.push(chunk);
+        }
+      });
+
+      res.on('end', () => {
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
+        resolve({
+          ok: statusCode >= 200 && statusCode < 300,
+          status: statusCode,
+          contentType,
+          text,
+          truncated,
+        });
+      });
+      
+      res.on('error', (err) => {
+         // If error is just stream destroyed due to truncation, ignore
+         if (truncated) {
+             const text = new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
+             return resolve({ ok: statusCode >= 200 && statusCode < 300, status: statusCode, contentType, text, truncated });
+         }
+         reject(new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch failed safely.', 502));
+      });
     });
 
-    // Handle redirects manually
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) {
-        throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Redirect location missing.', 400);
-      }
-      
-      const redirectUrl = new URL(location, parsedUrl.toString()).toString();
-      clearTimeout(timeout);
-      
-      // Calculate remaining timeout
-      const remainingTimeout = timeoutMs; // For simplicity in this implementation, we restart timeout, but you could subtract elapsed time.
-      
-      return safeFetchTextWithLimit(redirectUrl, { ...options, timeoutMs: remainingTimeout }, redirectCount + 1);
-    }
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch timed out.', 504));
+    });
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      return {
-        ok: response.ok,
-        status: response.status,
-        contentType,
-        text: '',
-        truncated: false,
-      };
-    }
+    req.on('error', (err) => {
+      reject(new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch failed safely.', 502));
+    });
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return {
-        ok: response.ok,
-        status: response.status,
-        contentType,
-        text: await response.text(),
-        truncated: false,
-      };
-    }
+    req.end();
+  });
+};
 
-    const chunks = [];
-    let received = 0;
-    let truncated = false;
+export const safeFetchTextWithLimit = async (url, options = {}, redirectCount = 0) => {
+  const MAX_REDIRECTS = 5;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > maxBytes) {
-        truncated = true;
-        break;
-      }
-      chunks.push(value);
-    }
-
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
-
-    return {
-      ok: response.ok,
-      status: response.status,
-      contentType,
-      text,
-      truncated,
-    };
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    if (error.name === 'AbortError') {
-      throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch timed out.', 504);
-    }
-    throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch failed safely.', 502);
-  } finally {
-    clearTimeout(timeout);
+  if (redirectCount > MAX_REDIRECTS) {
+    throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Too many redirects.', 400);
   }
+
+  const { parsedUrl, safeIp } = await validateAndResolveSafeUrl(url);
+
+  const response = await safeHttpGetText(parsedUrl, safeIp, options);
+
+  if (response.isRedirect) {
+    const location = response.headers.location;
+    if (!location) {
+      throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Redirect location missing.', 400);
+    }
+    
+    let redirectUrl;
+    try {
+      redirectUrl = new URL(location, parsedUrl.toString()).toString();
+    } catch {
+       throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Invalid redirect location.', 400);
+    }
+    
+    // We should pass a reduced timeout if we had a start time, but for simplicity we'll pass the same options
+    // as max timeout is not infinite and each step has a timeout limit.
+    return safeFetchTextWithLimit(redirectUrl, options, redirectCount + 1);
+  }
+
+  return response;
 };
