@@ -1,7 +1,6 @@
 import { env } from '../../config/env.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
-import { fetchTextWithLimit } from '../../utils/httpClient.js';
-import { validateSafeUrl } from '../../utils/sanitize.js';
+import { safeFetchTextWithLimit } from '../../utils/safeFetch.js';
 
 const CONTACT_WORDS = ['contact', 'email', 'phone', 'whatsapp', 'call us', 'get in touch'];
 const CTA_WORDS = ['book', 'order', 'reserve', 'menu', 'shop', 'buy', 'appointment', 'quote', 'schedule'];
@@ -21,17 +20,25 @@ const extractMeta = (html, name) => {
 };
 
 export const enrichWebsiteUrl = async (websiteUrl) => {
-  if (!validateSafeUrl(websiteUrl)) {
-    throw new AppError(errorCodes.VALIDATION_ERROR, 'Only http and https website URLs are supported.', 400);
-  }
-
+  // SSRF validation is now strictly handled inside safeFetchTextWithLimit
+  // which validates protocol, internal IPs, DNS records, and redirects.
+  
   const startedAt = Date.now();
-  const parsed = new URL(websiteUrl);
 
-  const result = await fetchTextWithLimit(parsed.toString(), {
-    timeoutMs: env.WEBSITE_FETCH_TIMEOUT_MS,
-    maxBytes: 512_000,
-  });
+  let result;
+  let parsed;
+  try {
+    parsed = new URL(websiteUrl);
+    result = await safeFetchTextWithLimit(websiteUrl, {
+      timeoutMs: env.WEBSITE_FETCH_TIMEOUT_MS,
+      maxBytes: 512_000,
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === errorCodes.VALIDATION_ERROR) {
+      throw error;
+    }
+    throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Website fetch failed safely.', 502);
+  }
 
   const html = result.text || '';
   const lower = html.toLowerCase();
