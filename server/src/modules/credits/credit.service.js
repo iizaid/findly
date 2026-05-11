@@ -2,7 +2,21 @@ import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { toPagination } from '../../utils/pagination.js';
 
-const INITIAL_CREDITS = 50;
+export const INITIAL_CREDITS = 50;
+export const SEARCH_BASE_CREDITS = 5;
+export const SEARCH_PER_RETURNED_LEAD_CREDITS = 1;
+export const ANALYSIS_CREDITS = 1;
+export const WEBSITE_ENRICHMENT_CREDITS = 1;
+
+export const calculateSearchCreditCost = ({ returnedLeadsCount = 0 } = {}) => {
+  const normalizedReturnedLeads = Math.max(0, Number(returnedLeadsCount) || 0);
+  return SEARCH_BASE_CREDITS + (normalizedReturnedLeads * SEARCH_PER_RETURNED_LEAD_CREDITS);
+};
+
+export const estimateSearchCreditReservation = ({ requestedLimit = 20 } = {}) => {
+  const normalizedLimit = Math.max(1, Math.min(Number(requestedLimit) || 20, 100));
+  return calculateSearchCreditCost({ returnedLeadsCount: normalizedLimit });
+};
 
 export const addCredits = async ({
   tx = prisma,
@@ -106,6 +120,44 @@ export const deductCredits = async ({
     ledger,
   };
 };
+
+export const reserveCredits = async ({
+  tx = prisma,
+  userId,
+  workspaceId = null,
+  amount,
+  reason,
+  referenceType = null,
+  referenceId = null,
+}) => deductCredits({
+  tx,
+  userId,
+  workspaceId,
+  amount,
+  type: 'CREDIT_RESERVED',
+  reason,
+  referenceType,
+  referenceId,
+});
+
+export const refundCredits = async ({
+  tx = prisma,
+  userId,
+  workspaceId = null,
+  amount,
+  reason,
+  referenceType = null,
+  referenceId = null,
+}) => addCredits({
+  tx,
+  userId,
+  workspaceId,
+  amount,
+  type: 'CREDIT_REFUNDED',
+  reason,
+  referenceType,
+  referenceId,
+});
 
 export const grantInitialCreditsIfEligible = async ({ tx = prisma, userId, workspaceId, context }) => {
   const user = await tx.user.findUnique({
