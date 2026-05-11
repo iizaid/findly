@@ -48,6 +48,26 @@ const normalizeSourceOptions = (sources = []) => [...sources]
       || (DATASET_BACKED_SOURCES.has(source.key) && source.fallbackAvailable),
   }));
 
+const findReusableProfile = (profiles = [], { service, businessType, city, country, goal }) => {
+  const normalizedService = (service || '').trim().toLowerCase();
+  const normalizedBusinessType = (businessType || '').trim().toLowerCase();
+  const normalizedCity = (city || '').trim().toLowerCase();
+  const normalizedCountry = (country || '').trim().toLowerCase();
+  const normalizedGoal = (goal || '').trim().toLowerCase();
+
+  return profiles.find((profile) => {
+    const targetBusinessTypes = Array.isArray(profile.targetBusinessTypes) ? profile.targetBusinessTypes : [];
+    const targetLocations = Array.isArray(profile.targetLocations) ? profile.targetLocations : [];
+    const idealSignals = Array.isArray(profile.idealSignals) ? profile.idealSignals : [];
+
+    return (profile.serviceType || '').trim().toLowerCase() === normalizedService
+      && targetBusinessTypes.some((value) => (value || '').trim().toLowerCase() === normalizedBusinessType)
+      && targetLocations.some((value) => (value || '').trim().toLowerCase() === normalizedCity)
+      && targetLocations.some((value) => (value || '').trim().toLowerCase() === normalizedCountry)
+      && idealSignals.some((value) => (value || '').trim().toLowerCase() === normalizedGoal);
+  });
+};
+
 export const useFindLeadsSearch = ({ workspace }) => {
   const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
   const [sourceOptions, setSourceOptions] = useState([]);
@@ -171,6 +191,27 @@ export const useFindLeadsSearch = ({ workspace }) => {
     clearResultSummary();
   };
 
+  const loadOrCreateProfile = async ({ service, businessType, goal, country, city }) => {
+    const profilesRes = await apiRequest('/api/search/profiles');
+    const existingProfile = findReusableProfile(profilesRes.data?.profiles || [], { service, businessType, goal, country, city });
+
+    if (existingProfile) return existingProfile;
+
+    const profileRes = await apiRequest('/api/search/profiles', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: workspace?.id,
+        name: `${service} • ${businessType} • ${city}`,
+        serviceType: service,
+        targetBusinessTypes: [businessType],
+        targetLocations: [city, country],
+        idealSignals: [goal],
+      }),
+    });
+
+    return profileRes.data.profile;
+  };
+
   const runSearch = async () => {
     setError(null);
     clearResultSummary();
@@ -192,17 +233,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
 
     try {
       await delay(250);
-      const profileRes = await apiRequest('/api/search/profiles', {
-        method: 'POST',
-        body: JSON.stringify({
-          workspaceId: workspace?.id,
-          name: `${service} Profile`,
-          serviceType: service,
-          targetBusinessTypes: [businessType],
-          targetLocations: [city, country],
-          idealSignals: [goal],
-        }),
-      });
+      const profile = await loadOrCreateProfile({ service, businessType, goal, country, city });
 
       setSearchStep(1);
       await delay(300);
@@ -212,7 +243,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
         body: JSON.stringify({
           workspaceId: workspace?.id,
           name: `${businessType} in ${city}`,
-          serviceProfileId: profileRes.data.profile.id,
+          serviceProfileId: profile.id,
           businessTypes: [businessType],
           country,
           city,
