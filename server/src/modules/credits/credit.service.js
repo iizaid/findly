@@ -134,8 +134,8 @@ export const reserveCredits = async ({
   userId,
   workspaceId,
   amount,
-  type: 'CREDIT_RESERVED',
-  reason,
+  type: 'CREDIT_USED',
+  reason: `Reserved credits: ${reason}`,
   referenceType,
   referenceId,
 });
