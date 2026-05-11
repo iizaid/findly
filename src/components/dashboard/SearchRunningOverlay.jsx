@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { CheckCircle2, Loader2, Radar, Sparkles } from 'lucide-react';
-import { gsap } from 'gsap';
 
 const platformLabel = {
   INSTAGRAM: 'Instagram',
@@ -33,17 +32,26 @@ const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selected
   useEffect(() => {
     if (!isVisible || !rootRef.current) return undefined;
 
-    const ctx = gsap.context(() => {
-      gsap.fromTo(rootRef.current, { opacity: 0 }, { opacity: 1, duration: 0.24, ease: 'power2.out' });
-      gsap.fromTo(cardRef.current, { y: 28, scale: 0.965, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.62, ease: 'power3.out' });
-      gsap.to(ringRef.current, { rotate: 360, duration: 8, repeat: -1, ease: 'none' });
-      gsap.to(orbitRef.current, { rotate: -360, duration: 12, repeat: -1, ease: 'none' });
-      gsap.to(pulseRef.current, { scale: 1.16, opacity: 0.24, duration: 1.35, repeat: -1, yoyo: true, ease: 'sine.inOut' });
-      gsap.fromTo('.search-step-row', { x: -10, opacity: 0 }, { x: 0, opacity: 1, duration: 0.42, stagger: 0.075, ease: 'power2.out', delay: 0.2 });
-      gsap.fromTo('.search-chip', { y: 8, opacity: 0 }, { y: 0, opacity: 1, duration: 0.35, stagger: 0.055, ease: 'power2.out', delay: 0.28 });
-    }, rootRef);
+    let cancelled = false;
+    let ctx;
 
-    return () => ctx.revert();
+    import('gsap').then(({ gsap }) => {
+      if (cancelled || !rootRef.current) return;
+      ctx = gsap.context(() => {
+        gsap.fromTo(rootRef.current, { opacity: 0 }, { opacity: 1, duration: 0.24, ease: 'power2.out' });
+        gsap.fromTo(cardRef.current, { y: 28, scale: 0.965, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.62, ease: 'power3.out' });
+        gsap.to(ringRef.current, { rotate: 360, duration: 8, repeat: -1, ease: 'none' });
+        gsap.to(orbitRef.current, { rotate: -360, duration: 12, repeat: -1, ease: 'none' });
+        gsap.to(pulseRef.current, { scale: 1.16, opacity: 0.24, duration: 1.35, repeat: -1, yoyo: true, ease: 'sine.inOut' });
+        gsap.fromTo('.search-step-row', { x: -10, opacity: 0 }, { x: 0, opacity: 1, duration: 0.42, stagger: 0.075, ease: 'power2.out', delay: 0.2 });
+        gsap.fromTo('.search-chip', { y: 8, opacity: 0 }, { y: 0, opacity: 1, duration: 0.35, stagger: 0.055, ease: 'power2.out', delay: 0.28 });
+      }, rootRef);
+    });
+
+    return () => {
+      cancelled = true;
+      ctx?.revert();
+    };
   }, [isVisible]);
 
   if (!isVisible) return null;

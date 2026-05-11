@@ -29,6 +29,17 @@ const sourceLabels = {
   TIKTOK: 'TikTok',
 };
 
+const fallbackReasonFor = (sources = []) => {
+  if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_MAPS_NOT_CONNECTED';
+  if (sources.includes('INSTAGRAM')) return 'INSTAGRAM_API_NOT_CONNECTED';
+  if (sources.includes('FACEBOOK')) return 'FACEBOOK_API_NOT_CONNECTED';
+  if (sources.includes('REDDIT')) return 'REDDIT_API_NOT_CONNECTED';
+  if (sources.includes('YELP')) return 'YELP_API_NOT_CONNECTED';
+  if (sources.includes('SERPAPI')) return 'SERPAPI_NOT_CONNECTED';
+  if (sources.includes('WEBSITE')) return 'WEBSITE_ENRICHMENT_SEARCH_NOT_CONNECTED';
+  return 'PROVIDERS_NOT_CONNECTED';
+};
+
 const safeLeadPreview = (lead) => ({
   id: lead.id,
   businessName: lead.businessName,
@@ -297,7 +308,8 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
   });
   const matchedLeads = await adapter.run();
   const leadsReturned = matchedLeads.length;
-  const fallbackReason = fallbackUsed ? `PROVIDERS_NOT_CONNECTED` : null;
+  const sourceRequested = platformsRequested.join(',');
+  const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
   const message = leadsReturned > 0
     ? 'Search completed across selected platforms.'
     : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
@@ -315,10 +327,10 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         workspaceId: campaign.workspaceId,
         campaignId: campaign.id,
         name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
-        sourceRequested: platformsRequested.join(','),
+        sourceRequested,
         sourceUsed: 'LOCAL_DATASET',
         fallbackUsed,
-        searchMode: 'AVAILABLE_INTELLIGENCE',
+        searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'GLOBAL_DATASET',
         filters: {
           country: campaign.country,
           city: campaign.city,
@@ -407,16 +419,18 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     success: true,
     campaignId: campaign.id,
     leadListId: leadList.id,
+    sourceRequested,
     platformsRequested,
     sourceMode: 'AVAILABLE_INTELLIGENCE',
     sourceUsed: 'LOCAL_DATASET',
     fallbackUsed,
     fallbackReason,
-    searchMode: 'AVAILABLE_INTELLIGENCE',
+    searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'GLOBAL_DATASET',
     leadsFound: leadsReturned,
     leadsReturned,
     resultCount: leadsReturned,
     creditsUsed: 0,
+    warning: fallbackUsed ? 'Findly searched the best available business intelligence for this request.' : null,
     message,
     matchedLeads: matchedLeads.map(safeLeadPreview),
     jobId,

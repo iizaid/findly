@@ -708,7 +708,7 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(runResponse.body.data.creditsUsed).toBe(0);
     expect(runResponse.body.data.leadsReturned).toBeGreaterThan(0);
     expect(runResponse.body.data.leadListId).toBeTruthy();
-    expect(runResponse.body.data.warning).toBe('Findly used your available stored business data for this search.');
+    expect(runResponse.body.data.warning).toBe('Findly searched the best available business intelligence for this request.');
     expect(JSON.stringify(runResponse.body.data)).not.toContain('GOOGLE_PLACES_API_KEY');
     expect(runResponse.body.data.matchedLeads.some((lead) => lead.businessName === 'Sample Cafe')).toBe(true);
     expect(runResponse.body.data.matchedLeads.some((lead) => lead.businessName === `Sweifieh Test Cafe ${unique}`)).toBe(true);

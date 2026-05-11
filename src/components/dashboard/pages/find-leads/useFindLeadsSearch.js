@@ -14,7 +14,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'This platform is not connected yet. Select another platform or try again later.';
+      return 'Findly could not complete this source right now. Try another source or broaden your search.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
@@ -129,7 +129,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
 
   const toggleSource = (sourceObj) => {
     if (!sourceObj.canRun) {
-      setError('This platform is not connected yet. Select an available platform signal to continue.');
+      setError('This source is not available for search yet. Choose a searchable source to continue.');
       return;
     }
 

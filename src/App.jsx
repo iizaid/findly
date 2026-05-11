@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -8,11 +8,21 @@ import LoadingScreen from './components/LoadingScreen';
 import OpportunityEngineSection from './components/OpportunityEngineSection';
 import PricingSection from './components/PricingSection';
 import Footer from './components/Footer';
-import AuthPage from './components/AuthPage';
 import NoticeModal from './components/NoticeModal';
-import VerifyEmailPage from './components/VerifyEmailPage';
-import DashboardPage from './components/DashboardPage';
 import { apiRequest, ApiError } from './lib/api';
+
+const AuthPage = lazy(() => import('./components/AuthPage'));
+const DashboardPage = lazy(() => import('./components/DashboardPage'));
+const VerifyEmailPage = lazy(() => import('./components/VerifyEmailPage'));
+
+const RouteFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-white px-6 text-center">
+    <div>
+      <div className="mx-auto h-3 w-16 rounded-full bg-accent" />
+      <p className="mt-4 text-sm font-bold uppercase tracking-[0.18em] text-secondary">Loading Findly</p>
+    </div>
+  </div>
+);
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -108,13 +118,15 @@ function App() {
   if (route.pathname.startsWith('/dashboard') && !authState) {
     return (
       <MotionConfig reducedMotion="user">
-        <DashboardPage
-          routePath={route.pathname}
-          onNavigate={navigate}
-          onAuthOpen={openAuth}
-          onSessionChange={setCurrentUser}
-          onNotice={openNotice}
-        />
+        <Suspense fallback={<RouteFallback />}>
+          <DashboardPage
+            routePath={route.pathname}
+            onNavigate={navigate}
+            onAuthOpen={openAuth}
+            onSessionChange={setCurrentUser}
+            onNotice={openNotice}
+          />
+        </Suspense>
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />
       </MotionConfig>
     );
@@ -123,14 +135,16 @@ function App() {
   if (authState) {
     return (
       <MotionConfig reducedMotion="user">
-        <AuthPage
-          initialMode={authState.mode}
-          planContext={authState.plan}
-          onClose={() => setAuthState(null)}
-          onNotice={openNotice}
-          onNavigate={navigate}
-          onSessionChange={setCurrentUser}
-        />
+        <Suspense fallback={<RouteFallback />}>
+          <AuthPage
+            initialMode={authState.mode}
+            planContext={authState.plan}
+            onClose={() => setAuthState(null)}
+            onNotice={openNotice}
+            onNavigate={navigate}
+            onSessionChange={setCurrentUser}
+          />
+        </Suspense>
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />
       </MotionConfig>
     );
@@ -141,13 +155,15 @@ function App() {
 
     return (
       <MotionConfig reducedMotion="user">
-        <VerifyEmailPage 
-          token={token} 
-          currentUser={currentUser} 
-          onNavigate={navigate} 
-          onAuthOpen={openAuth} 
-          onSessionChange={setCurrentUser} 
-        />
+        <Suspense fallback={<RouteFallback />}>
+          <VerifyEmailPage
+            token={token}
+            currentUser={currentUser}
+            onNavigate={navigate}
+            onAuthOpen={openAuth}
+            onSessionChange={setCurrentUser}
+          />
+        </Suspense>
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />
       </MotionConfig>
     );

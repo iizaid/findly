@@ -634,6 +634,8 @@ model LeadAnalysis {
   @@index([campaignId])
   @@index([scoreLevel])
   @@index([createdAt])
+  @@unique([leadId])
+  @@unique([leadListLeadId])
 }
 
 model OpportunitySignal {

@@ -3,7 +3,7 @@ import { DATASET_BACKED_SOURCES } from './searchConfig';
 const PlatformButton = ({ source, selected, onClick }) => {
   const disabled = !source.canRun;
   const usesSignals = source.fallbackAvailable && DATASET_BACKED_SOURCES.has(source.key) && !source.available;
-  const statusLabel = usesSignals ? 'Available' : (source.canRun ? 'Ready' : 'Connect later');
+  const statusLabel = usesSignals ? 'Searchable' : (source.canRun ? 'Ready' : 'Coming later');
 
   return (
     <button
@@ -16,7 +16,7 @@ const PlatformButton = ({ source, selected, onClick }) => {
         {source.name}
         {usesSignals && (
           <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-secondary">
-            Platform signals available
+            Findly intelligence available
           </span>
         )}
       </span>
