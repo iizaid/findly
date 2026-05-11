@@ -1,4 +1,4 @@
-import { ArrowRight, Search, AlertCircle } from 'lucide-react';
+import { ArrowRight, Search, AlertCircle, WalletCards } from 'lucide-react';
 import DashboardCard from '../../DashboardCard';
 import SearchRunningOverlay from '../../SearchRunningOverlay';
 import { useFindLeadsSearch } from './useFindLeadsSearch';
@@ -77,10 +77,37 @@ const FindLeadsView = ({ workspace, onNavigate }) => {
               </div>
             </fieldset>
 
+            <div className="md:col-span-2 rounded-[26px] border border-black/[0.08] bg-[#F7F8F6] p-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-bold text-black">
+                    <WalletCards size={18} />
+                    Estimated maximum cost: {search.estimatedCredits} credits
+                  </div>
+                  <p className="mt-2 text-xs font-semibold leading-6 text-secondary">
+                    Backend reserves this maximum before search, then refunds unused credits if fewer leads are returned. A base search cost is charged even when no leads match.
+                  </p>
+                </div>
+                <div className="shrink-0 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-secondary">
+                  5 base + 1 per requested lead
+                </div>
+              </div>
+              {search.selectedSourceModes.length > 0 && (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {search.selectedSourceModes.map((source) => (
+                    <div key={source.id} className="rounded-2xl bg-white px-4 py-3">
+                      <p className="text-sm font-bold text-black">{source.label}</p>
+                      <p className="mt-1 text-xs font-semibold text-secondary">{source.mode}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="md:col-span-2 mt-2">
               {!search.isSubmitting && !search.resultSummary && (
                 <button type="submit" className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black sm:w-auto">
-                  Start Search
+                  Start Search • Reserve {search.estimatedCredits} credits
                   <ArrowRight size={16} />
                 </button>
               )}
