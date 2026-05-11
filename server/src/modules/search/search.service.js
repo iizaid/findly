@@ -1,6 +1,15 @@
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
-import { deductCredits } from '../credits/credit.service.js';
+import {
+  ANALYSIS_CREDITS,
+  calculateSearchCreditCost,
+  deductCredits,
+  estimateSearchCreditReservation,
+  refundCredits,
+  reserveCredits,
+  SEARCH_BASE_CREDITS,
+  SEARCH_PER_RETURNED_LEAD_CREDITS,
+} from '../credits/credit.service.js';
 import { runRuleBasedAnalysis } from './analysis.service.js';
 import { estimateSourceCost, getRunnableAdapter } from './source.registry.js';
 import { logger } from '../../utils/logger.js';
@@ -9,24 +18,18 @@ import { markCampaignCompleted, markCampaignFailed, markCampaignRunning, RUNNABL
 import { markJobCompleted, markJobFailed, markJobRunning } from '../jobs/jobQueue.service.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 
-const SEARCH_BASE_CREDITS = 5;
-const SEARCH_PER_SAVED_LEAD_CREDITS = 1;
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
 
-const sourceLabels = {
-  LOCAL_DATASET: 'Local Dataset',
-  GOOGLE_MAPS: 'Google Maps',
-  INSTAGRAM: 'Instagram',
-  FACEBOOK: 'Facebook',
-  WEBSITE: 'Website Enrichment',
-  YELP: 'Yelp',
-  SERPAPI: 'SerpAPI',
-  TRIPADVISOR: 'TripAdvisor',
-  YOUTUBE: 'YouTube',
-  X: 'X',
-  LINKEDIN: 'LinkedIn',
-  TIKTOK: 'TikTok',
+const fallbackReasonFor = (sources = []) => {
+  if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_MAPS_NOT_CONNECTED';
+  if (sources.includes('INSTAGRAM')) return 'INSTAGRAM_API_NOT_CONNECTED';
+  if (sources.includes('FACEBOOK')) return 'FACEBOOK_API_NOT_CONNECTED';
+  if (sources.includes('REDDIT')) return 'REDDIT_API_NOT_CONNECTED';
+  if (sources.includes('YELP')) return 'YELP_API_NOT_CONNECTED';
+  if (sources.includes('SERPAPI')) return 'SERPAPI_NOT_CONNECTED';
+  if (sources.includes('WEBSITE')) return 'WEBSITE_ENRICHMENT_SEARCH_NOT_CONNECTED';
+  return 'PROVIDERS_NOT_CONNECTED';
 };
 
 const safeLeadPreview = (lead) => ({
@@ -42,6 +45,42 @@ const safeLeadPreview = (lead) => ({
   sourceFile: lead.sourceFile,
   localDatasetScore: lead.localDatasetScore,
 });
+
+const reserveCampaignCredits = async ({ userId, workspaceId, campaignId, requestedLimit, reason }) => {
+  const reservedCredits = estimateSearchCreditReservation({ requestedLimit });
+
+  await reserveCredits({
+    userId,
+    workspaceId,
+    amount: reservedCredits,
+    reason,
+    referenceType: 'SearchCampaign',
+    referenceId: campaignId,
+  });
+
+  await prisma.searchCampaign.update({
+    where: { id: campaignId },
+    data: { creditsReserved: reservedCredits },
+  });
+
+  return reservedCredits;
+};
+
+const refundUnusedReservation = async ({ tx = prisma, userId, workspaceId, campaignId, reservedCredits, actualCreditsUsed, reason }) => {
+  const refundAmount = reservedCredits - actualCreditsUsed;
+  if (refundAmount <= 0) return null;
+
+  return refundCredits({
+    tx,
+    userId,
+    workspaceId,
+    amount: refundAmount,
+    reason,
+    referenceType: 'SearchCampaign',
+    referenceId: campaignId,
+  });
+};
+
 export const createCampaign = async ({ userId, workspaceId, data }) => {
   return prisma.$transaction(async (tx) => {
     const campaign = await tx.searchCampaign.create({
@@ -105,8 +144,8 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = sources.map((source) => ({ source, ...getRunnableAdapter(source) }));
   const unavailable = runnableSources.find((source) => !source.runnable);
-  
-  const fallbackSourcesRequested = sources.some(s => LOCAL_FALLBACK_SOURCE_KEYS.includes(s));
+
+  const fallbackSourcesRequested = sources.some((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
   const shouldUseLocalDataset = localDatasetRequested || (fallbackSourcesRequested && unavailable);
 
   if (shouldUseLocalDataset) {
@@ -125,26 +164,28 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     throw new AppError(code, message, 400);
   }
 
-  const maxCreditsRequired = SEARCH_BASE_CREDITS + ((campaign.requestedLimit || 20) * SEARCH_PER_SAVED_LEAD_CREDITS);
-  
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { creditsBalance: true } });
-  if (!user || user.creditsBalance < maxCreditsRequired) {
-    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
-  }
-
-  await markCampaignRunning({
-    campaignId: campaign.id,
+  const reservedCredits = await reserveCampaignCredits({
     userId,
+    workspaceId: campaign.workspaceId,
+    campaignId: campaign.id,
     requestedLimit: campaign.requestedLimit || 20,
-    lockedBy: 'api',
+    reason: `Reserved credits for search campaign: ${campaign.name}`,
   });
-  if (jobId) {
-    await markJobRunning({ jobId, workerId: 'inline-api-worker' });
-  }
-
-  logger.info('campaign.run.started', { userId, campaignId: campaign.id, workspaceId: campaign.workspaceId });
+  let reservationOpen = true;
 
   try {
+    await markCampaignRunning({
+      campaignId: campaign.id,
+      userId,
+      requestedLimit: campaign.requestedLimit || 20,
+      lockedBy: 'api',
+    });
+    if (jobId) {
+      await markJobRunning({ jobId, workerId: 'inline-api-worker' });
+    }
+
+    logger.info('campaign.run.started', { userId, campaignId: campaign.id, workspaceId: campaign.workspaceId });
+
     const normalizedLeadGroups = [];
     for (const source of runnableSources) {
       await prisma.searchCampaign.update({
@@ -156,10 +197,8 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     }
 
     const normalizedLeads = normalizedLeadGroups.slice(0, campaign.requestedLimit || 20);
-
     let savedLeadsCount = 0;
-    
-    // Deduplication & Saving inside transaction
+
     await prisma.$transaction(async (tx) => {
       const leadList = await tx.leadList.create({
         data: {
@@ -189,9 +228,8 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
               city: campaign.city,
             },
           });
-          savedLeadsCount++;
-          
-          // Optionally run analysis right away if serviceProfileId exists
+          savedLeadsCount += 1;
+
           if (campaign.serviceProfileId) {
             const profile = await tx.serviceProfile.findUnique({ where: { id: campaign.serviceProfileId } });
             if (profile) {
@@ -209,18 +247,17 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         });
       }
 
-      const totalCreditsUsed = SEARCH_BASE_CREDITS + (savedLeadsCount * SEARCH_PER_SAVED_LEAD_CREDITS);
-
-      await deductCredits({
+      const totalCreditsUsed = calculateSearchCreditCost({ returnedLeadsCount: savedLeadsCount });
+      await refundUnusedReservation({
         tx,
         userId,
         workspaceId: campaign.workspaceId,
-        amount: totalCreditsUsed,
-        type: 'CREDIT_USED',
-        reason: `Ran search campaign: ${campaign.name}`,
-        referenceType: 'SearchCampaign',
-        referenceId: campaign.id,
+        campaignId: campaign.id,
+        reservedCredits,
+        actualCreditsUsed: totalCreditsUsed,
+        reason: `Refunded unused reserved credits for search campaign: ${campaign.name}`,
       });
+      reservationOpen = false;
 
       await markCampaignCompleted({
         tx,
@@ -239,6 +276,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
           metadata: {
             workspaceId: campaign.workspaceId,
             savedLeadsCount,
+            creditsReserved: reservedCredits,
             creditsUsed: totalCreditsUsed,
           },
         },
@@ -249,12 +287,23 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     if (jobId) {
       await markJobCompleted({ jobId, payload: { campaignId: campaign.id, savedLeadsCount } });
     }
-    return { success: true, savedLeadsCount, jobId };
+    return { success: true, savedLeadsCount, creditsReserved: reservedCredits, creditsUsed: calculateSearchCreditCost({ returnedLeadsCount: savedLeadsCount }), jobId };
   } catch (error) {
+    if (reservationOpen) {
+      await refundCredits({
+        userId,
+        workspaceId: campaign.workspaceId,
+        amount: reservedCredits,
+        reason: `Refunded reserved credits after failed search campaign: ${campaign.name}`,
+        referenceType: 'SearchCampaign',
+        referenceId: campaign.id,
+      }).catch(() => {});
+    }
+
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
     const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while running the source adapter.';
 
-    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage });
+    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
     if (jobId) {
       await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
     }
@@ -268,6 +317,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         metadata: {
           workspaceId: campaign.workspaceId,
           errorCode,
+          creditsRefunded: reservationOpen ? reservedCredits : 0,
         },
       },
     }).catch(() => {});
@@ -278,161 +328,212 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
 };
 
 const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, platformsRequested }) => {
-  await markCampaignRunning({
-    campaignId: campaign.id,
+  const reservedCredits = await reserveCampaignCredits({
     userId,
+    workspaceId: campaign.workspaceId,
+    campaignId: campaign.id,
     requestedLimit: campaign.requestedLimit || 20,
-    lockedBy: 'local-dataset',
+    reason: `Reserved credits for intelligence search campaign: ${campaign.name}`,
   });
-  if (jobId) {
-    await markJobRunning({ jobId, workerId: 'inline-local-dataset-worker' });
-  }
+  let reservationOpen = true;
 
-  const adapter = new LocalDatasetAdapter({
-    ...campaign,
-    filters: {
-      ...(campaign.filters || {}),
-      platformsRequested,
-    },
-  });
-  const matchedLeads = await adapter.run();
-  const leadsReturned = matchedLeads.length;
-  const fallbackReason = fallbackUsed ? `PROVIDERS_NOT_CONNECTED` : null;
-  const message = leadsReturned > 0
-    ? 'Search completed across selected platforms.'
-    : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
+  try {
+    await markCampaignRunning({
+      campaignId: campaign.id,
+      userId,
+      requestedLimit: campaign.requestedLimit || 20,
+      lockedBy: 'local-dataset',
+    });
+    if (jobId) {
+      await markJobRunning({ jobId, workerId: 'inline-local-dataset-worker' });
+    }
 
-  const listNameParts = [
-    Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
-    campaign.city,
-    'Platform Signals',
-  ].filter(Boolean);
+    const adapter = new LocalDatasetAdapter({
+      ...campaign,
+      filters: {
+        ...(campaign.filters || {}),
+        platformsRequested,
+      },
+    });
+    const matchedLeads = await adapter.run();
+    const leadsReturned = matchedLeads.length;
+    const actualCreditsUsed = calculateSearchCreditCost({ returnedLeadsCount: leadsReturned });
+    const sourceRequested = platformsRequested.join(',');
+    const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
+    const message = leadsReturned > 0
+      ? 'Search completed across Findly Intelligence Index.'
+      : 'No matching leads found. A base search cost was charged for running the intelligence query.';
 
-  const leadList = await prisma.$transaction(async (tx) => {
-    const createdList = await tx.leadList.create({
-      data: {
+    const listNameParts = [
+      Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
+      campaign.city,
+      'Findly Intelligence',
+    ].filter(Boolean);
+
+    const leadList = await prisma.$transaction(async (tx) => {
+      const createdList = await tx.leadList.create({
+        data: {
+          userId,
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
+          sourceRequested,
+          sourceUsed: 'LOCAL_DATASET',
+          fallbackUsed,
+          searchMode: fallbackUsed ? 'FINDLY_INTELLIGENCE_FALLBACK' : 'FINDLY_INTELLIGENCE_INDEX',
+          filters: {
+            country: campaign.country,
+            city: campaign.city,
+            businessTypes: campaign.businessTypes,
+            goal: campaign.filters?.goal || null,
+            platformsRequested,
+            sourceUsed: 'LOCAL_DATASET',
+            fallbackReason,
+          },
+          resultCount: leadsReturned,
+        },
+      });
+
+      if (matchedLeads.length > 0) {
+        await tx.leadListLead.createMany({
+          data: matchedLeads.map((lead, index) => ({
+            leadListId: createdList.id,
+            catalogLeadId: lead.id,
+            rank: index + 1,
+            score: lead.localDatasetScore || null,
+            metadata: {
+              platformsRequested,
+              sourceUsed: 'LOCAL_DATASET',
+              sourceMode: 'FINDLY_INTELLIGENCE_INDEX',
+              fallbackUsed,
+              fallbackReason,
+            },
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      await refundUnusedReservation({
+        tx,
         userId,
         workspaceId: campaign.workspaceId,
         campaignId: campaign.id,
-        name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
-        sourceRequested: platformsRequested.join(','),
-        sourceUsed: 'LOCAL_DATASET',
-        fallbackUsed,
-        searchMode: 'AVAILABLE_INTELLIGENCE',
-        filters: {
-          country: campaign.country,
-          city: campaign.city,
-          businessTypes: campaign.businessTypes,
-          goal: campaign.filters?.goal || null,
-          platformsRequested,
-          sourceUsed: 'LOCAL_DATASET',
-          fallbackReason,
-        },
-        resultCount: leadsReturned,
-      },
-    });
+        reservedCredits,
+        actualCreditsUsed,
+        reason: `Refunded unused reserved credits for intelligence search campaign: ${campaign.name}`,
+      });
+      reservationOpen = false;
 
-    if (matchedLeads.length > 0) {
-      await tx.leadListLead.createMany({
-        data: matchedLeads.map((lead, index) => ({
-          leadListId: createdList.id,
-          catalogLeadId: lead.id,
-          rank: index + 1,
-          score: lead.localDatasetScore || null,
+      await markCampaignCompleted({
+        tx,
+        campaignId: campaign.id,
+        savedLeadsCount: leadsReturned,
+        creditsUsed: actualCreditsUsed,
+        totalProcessed: leadsReturned,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: fallbackUsed ? 'SEARCH_CAMPAIGN_FINDLY_INTELLIGENCE_FALLBACK' : 'SEARCH_CAMPAIGN_FINDLY_INTELLIGENCE_RUN',
+          entityType: 'SearchCampaign',
+          entityId: campaign.id,
           metadata: {
+            workspaceId: campaign.workspaceId,
             platformsRequested,
             sourceUsed: 'LOCAL_DATASET',
             fallbackUsed,
             fallbackReason,
+            leadListId: createdList.id,
+            leadsReturned,
+            creditsReserved: reservedCredits,
+            creditsUsed: actualCreditsUsed,
           },
-        })),
-        skipDuplicates: true,
+        },
+      });
+
+      return createdList;
+    });
+
+    if (jobId) {
+      await markJobCompleted({
+        jobId,
+        payload: {
+          campaignId: campaign.id,
+          platformsRequested,
+          sourceUsed: 'LOCAL_DATASET',
+          sourceMode: 'FINDLY_INTELLIGENCE_INDEX',
+          fallbackUsed,
+          fallbackReason,
+          leadListId: leadList.id,
+          leadsReturned,
+          creditsUsed: actualCreditsUsed,
+        },
       });
     }
 
-    await markCampaignCompleted({
-      tx,
+    logger.info('campaign.local_dataset.completed', {
+      userId,
       campaignId: campaign.id,
-      savedLeadsCount: leadsReturned,
-      creditsUsed: 0,
-      totalProcessed: leadsReturned,
+      platformsRequested,
+      fallbackUsed,
+      leadsReturned,
+      creditsUsed: actualCreditsUsed,
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId,
-        action: fallbackUsed ? 'SEARCH_CAMPAIGN_LOCAL_DATASET_FALLBACK' : 'SEARCH_CAMPAIGN_LOCAL_DATASET_RUN',
-        entityType: 'SearchCampaign',
-        entityId: campaign.id,
-        metadata: {
-          workspaceId: campaign.workspaceId,
-          platformsRequested,
-          sourceUsed: 'LOCAL_DATASET',
-          fallbackUsed,
-          fallbackReason,
-          leadListId: createdList.id,
-          leadsReturned,
-          creditsUsed: 0,
-        },
-      },
-    });
-
-    return createdList;
-  });
-
-  if (jobId) {
-    await markJobCompleted({
+    return {
+      success: true,
+      campaignId: campaign.id,
+      leadListId: leadList.id,
+      sourceRequested,
+      platformsRequested,
+      sourceMode: 'FINDLY_INTELLIGENCE_INDEX',
+      sourceUsed: 'LOCAL_DATASET',
+      fallbackUsed,
+      fallbackReason,
+      searchMode: fallbackUsed ? 'FINDLY_INTELLIGENCE_FALLBACK' : 'FINDLY_INTELLIGENCE_INDEX',
+      leadsFound: leadsReturned,
+      leadsReturned,
+      resultCount: leadsReturned,
+      creditsReserved: reservedCredits,
+      creditsUsed: actualCreditsUsed,
+      warning: fallbackUsed ? 'Findly used its Intelligence Index because the selected live provider is not connected yet.' : null,
+      message,
+      matchedLeads: matchedLeads.map(safeLeadPreview),
       jobId,
-      payload: {
-        campaignId: campaign.id,
-        platformsRequested,
-        sourceUsed: 'LOCAL_DATASET',
-        fallbackUsed,
-        fallbackReason,
-        leadListId: leadList.id,
-        leadsReturned,
-      },
-    });
+    };
+  } catch (error) {
+    if (reservationOpen) {
+      await refundCredits({
+        userId,
+        workspaceId: campaign.workspaceId,
+        amount: reservedCredits,
+        reason: `Refunded reserved credits after failed intelligence search campaign: ${campaign.name}`,
+        referenceType: 'SearchCampaign',
+        referenceId: campaign.id,
+      }).catch(() => {});
+    }
+
+    const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
+    const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while running Findly Intelligence Index.';
+    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
+    if (jobId) {
+      await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+    }
+    throw error;
   }
-
-  logger.info('campaign.local_dataset.completed', {
-    userId,
-    campaignId: campaign.id,
-    platformsRequested,
-    fallbackUsed,
-    leadsReturned,
-  });
-
-  return {
-    success: true,
-    campaignId: campaign.id,
-    leadListId: leadList.id,
-    platformsRequested,
-    sourceMode: 'AVAILABLE_INTELLIGENCE',
-    sourceUsed: 'LOCAL_DATASET',
-    fallbackUsed,
-    fallbackReason,
-    searchMode: 'AVAILABLE_INTELLIGENCE',
-    leadsFound: leadsReturned,
-    leadsReturned,
-    resultCount: leadsReturned,
-    creditsUsed: 0,
-    message,
-    matchedLeads: matchedLeads.map(safeLeadPreview),
-    jobId,
-  };
 };
 
 export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrichment = false, analysis = false } = {}) => {
-  const limit = Math.max(1, Math.min(requestedLimit, 100));
+  const limit = Math.max(1, Math.min(Number(requestedLimit) || 20, 100));
   const sourceBreakdown = sources
     .map((source) => ({ source, estimate: estimateSourceCost(source, { maxResults: limit }) }))
     .filter((item) => item.estimate);
   const baseSearchCost = SEARCH_BASE_CREDITS;
-  const perLeadCost = SEARCH_PER_SAVED_LEAD_CREDITS;
+  const perLeadCost = SEARCH_PER_RETURNED_LEAD_CREDITS;
   const enrichmentCost = enrichment ? 0 : 0;
-  const analysisCost = analysis ? limit : 0;
-  const estimatedMax = baseSearchCost + (limit * perLeadCost) + enrichmentCost + analysisCost;
+  const analysisCost = analysis ? limit * ANALYSIS_CREDITS : 0;
+  const estimatedMax = estimateSearchCreditReservation({ requestedLimit: limit }) + enrichmentCost + analysisCost;
 
   return {
     baseCost: baseSearchCost,
@@ -445,7 +546,7 @@ export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrich
     estimatedTotal: estimatedMax,
     breakdown: {
       sources: sourceBreakdown,
-      search: baseSearchCost + (limit * perLeadCost),
+      search: estimateSearchCreditReservation({ requestedLimit: limit }),
       enrichment: enrichmentCost,
       analysis: analysisCost,
     },
@@ -481,7 +582,7 @@ export const analyzeLead = async ({ leadId, userId }) => {
       tx,
       userId,
       workspaceId: lead.workspaceId,
-      amount: 1,
+      amount: ANALYSIS_CREDITS,
       type: 'CREDIT_USED',
       reason: `Analyzed lead: ${lead.businessName}`,
       referenceType: 'Lead',
@@ -506,7 +607,7 @@ export const analyzeLead = async ({ leadId, userId }) => {
         metadata: {
           workspaceId: lead.workspaceId,
           analysisId: analysis.id,
-          creditsUsed: 1,
+          creditsUsed: ANALYSIS_CREDITS,
         },
       },
     });
@@ -514,7 +615,7 @@ export const analyzeLead = async ({ leadId, userId }) => {
     return analysis;
   });
 
-  return { analysis: result, reused: false, creditsUsed: 1 };
+  return { analysis: result, reused: false, creditsUsed: ANALYSIS_CREDITS };
 };
 
 export const analyzeCampaign = async ({ campaignId, userId }) => {
@@ -541,13 +642,14 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
   }
 
   const profile = campaign.serviceProfile || defaultAnalysisProfile;
+  const creditsToUse = leads.length * ANALYSIS_CREDITS;
 
   const result = await prisma.$transaction(async (tx) => {
     await deductCredits({
       tx,
       userId,
       workspaceId: campaign.workspaceId,
-      amount: leads.length,
+      amount: creditsToUse,
       type: 'CREDIT_USED',
       reason: `Analyzed campaign leads: ${campaign.name}`,
       referenceType: 'SearchCampaign',
@@ -575,7 +677,7 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
         metadata: {
           workspaceId: campaign.workspaceId,
           analyzedCount: analyses.length,
-          creditsUsed: leads.length,
+          creditsUsed: creditsToUse,
         },
       },
     });
@@ -583,5 +685,5 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
     return analyses;
   });
 
-  return { analyzedCount: result.length, creditsUsed: leads.length };
+  return { analyzedCount: result.length, creditsUsed: creditsToUse };
 };
