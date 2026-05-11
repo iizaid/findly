@@ -5,6 +5,7 @@ import { successResponse } from '../../utils/apiResponse.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { inspectDatasetFile, importDatasetFile } from '../datasets/datasetImport.service.js';
 import { readDatasetWorkbook } from '../datasets/datasetFileReader.js';
+import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import {
   safeResolveUploadFile,
   removeAdminUploadFile,
@@ -135,11 +136,16 @@ export const commitImportFile = asyncHandler(async (req, res) => {
 
   // Convert frontend mappingConfig shape → internal format, validating headers
   const internalMappingConfig = await buildInternalMappingConfig(filePath, mappingConfig);
+  const workspace = await getDefaultWorkspace(req.user.id);
+
+  if (!workspace) {
+    throw new AppError(errorCodes.NOT_FOUND, 'Default workspace not found for this admin user.', 404);
+  }
 
   const owner = {
     userId: req.user.id,
     userEmail: req.user.email,
-    workspaceId: req.user.ownedWorkspaces?.[0]?.id || null,
+    workspaceId: workspace.id,
   };
 
   const summary = await importDatasetFile({
@@ -160,6 +166,7 @@ export const commitImportFile = asyncHandler(async (req, res) => {
       entityType: 'DatasetImport',
       entityId: summary.importId,
       metadata: {
+        workspaceId: workspace.id,
         fileName: summary.fileName,
         totalRows: summary.totalRows,
         importedRows: summary.importedRows,
