@@ -9,6 +9,7 @@ import {
   reserveCredits,
   SEARCH_BASE_CREDITS,
   SEARCH_PER_RETURNED_LEAD_CREDITS,
+  WEBSITE_ENRICHMENT_CREDITS,
 } from '../credits/credit.service.js';
 import { runRuleBasedAnalysis } from './analysis.service.js';
 import { estimateSourceCost, getRunnableAdapter } from './source.registry.js';
@@ -217,7 +218,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         });
 
         if (!existing) {
-          const newLead = await tx.lead.create({
+          await tx.lead.create({
             data: {
               ...lead,
               userId,
@@ -229,13 +230,6 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
             },
           });
           savedLeadsCount += 1;
-
-          if (campaign.serviceProfileId) {
-            const profile = await tx.serviceProfile.findUnique({ where: { id: campaign.serviceProfileId } });
-            if (profile) {
-              await runRuleBasedAnalysis({ tx, lead: newLead, profile, userId, workspaceId: campaign.workspaceId, campaignId: campaign.id });
-            }
-          }
         }
 
         await tx.searchCampaign.update({
@@ -278,6 +272,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
             savedLeadsCount,
             creditsReserved: reservedCredits,
             creditsUsed: totalCreditsUsed,
+            analysisIncluded: false,
           },
         },
       });
@@ -531,7 +526,7 @@ export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrich
     .filter((item) => item.estimate);
   const baseSearchCost = SEARCH_BASE_CREDITS;
   const perLeadCost = SEARCH_PER_RETURNED_LEAD_CREDITS;
-  const enrichmentCost = enrichment ? 0 : 0;
+  const enrichmentCost = enrichment ? WEBSITE_ENRICHMENT_CREDITS : 0;
   const analysisCost = analysis ? limit * ANALYSIS_CREDITS : 0;
   const estimatedMax = estimateSearchCreditReservation({ requestedLimit: limit }) + enrichmentCost + analysisCost;
 
