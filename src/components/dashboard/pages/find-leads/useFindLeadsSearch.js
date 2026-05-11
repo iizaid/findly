@@ -11,11 +11,15 @@ import {
   delay,
 } from './searchConfig';
 
+const SEARCH_BASE_CREDITS = 5;
+const SEARCH_PER_RESULT_CREDITS = 1;
+
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
       return 'This platform is not connected yet. Select another platform or try again later.';
     }
+    if (error.code === 'INSUFFICIENT_FUNDS') return error.message || 'You do not have enough credits for this search.';
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
   }
@@ -68,6 +72,21 @@ export const useFindLeadsSearch = ({ workspace }) => {
     () => selectedSources.map((source) => PLATFORM_LABELS[source] || source).join(', '),
     [selectedSources],
   );
+
+  const estimatedCredits = useMemo(() => {
+    const maxResults = Math.max(1, Math.min(Number(formState.maxResults) || 20, 100));
+    return SEARCH_BASE_CREDITS + (maxResults * SEARCH_PER_RESULT_CREDITS);
+  }, [formState.maxResults]);
+
+  const selectedSourceModes = useMemo(() => selectedSources.map((sourceId) => {
+    const source = sourceOptions.find((option) => option.id === sourceId);
+    const usesIntelligenceIndex = Boolean(source && !source.available && source.fallbackAvailable);
+    return {
+      id: sourceId,
+      label: PLATFORM_LABELS[sourceId] || sourceId,
+      mode: usesIntelligenceIndex ? 'Findly Intelligence Index' : 'Live provider / configured source',
+    };
+  }), [selectedSources, sourceOptions]);
 
   useEffect(() => {
     let mounted = true;
@@ -212,12 +231,6 @@ export const useFindLeadsSearch = ({ workspace }) => {
 
       setSearchStep(3);
       await delay(300);
-
-      if (leadsReturned === 0) {
-        setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
-        return;
-      }
-
       setSearchStep(4);
       await delay(250);
 
@@ -228,7 +241,15 @@ export const useFindLeadsSearch = ({ workspace }) => {
         count: leadsReturned,
         platformsRequested: runData.platformsRequested || selectedSources,
         sourceMode: runData.sourceMode,
+        creditsReserved: runData.creditsReserved,
+        creditsUsed: runData.creditsUsed,
+        message: runData.message,
+        warning: runData.warning,
       });
+
+      if (leadsReturned === 0) {
+        setError('No matching leads found. The backend still charged the base search cost because the search was executed. Try broader filters next time.');
+      }
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
@@ -248,6 +269,8 @@ export const useFindLeadsSearch = ({ workspace }) => {
     searchStep,
     resultSummary,
     selectedPlatformNames,
+    selectedSourceModes,
+    estimatedCredits,
     updateField,
     toggleSource,
     resetForNewSearch,
