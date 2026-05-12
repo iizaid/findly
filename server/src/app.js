@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { securityMiddleware } from './config/security.js';
 import { csrfProtection } from './middleware/csrf.middleware.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
+import { requireAllowedOrigin } from './middleware/origin.middleware.js';
 import { generalRateLimiter } from './middleware/rateLimit.middleware.js';
 import { requestContext } from './middleware/requestContext.middleware.js';
 import { requireJsonContentType } from './middleware/requestHardening.middleware.js';
@@ -29,6 +30,7 @@ export const createApp = () => {
   app.use(securityMiddleware);
   app.use(corsMiddleware);
   app.use(generalRateLimiter);
+  app.use(requireAllowedOrigin);
   app.use(requireJsonContentType);
   app.use(express.json({ limit: env.JSON_BODY_LIMIT, strict: true }));
   app.use(express.urlencoded({ extended: false, limit: env.URLENCODED_BODY_LIMIT }));
