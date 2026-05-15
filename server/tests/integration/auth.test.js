@@ -467,7 +467,7 @@ describe('Findly auth, verification, and foundation API', () => {
 
   it('blocks product endpoints for unverified users but allows auth state and resend with CSRF', async () => {
     const unverifiedEmail = `test.${unique}.unverified@findly.local`;
-    const { agent, response: registerResponse } = await registerAccount({ userEmail: unverifiedEmail, name: 'Unverified User' });
+    const { agent } = await registerAccount({ userEmail: unverifiedEmail, name: 'Unverified User' });
 
     // 1. /api/auth/me should return 200 (auth state is readable)
     const meResponse = await agent.get('/api/auth/me').expect(200);
