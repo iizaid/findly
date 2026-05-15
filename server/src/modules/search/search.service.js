@@ -1,6 +1,12 @@
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
-import { deductCredits } from '../credits/credit.service.js';
+import {
+  calculateSearchCreditCost,
+  deductCredits,
+  estimateSearchCreditReservation,
+  SEARCH_BASE_CREDITS,
+  SEARCH_PER_RETURNED_LEAD_CREDITS,
+} from '../credits/credit.service.js';
 import { runRuleBasedAnalysis } from './analysis.service.js';
 import { estimateSourceCost, getRunnableAdapter } from './source.registry.js';
 import { logger } from '../../utils/logger.js';
@@ -9,25 +15,8 @@ import { markCampaignCompleted, markCampaignFailed, markCampaignRunning, RUNNABL
 import { markJobCompleted, markJobFailed, markJobRunning } from '../jobs/jobQueue.service.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 
-const SEARCH_BASE_CREDITS = 5;
-const SEARCH_PER_SAVED_LEAD_CREDITS = 1;
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
-
-const sourceLabels = {
-  LOCAL_DATASET: 'Local Dataset',
-  GOOGLE_MAPS: 'Google Maps',
-  INSTAGRAM: 'Instagram',
-  FACEBOOK: 'Facebook',
-  WEBSITE: 'Website Enrichment',
-  YELP: 'Yelp',
-  SERPAPI: 'SerpAPI',
-  TRIPADVISOR: 'TripAdvisor',
-  YOUTUBE: 'YouTube',
-  X: 'X',
-  LINKEDIN: 'LinkedIn',
-  TIKTOK: 'TikTok',
-};
 
 const fallbackReasonFor = (sources = []) => {
   if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_MAPS_NOT_CONNECTED';
@@ -40,19 +29,16 @@ const fallbackReasonFor = (sources = []) => {
   return 'PROVIDERS_NOT_CONNECTED';
 };
 
-const safeLeadPreview = (lead) => ({
-  id: lead.id,
-  businessName: lead.businessName,
-  category: lead.category,
-  country: lead.country,
-  city: lead.city,
-  websiteUrl: lead.websiteUrl,
-  instagramUrl: lead.instagramUrl,
-  phone: lead.phone,
-  source: lead.source,
-  sourceFile: lead.sourceFile,
-  localDatasetScore: lead.localDatasetScore,
-});
+export const estimateSearchCreditsRequired = (requestedLimit) => estimateSearchCreditReservation({ requestedLimit });
+export const calculateSearchCreditsUsed = (leadsCount) => calculateSearchCreditCost({ returnedLeadsCount: leadsCount });
+
+const assertSearchCreditsAvailable = async ({ userId, requestedLimit }) => {
+  const maxCreditsRequired = estimateSearchCreditsRequired(requestedLimit);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { creditsBalance: true } });
+  if (!user || user.creditsBalance < maxCreditsRequired) {
+    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
+  }
+};
 export const createCampaign = async ({ userId, workspaceId, data }) => {
   return prisma.$transaction(async (tx) => {
     const campaign = await tx.searchCampaign.create({
@@ -126,6 +112,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     || (fallbackSourcesRequested && runnableExternalSources.length === 0 && allUnavailableSourcesCanFallback);
 
   if (shouldUseLocalDataset) {
+    await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
     return runLocalDatasetCampaign({
       campaign,
       userId,
@@ -145,12 +132,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'No selected search source is currently available.', 400);
   }
 
-  const maxCreditsRequired = SEARCH_BASE_CREDITS + ((campaign.requestedLimit || 20) * SEARCH_PER_SAVED_LEAD_CREDITS);
-  
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { creditsBalance: true } });
-  if (!user || user.creditsBalance < maxCreditsRequired) {
-    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
-  }
+  await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
 
   await markCampaignRunning({
     campaignId: campaign.id,
@@ -178,6 +160,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     const normalizedLeads = normalizedLeadGroups.slice(0, campaign.requestedLimit || 20);
 
     let savedLeadsCount = 0;
+    let totalCreditsUsed = 0;
     
     // Deduplication & Saving inside transaction
     await prisma.$transaction(async (tx) => {
@@ -229,7 +212,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         });
       }
 
-      const totalCreditsUsed = SEARCH_BASE_CREDITS + (savedLeadsCount * SEARCH_PER_SAVED_LEAD_CREDITS);
+      totalCreditsUsed = calculateSearchCreditsUsed(savedLeadsCount);
 
       await deductCredits({
         tx,
@@ -269,7 +252,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     if (jobId) {
       await markJobCompleted({ jobId, payload: { campaignId: campaign.id, savedLeadsCount } });
     }
-    return { success: true, savedLeadsCount, jobId };
+    return { success: true, savedLeadsCount, creditsUsed: totalCreditsUsed, jobId };
   } catch (error) {
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
     const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while running the source adapter.';
@@ -315,135 +298,166 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       platformsRequested,
     },
   });
-  const matchedLeads = await adapter.run();
-  const leadsReturned = matchedLeads.length;
   const sourceRequested = platformsRequested.join(',');
   const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
-  const message = leadsReturned > 0
-    ? 'Search completed across selected platforms.'
-    : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
 
-  const listNameParts = [
-    Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
-    campaign.city,
-    'Platform Signals',
-  ].filter(Boolean);
+  try {
+    const matchedLeads = await adapter.run();
+    const leadsReturned = matchedLeads.length;
+    const creditsUsed = calculateSearchCreditsUsed(leadsReturned);
+    const message = leadsReturned > 0
+      ? 'Search completed across selected platforms.'
+      : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
 
-  const leadList = await prisma.$transaction(async (tx) => {
-    const createdList = await tx.leadList.create({
-      data: {
+    const listNameParts = [
+      Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
+      campaign.city,
+      'Platform Signals',
+    ].filter(Boolean);
+
+    const leadList = await prisma.$transaction(async (tx) => {
+      const createdList = await tx.leadList.create({
+        data: {
+          userId,
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
+          sourceRequested,
+          sourceUsed: 'LOCAL_DATASET',
+          fallbackUsed,
+          searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'GLOBAL_DATASET',
+          filters: {
+            country: campaign.country,
+            city: campaign.city,
+            businessTypes: campaign.businessTypes,
+            goal: campaign.filters?.goal || null,
+            platformsRequested,
+            sourceUsed: 'LOCAL_DATASET',
+            fallbackReason,
+          },
+          resultCount: leadsReturned,
+        },
+      });
+
+      if (matchedLeads.length > 0) {
+        await tx.leadListLead.createMany({
+          data: matchedLeads.map((lead, index) => ({
+            leadListId: createdList.id,
+            catalogLeadId: lead.id,
+            rank: index + 1,
+            score: lead.localDatasetScore || null,
+            metadata: {
+              platformsRequested,
+              sourceUsed: 'LOCAL_DATASET',
+              fallbackUsed,
+              fallbackReason,
+            },
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      await deductCredits({
+        tx,
         userId,
         workspaceId: campaign.workspaceId,
-        campaignId: campaign.id,
-        name: listNameParts.join(' - ') || `${campaign.name} - Intelligence`,
-        sourceRequested,
-        sourceUsed: 'LOCAL_DATASET',
-        fallbackUsed,
-        searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'GLOBAL_DATASET',
-        filters: {
-          country: campaign.country,
-          city: campaign.city,
-          businessTypes: campaign.businessTypes,
-          goal: campaign.filters?.goal || null,
-          platformsRequested,
-          sourceUsed: 'LOCAL_DATASET',
-          fallbackReason,
-        },
-        resultCount: leadsReturned,
-      },
-    });
+        amount: creditsUsed,
+        type: 'CREDIT_USED',
+        reason: `Ran search campaign: ${campaign.name}`,
+        referenceType: 'SearchCampaign',
+        referenceId: campaign.id,
+      });
 
-    if (matchedLeads.length > 0) {
-      await tx.leadListLead.createMany({
-        data: matchedLeads.map((lead, index) => ({
-          leadListId: createdList.id,
-          catalogLeadId: lead.id,
-          rank: index + 1,
-          score: lead.localDatasetScore || null,
+      await markCampaignCompleted({
+        tx,
+        campaignId: campaign.id,
+        savedLeadsCount: leadsReturned,
+        creditsUsed,
+        totalProcessed: leadsReturned,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: fallbackUsed ? 'SEARCH_CAMPAIGN_LOCAL_DATASET_FALLBACK' : 'SEARCH_CAMPAIGN_LOCAL_DATASET_RUN',
+          entityType: 'SearchCampaign',
+          entityId: campaign.id,
           metadata: {
+            workspaceId: campaign.workspaceId,
             platformsRequested,
             sourceUsed: 'LOCAL_DATASET',
             fallbackUsed,
             fallbackReason,
+            leadListId: createdList.id,
+            leadsReturned,
+            creditsUsed,
           },
-        })),
-        skipDuplicates: true,
+        },
+      });
+
+      return createdList;
+    });
+
+    if (jobId) {
+      await markJobCompleted({
+        jobId,
+        payload: {
+          campaignId: campaign.id,
+          leadListId: leadList.id,
+          leadsReturned,
+          creditsUsed,
+        },
       });
     }
 
-    await markCampaignCompleted({
-      tx,
+    logger.info('campaign.local_dataset.completed', {
+      userId,
       campaignId: campaign.id,
-      savedLeadsCount: leadsReturned,
-      creditsUsed: 0,
-      totalProcessed: leadsReturned,
+      platformsRequested,
+      fallbackUsed,
+      leadsReturned,
+      creditsUsed,
     });
 
-    await tx.auditLog.create({
+    return {
+      success: true,
+      campaignId: campaign.id,
+      leadListId: leadList.id,
+      platformsRequested,
+      leadsReturned,
+      resultCount: leadsReturned,
+      creditsUsed,
+      message,
+      jobId,
+    };
+  } catch (error) {
+    const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
+    const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while searching available business intelligence.';
+
+    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
+    if (jobId) {
+      await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+    }
+
+    await prisma.auditLog.create({
       data: {
         userId,
-        action: fallbackUsed ? 'SEARCH_CAMPAIGN_LOCAL_DATASET_FALLBACK' : 'SEARCH_CAMPAIGN_LOCAL_DATASET_RUN',
+        action: 'SEARCH_CAMPAIGN_FAILED',
         entityType: 'SearchCampaign',
         entityId: campaign.id,
         metadata: {
           workspaceId: campaign.workspaceId,
-          platformsRequested,
+          errorCode,
           sourceUsed: 'LOCAL_DATASET',
           fallbackUsed,
           fallbackReason,
-          leadListId: createdList.id,
-          leadsReturned,
-          creditsUsed: 0,
         },
       },
-    });
+    }).catch(() => {});
 
-    return createdList;
-  });
-
-  if (jobId) {
-    await markJobCompleted({
-      jobId,
-      payload: {
-        campaignId: campaign.id,
-        platformsRequested,
-        sourceUsed: 'LOCAL_DATASET',
-        fallbackUsed,
-        fallbackReason,
-        leadListId: leadList.id,
-        leadsReturned,
-      },
-    });
+    logger.warn('campaign.local_dataset.failed', { userId, campaignId: campaign.id, errorCode, errorMessage: safeMessage });
+    throw error;
   }
-
-  logger.info('campaign.local_dataset.completed', {
-    userId,
-    campaignId: campaign.id,
-    platformsRequested,
-    fallbackUsed,
-    leadsReturned,
-  });
-
-  return {
-    success: true,
-    campaignId: campaign.id,
-    leadListId: leadList.id,
-    sourceRequested,
-    platformsRequested,
-    sourceMode: 'AVAILABLE_INTELLIGENCE',
-    sourceUsed: 'LOCAL_DATASET',
-    fallbackUsed,
-    fallbackReason,
-    searchMode: fallbackUsed ? 'LOCAL_DATASET_FALLBACK' : 'GLOBAL_DATASET',
-    leadsFound: leadsReturned,
-    leadsReturned,
-    resultCount: leadsReturned,
-    creditsUsed: 0,
-    warning: fallbackUsed ? 'Findly searched the best available business intelligence for this request.' : null,
-    message,
-    matchedLeads: matchedLeads.map(safeLeadPreview),
-    jobId,
-  };
 };
 
 export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrichment = false, analysis = false } = {}) => {
@@ -452,7 +466,7 @@ export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrich
     .map((source) => ({ source, estimate: estimateSourceCost(source, { maxResults: limit }) }))
     .filter((item) => item.estimate);
   const baseSearchCost = SEARCH_BASE_CREDITS;
-  const perLeadCost = SEARCH_PER_SAVED_LEAD_CREDITS;
+  const perLeadCost = SEARCH_PER_RETURNED_LEAD_CREDITS;
   const enrichmentCost = enrichment ? 0 : 0;
   const analysisCost = analysis ? limit : 0;
   const estimatedMax = baseSearchCost + (limit * perLeadCost) + enrichmentCost + analysisCost;

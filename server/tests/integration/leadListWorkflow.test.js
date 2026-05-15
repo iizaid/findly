@@ -230,8 +230,9 @@ describe('LeadList Workflow Architecture', () => {
     expect(afterCredits).toBe(beforeCredits - 1);
   });
 
-  it('runs a multi-platform campaign and returns correct available intelligence metadata', async () => {
+  it('runs a multi-platform campaign, charges credits, and hides internal source metadata', async () => {
     const csrfToken = await getCsrfToken(agent1);
+    const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
     
     // Create Campaign
     const campaignRes = await agent1.post('/api/search/campaigns')
@@ -257,12 +258,55 @@ describe('LeadList Workflow Architecture', () => {
 
     expect(runRes.status).toBe(200);
     const runData = runRes.body.data;
-    
-    expect(runData.sourceMode).toBe('AVAILABLE_INTELLIGENCE');
+
     expect(runData.platformsRequested).toContain('INSTAGRAM');
     expect(runData.platformsRequested).toContain('GOOGLE_MAPS');
     expect(runData.leadListId).toBeDefined();
     expect(runData.leadsReturned).toBeGreaterThanOrEqual(1); // Should match our global catalog
+    expect(runData.resultCount).toBe(runData.leadsReturned);
+    expect(runData.creditsUsed).toBe(5 + runData.leadsReturned);
+    for (const hiddenField of ['sourceUsed', 'fallbackUsed', 'fallbackReason', 'searchMode', 'sourceMode', 'sourceRequested', 'matchedLeads']) {
+      expect(runData).not.toHaveProperty(hiddenField);
+    }
+    expect(JSON.stringify(runData)).not.toContain('LOCAL_DATASET');
+
+    const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterCredits).toBe(beforeCredits - runData.creditsUsed);
+
+    const campaign = await prisma.searchCampaign.findUnique({ where: { id: newCampaignId } });
+    expect(campaign.creditsUsed).toBe(runData.creditsUsed);
+  });
+
+  it('blocks stored-intelligence campaign runs when the user cannot cover the maximum estimated search cost', async () => {
+    const csrfToken = await getCsrfToken(agent2);
+    const me2 = await agent2.get('/api/auth/me').expect(200);
+
+    const campaignRes = await agent2.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: me2.body.data.workspace.id,
+        name: 'Too expensive stored intelligence search',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 46,
+      })
+      .expect(201);
+
+    const beforeCredits = (await agent2.get('/api/credits')).body.data.credits.balance;
+    const runRes = await agent2.post(`/api/search/campaigns/${campaignRes.body.data.campaign.id}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(402);
+
+    expect(runRes.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    const afterCredits = (await agent2.get('/api/credits')).body.data.credits.balance;
+    expect(afterCredits).toBe(beforeCredits);
+
+    const lists = await prisma.leadList.count({ where: { campaignId: campaignRes.body.data.campaign.id } });
+    expect(lists).toBe(0);
   });
 
   it('matches smart business type aliases such as Cafes to Coffee Shop leads', async () => {
@@ -291,8 +335,13 @@ describe('LeadList Workflow Architecture', () => {
       .expect(200);
 
     const runData = runRes.body.data;
-    expect(runData.sourceMode).toBe('AVAILABLE_INTELLIGENCE');
     expect(runData.leadsReturned).toBeGreaterThanOrEqual(1);
-    expect(runData.matchedLeads.some((lead) => lead.businessName.includes('Specialty Roastery'))).toBe(true);
+    expect(runData).not.toHaveProperty('matchedLeads');
+
+    const leadsRes = await agent1.get(`/api/search/lists/${runData.leadListId}/leads`).expect(200);
+    expect(leadsRes.body.data.leads.some((lead) => lead.businessName.includes('Specialty Roastery'))).toBe(true);
+    expect(leadsRes.body.data.leads[0]).not.toHaveProperty('sourceFile');
+    expect(JSON.stringify(leadsRes.body.data.leads)).not.toContain('LOCAL_DATASET');
+    expect(JSON.stringify(leadsRes.body.data.leads)).not.toContain('DATASET_IMPORT');
   });
 });

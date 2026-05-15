@@ -751,7 +751,7 @@ describe('Findly auth, verification, and foundation API', () => {
         businessTypes: ['Cafe'],
         sources: ['GOOGLE_MAPS'],
         filters: { goal: 'Find businesses without websites' },
-        requestedLimit: 100,
+        requestedLimit: 10,
       })
       .expect(201);
 
@@ -761,31 +761,48 @@ describe('Findly auth, verification, and foundation API', () => {
       .send({})
       .expect(200);
 
-    expect(runResponse.body.data.fallbackUsed).toBe(true);
-    expect(runResponse.body.data.sourceRequested).toBe('GOOGLE_MAPS');
-    expect(runResponse.body.data.sourceUsed).toBe('LOCAL_DATASET');
-    expect(runResponse.body.data.fallbackReason).toBe('GOOGLE_MAPS_NOT_CONNECTED');
-    expect(runResponse.body.data.searchMode).toBe('LOCAL_DATASET_FALLBACK');
-    expect(runResponse.body.data.creditsUsed).toBe(0);
     expect(runResponse.body.data.leadsReturned).toBeGreaterThan(0);
+    expect(runResponse.body.data.resultCount).toBe(runResponse.body.data.leadsReturned);
     expect(runResponse.body.data.leadListId).toBeTruthy();
-    expect(runResponse.body.data.warning).toBe('Findly searched the best available business intelligence for this request.');
+    expect(runResponse.body.data.creditsUsed).toBe(5 + runResponse.body.data.leadsReturned);
     expect(JSON.stringify(runResponse.body.data)).not.toContain('GOOGLE_PLACES_API_KEY');
-    expect(runResponse.body.data.matchedLeads.some((lead) => lead.businessName === 'Sample Cafe')).toBe(true);
-    expect(runResponse.body.data.matchedLeads.some((lead) => lead.businessName === `Sweifieh Test Cafe ${unique}`)).toBe(true);
+    for (const hiddenField of ['fallbackUsed', 'sourceRequested', 'sourceUsed', 'fallbackReason', 'searchMode', 'sourceMode', 'matchedLeads']) {
+      expect(runResponse.body.data).not.toHaveProperty(hiddenField);
+    }
+    expect(JSON.stringify(runResponse.body.data)).not.toContain('LOCAL_DATASET');
+    expect(JSON.stringify(runResponse.body.data)).not.toContain('DATASET_IMPORT');
 
     const balanceAfterFallback = (await agent.get('/api/credits').expect(200)).body.data.credits.balance;
-    expect(balanceAfterFallback).toBe(balanceBeforeFallback);
+    expect(balanceAfterFallback).toBe(balanceBeforeFallback - runResponse.body.data.creditsUsed);
+
+    const completedCampaign = await prisma.searchCampaign.findUnique({
+      where: { id: campaignResponse.body.data.campaign.id },
+    });
+    expect(completedCampaign.creditsUsed).toBe(runResponse.body.data.creditsUsed);
+
+    const ledger = await prisma.creditLedger.findFirst({
+      where: {
+        userId: meResponse.body.data.user.id,
+        referenceType: 'SearchCampaign',
+        referenceId: campaignResponse.body.data.campaign.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(ledger.amount).toBe(-runResponse.body.data.creditsUsed);
+    expect(ledger.type).toBe('CREDIT_USED');
 
     const snapshotResponse = await agent.get(`/api/search/lists/${runResponse.body.data.leadListId}`).expect(200);
-    expect(snapshotResponse.body.data.list.sourceRequested).toBe('GOOGLE_MAPS');
-    expect(snapshotResponse.body.data.list.sourceUsed).toBe('LOCAL_DATASET');
-    expect(snapshotResponse.body.data.list.fallbackUsed).toBe(true);
+    expect(snapshotResponse.body.data.list).not.toHaveProperty('sourceRequested');
+    expect(snapshotResponse.body.data.list).not.toHaveProperty('sourceUsed');
+    expect(snapshotResponse.body.data.list).not.toHaveProperty('fallbackUsed');
     expect(snapshotResponse.body.data.list.leadCount).toBe(runResponse.body.data.leadsReturned);
 
     const snapshotLeadsResponse = await agent.get(`/api/search/lists/${runResponse.body.data.leadListId}/leads`).expect(200);
     expect(snapshotLeadsResponse.body.data.leads.some((lead) => lead.businessName === 'Sample Cafe')).toBe(true);
     expect(snapshotLeadsResponse.body.data.leads[0].catalogLeadId).toBeTruthy();
+    expect(snapshotLeadsResponse.body.data.leads[0]).not.toHaveProperty('sourceFile');
+    expect(JSON.stringify(snapshotLeadsResponse.body.data.leads)).not.toContain('LOCAL_DATASET');
+    expect(JSON.stringify(snapshotLeadsResponse.body.data.leads)).not.toContain('DATASET_IMPORT');
 
     const catalogCountAfterFallback = await prisma.leadCatalog.count({
       where: { sourceFile: 'sample-leads.csv' },
