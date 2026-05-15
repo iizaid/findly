@@ -1,2 +1,6 @@
 -- AlterTable
-ALTER TABLE "User" ADD COLUMN "avatarUrl" TEXT;
+ALTER TABLE "User" ADD COLUMN "avatarUrl" TEXT,
+ADD COLUMN "notifyReports" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "notifySecurity" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "notifyMarketing" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false;
