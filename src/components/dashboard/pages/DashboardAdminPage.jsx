@@ -172,7 +172,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const renderPanel = () => {
     switch (activeTab) {
       case 'overview':
-        return <AdminOverviewPanel totals={totals} systemStatus={systemStatus} security={security} catalog={catalog} />;
+        return <AdminOverviewPanel totals={totals} systemStatus={systemStatus} security={security} catalog={catalog} imports={imports} errors={errors} campaigns={campaigns} users={users} />;
       case 'live':
         return <AdminLiveActivityPanel onSelect={(r) => openDetail(r, 'activity')} />;
       case 'catalog':
@@ -198,36 +198,43 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
 
   return (
     <div className="space-y-5">
-      {/* ============ HEADER ============ */}
-      <div className="rounded-[22px] border border-black/[0.04] bg-white p-5 md:p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* ============ TOP COMMAND HEADER ============ */}
+      <div className="rounded-[24px] border border-black/[0.04] bg-white p-6 md:p-8 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)]">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-secondary">Founder Operations</p>
-              <span className="rounded-md bg-black px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white leading-none">Admin</span>
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Operations Center</h2>
-            <p className="mt-1 text-[13px] font-semibold text-secondary max-w-xl leading-relaxed">
-              Monitor platform health, users, data catalog, campaigns, imports, and security.
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-secondary mb-2">Founder Operations</p>
+            <h2 className="text-[28px] font-extrabold tracking-tight md:text-[32px] leading-none text-black">Findly Control Tower</h2>
+            <p className="mt-2.5 text-[14px] font-medium text-secondary max-w-2xl leading-relaxed">
+              Monitor platform health, users, lead data, imports, campaigns, security, and system activity.
             </p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {user?.email && (
-              <p className="hidden lg:block text-[11px] font-semibold text-secondary">{user.email}</p>
-            )}
-            {lastRefreshed && (
-              <p className="text-[11px] font-semibold text-secondary whitespace-nowrap">
-                {relTime(lastRefreshed)}
-              </p>
-            )}
+          <div className="flex items-center gap-3 shrink-0 bg-black/[0.02] p-2 pr-3 rounded-2xl border border-black/[0.03]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-black text-white">
+              <ShieldCheck size={18} strokeWidth={2.5} />
+            </div>
+            <div className="flex flex-col mr-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">Admin</span>
+              {user?.email && (
+                <span className="text-[13px] font-bold text-black leading-none">{user.email}</span>
+              )}
+            </div>
+            <div className="w-px h-8 bg-black/[0.06] mx-1" />
+            <div className="flex flex-col items-end mr-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">Status</span>
+              {lastRefreshed && (
+                <span className="text-[12px] font-bold text-black leading-none whitespace-nowrap">
+                  {relTime(lastRefreshed)}
+                </span>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => loadData(true)}
               disabled={isRefreshing}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/[0.08] bg-white text-black/50 transition-colors hover:bg-black/[0.03] hover:text-black disabled:opacity-40"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white border border-black/[0.06] text-black/60 shadow-sm transition-all hover:bg-black/[0.02] hover:text-black disabled:opacity-40 ml-1"
               aria-label="Refresh data"
             >
-              <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+              <RefreshCw size={16} strokeWidth={2.5} className={isRefreshing ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>

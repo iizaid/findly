@@ -36,20 +36,6 @@ const VerifyEmailPage = ({ token, onNavigate, onAuthOpen, onSessionChange }) => 
       } catch (error) {
         if (!active) return;
         
-        // Handle "already verified" response properly
-        if (error instanceof ApiError && error.status === 400 && error.message.includes('already verified')) {
-          setState({
-            status: 'success',
-            message: 'Your email is already verified.',
-            nextAction: 'LOGIN_REQUIRED', // default to login if it was an error response with no data
-          });
-          
-          if (active && onSessionChange) {
-            onSessionChange(null);
-          }
-          return;
-        }
-
         setState({
           status: 'error',
           message: error instanceof ApiError ? error.message : 'Could not verify this email link.',

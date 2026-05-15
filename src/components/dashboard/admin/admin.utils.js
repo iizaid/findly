@@ -65,22 +65,22 @@ export const actionLabel = (raw) => {
 
 export const campaignStatusStyle = (s) => {
   const styles = {
-    COMPLETED: 'bg-emerald-50 text-emerald-700',
-    RUNNING: 'bg-blue-50 text-blue-700',
-    PENDING: 'bg-amber-50 text-amber-700',
-    FAILED: 'bg-red-50 text-red-700',
-    CANCELLED: 'bg-neutral-100 text-neutral-500',
+    COMPLETED: { bg: 'bg-emerald-50 text-emerald-700', label: 'Completed' },
+    RUNNING: { bg: 'bg-blue-50 text-blue-700', label: 'Running' },
+    PENDING: { bg: 'bg-amber-50 text-amber-700', label: 'Pending' },
+    FAILED: { bg: 'bg-red-50 text-red-700', label: 'Failed' },
+    CANCELLED: { bg: 'bg-neutral-100 text-neutral-500', label: 'Cancelled' },
   };
-  return styles[s] || 'bg-neutral-100 text-neutral-600';
+  return styles[s] || { bg: 'bg-neutral-100 text-neutral-600', label: s || 'Unknown' };
 };
 
 export const severityStyle = (s) => {
   const styles = {
-    critical: 'bg-red-50 text-red-700 border-red-200',
-    warning: 'bg-amber-50 text-amber-700 border-amber-200',
-    info: 'bg-sky-50 text-sky-700 border-sky-200',
+    critical: { bg: 'bg-red-50 text-red-700', dot: 'bg-red-500', label: 'Critical' },
+    warning: { bg: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500', label: 'Warning' },
+    info: { bg: 'bg-sky-50 text-sky-700', dot: 'bg-sky-500', label: 'Info' },
   };
-  return styles[s] || 'bg-neutral-50 text-neutral-600 border-neutral-200';
+  return styles[s] || { bg: 'bg-neutral-50 text-neutral-600', dot: 'bg-neutral-400', label: s || 'Unknown' };
 };
 
 export const systemStatusStyle = (s) => {
@@ -98,12 +98,12 @@ export const systemStatusStyle = (s) => {
 
 export const importStatusStyle = (s) => {
   const map = {
-    COMPLETED: 'bg-emerald-50 text-emerald-700',
-    PROCESSING: 'bg-blue-50 text-blue-700',
-    PENDING: 'bg-amber-50 text-amber-700',
-    FAILED: 'bg-red-50 text-red-700',
+    COMPLETED: { bg: 'bg-emerald-50 text-emerald-700', label: 'Completed' },
+    PROCESSING: { bg: 'bg-blue-50 text-blue-700', label: 'Processing' },
+    PENDING: { bg: 'bg-amber-50 text-amber-700', label: 'Pending' },
+    FAILED: { bg: 'bg-red-50 text-red-700', label: 'Failed' },
   };
-  return map[s] || 'bg-neutral-100 text-neutral-600';
+  return map[s] || { bg: 'bg-neutral-100 text-neutral-600', label: s || 'Unknown' };
 };
 
 export const httpStatusStyle = (code) => {

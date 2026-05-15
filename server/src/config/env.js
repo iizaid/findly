@@ -3,6 +3,21 @@ import { z } from 'zod';
 
 dotenv.config({ quiet: true });
 
+const parseBoolean = z.preprocess((val) => {
+  if (val === undefined || val === '') return undefined;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'string') {
+    const lower = val.toLowerCase().trim();
+    if (lower === 'true' || lower === '1') return true;
+    if (lower === 'false' || lower === '0') return false;
+  }
+  if (typeof val === 'number') {
+    if (val === 1) return true;
+    if (val === 0) return false;
+  }
+  return val; // let zod validation fail on invalid values
+}, z.boolean());
+
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -15,14 +30,15 @@ const envSchema = z.object({
   COOKIE_NAME: z.string().min(1).default('findly_session'),
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   COOKIE_DOMAIN: z.string().optional(),
-  COOKIE_SECURE: z.coerce.boolean().optional(),
+  COOKIE_SECURE: parseBoolean.optional(),
   CSRF_COOKIE_NAME: z.string().min(1).default('findly_csrf'),
   CSRF_COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   CSRF_COOKIE_DOMAIN: z.string().optional(),
-  CSRF_COOKIE_SECURE: z.coerce.boolean().optional(),
+  CSRF_COOKIE_SECURE: parseBoolean.optional(),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   SESSION_SHORT_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(2),
   FAILED_LOGIN_ATTEMPT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+  FAILED_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(5),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
@@ -43,7 +59,7 @@ const envSchema = z.object({
   CLIENT_URL: z.string().url().default('http://localhost:5173'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_SECURE: parseBoolean.default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
@@ -63,7 +79,7 @@ const envSchema = z.object({
   REDDIT_MAX_RESULTS_HARD_LIMIT: z.coerce.number().int().min(1).max(100).default(50),
   DATASET_IMPORT_DIR: z.string().optional(),
   DATASET_IMPORT_MODE: z.enum(['global']).default('global'),
-  IMPORT_AS_ADMIN: z.coerce.boolean().default(true),
+  IMPORT_AS_ADMIN: parseBoolean.default(true),
   IMPORT_USER_EMAIL: z.string().email().optional(),
   IMPORT_WORKSPACE_ID: z.string().optional(),
   WEBSITE_FETCH_TIMEOUT_MS: z.coerce.number().int().min(500).max(20000).default(5000),
@@ -85,6 +101,29 @@ const envSchema = z.object({
         path: [field],
         message: `${field} is required in production.`,
       });
+    }
+  }
+
+  if (value.COOKIE_SAME_SITE === 'none' && value.COOKIE_SECURE === false) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['COOKIE_SECURE'],
+      message: 'COOKIE_SECURE must be true when COOKIE_SAME_SITE is none in production.',
+    });
+  }
+
+  if (value.CSRF_COOKIE_SAME_SITE === 'none' && value.CSRF_COOKIE_SECURE === false) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['CSRF_COOKIE_SECURE'],
+      message: 'CSRF_COOKIE_SECURE must be true when CSRF_COOKIE_SAME_SITE is none in production.',
+    });
+  }
+
+  if (value.COOKIE_DOMAIN) {
+    // Only warn if they set it but we can't fully validate domains here.
+    if (value.COOKIE_SAME_SITE === 'none' && !value.COOKIE_DOMAIN.startsWith('.')) {
+      console.warn(`[WARNING] COOKIE_DOMAIN "${value.COOKIE_DOMAIN}" is set with SameSite=None. Ensure it matches the frontend domain or use no domain for completely separate hosting.`);
     }
   }
 });

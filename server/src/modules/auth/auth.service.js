@@ -67,6 +67,27 @@ const clearFailedLogin = async (email, ipAddress) => {
   }).catch(() => {});
 };
 
+const checkFailedLoginLimit = async (email, context) => {
+  const emailHash = hashAuditValue(email);
+  const record = await prisma.failedLoginAttempt.findUnique({
+    where: {
+      ipAddress_emailHash: {
+        ipAddress: context.ipAddress || 'unknown',
+        emailHash,
+      },
+    },
+  });
+
+  if (record && record.attempts >= (env.FAILED_LOGIN_MAX_ATTEMPTS || 5)) {
+    if (record.expiresAt > new Date()) {
+      throw new AppError(errorCodes.RATE_LIMITED, 'Too many failed login attempts. Please try again later.', 429);
+    } else {
+      // Opportunistically clear expired
+      await clearFailedLogin(email, context.ipAddress);
+    }
+  }
+};
+
 export const registerUser = async ({ name, email, password }, req) => {
   const existingUser = await prisma.user.findUnique({
     where: { email },
@@ -173,6 +194,9 @@ export const registerUser = async ({ name, email, password }, req) => {
 
 export const loginUser = async ({ email, password, remember = true }, req) => {
   const context = requestContext(req);
+  
+  await checkFailedLoginLimit(email, context);
+
   const user = await prisma.user.findUnique({
     where: { email },
   });

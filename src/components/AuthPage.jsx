@@ -174,9 +174,14 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
       });
       setStatus({ type: 'success', message: 'Verification email sent. Check your inbox.' });
     } catch (error) {
-      const message = error instanceof ApiError
-        ? error.message
-        : 'Could not send a verification email. Please try again.';
+      let message = 'Could not send a verification email. Please try again.';
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          message = 'Your account was created, but this browser did not keep the secure session. Please log in, then resend the verification email.';
+        } else {
+          message = error.message;
+        }
+      }
       setStatus({ type: 'error', message });
     } finally {
       setIsResending(false);
