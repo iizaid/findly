@@ -41,6 +41,21 @@ const normalizeSourceOptions = (sources = []) => [...sources]
     canRun: Boolean(source.searchable || source.available),
   }));
 
+const pollCampaignStatus = async (campaignId) => {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await delay(1000);
+    const response = await apiRequest(`/api/search/campaigns/${campaignId}/status`);
+    const campaign = response.data.campaign;
+
+    if (campaign.status === 'COMPLETED') return campaign;
+    if (campaign.status === 'FAILED') {
+      throw new ApiError(campaign.errorCode || 'CAMPAIGN_FAILED', campaign.errorMessage || 'Search could not be completed.', 400);
+    }
+  }
+
+  throw new ApiError('SEARCH_STILL_RUNNING', 'Search is still running. Check the lead lists page shortly.', 202);
+};
+
 export const useFindLeadsSearch = ({ workspace }) => {
   const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
   const [sourceOptions, setSourceOptions] = useState([]);
@@ -208,10 +223,12 @@ export const useFindLeadsSearch = ({ workspace }) => {
 
       const runRes = await apiRequest(`/api/search/campaigns/${campaignRes.data.campaign.id}/run`, { method: 'POST' });
       const runData = runRes.data || {};
-      const leadsReturned = runData.leadsReturned ?? runData.savedLeadsCount ?? 0;
 
       setSearchStep(3);
-      await delay(300);
+      const completedCampaign = runData.status === 'QUEUED'
+        ? await pollCampaignStatus(campaignRes.data.campaign.id)
+        : runData;
+      const leadsReturned = completedCampaign.resultCount ?? completedCampaign.leadsReturned ?? completedCampaign.savedLeadsCount ?? 0;
 
       if (leadsReturned === 0) {
         setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
@@ -224,7 +241,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
       sessionStorage.removeItem(STORAGE_KEY);
       setFormState({ ...EMPTY_FORM_STATE, goal: searchOptions.searchGoals[0] || DEFAULT_GOALS[0] });
       setResultSummary({
-        leadListId: runData.leadListId,
+        leadListId: completedCampaign.leadListId || runData.leadListId,
         count: leadsReturned,
         platformsRequested: runData.platformsRequested || selectedSources,
       });

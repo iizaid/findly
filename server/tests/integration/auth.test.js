@@ -43,6 +43,7 @@ let prisma;
 let getTestOutbox;
 let clearTestOutbox;
 let primaryVerificationToken;
+let processNextSearchJob;
 
 const getCsrfToken = async (agent) => {
   const response = await agent.get('/api/csrf-token').expect(200);
@@ -87,10 +88,33 @@ const verificationTokenFor = (userEmail) => {
   return url.searchParams.get('token');
 };
 
+const processCampaignJobForAgent = async (agent, campaignId) => {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
+    const statusResponse = await agent.get(`/api/search/campaigns/${campaignId}/status`).expect(200);
+    const campaign = statusResponse.body.data.campaign;
+    if (campaign.status === 'COMPLETED') return campaign;
+    if (campaign.status === 'FAILED') {
+      throw new Error(`Campaign failed in test: ${campaign.errorCode || 'UNKNOWN'}`);
+    }
+  }
+  throw new Error('Campaign did not complete in test worker loop.');
+};
+
 beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ getTestOutbox, clearTestOutbox } = await import('../../src/modules/mail/mail.service.js'));
+  ({ processNextSearchJob } = await import('../../src/workers/searchWorker.js'));
+
+  await prisma.job.updateMany({
+    where: { status: { in: ['QUEUED', 'RUNNING'] } },
+    data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+  });
+  await prisma.searchCampaign.updateMany({
+    where: { status: { in: ['QUEUED', 'RUNNING'] } },
+    data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+  });
 });
 
 beforeEach(() => {
@@ -694,9 +718,12 @@ describe('Findly auth, verification, and foundation API', () => {
       .post(`/api/search/campaigns/${campaignResponse.body.data.campaign.id}/run`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
-      .expect(400);
+      .expect(202);
 
-    expect(runResponse.body.error.code).toBe('SOURCE_NOT_CONFIGURED');
+    expect(runResponse.body.data.status).toBe('QUEUED');
+    const processedFailure = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
+    expect(processedFailure.status).toBe('FAILED');
+    expect(processedFailure.errorCode).toBe('SOURCE_NOT_CONFIGURED');
 
     const failedJob = await prisma.job.findFirst({
       where: { campaignId: campaignResponse.body.data.campaign.id },
@@ -734,8 +761,11 @@ describe('Findly auth, verification, and foundation API', () => {
       .post(`/api/search/campaigns/${redditCampaignResponse.body.data.campaign.id}/run`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
-      .expect(400);
-    expect(redditRunResponse.body.error.code).toBe('SOURCE_NOT_CONFIGURED');
+      .expect(202);
+    expect(redditRunResponse.body.data.status).toBe('QUEUED');
+    const processedRedditFailure = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
+    expect(processedRedditFailure.status).toBe('FAILED');
+    expect(processedRedditFailure.errorCode).toBe('SOURCE_NOT_CONFIGURED');
 
     const redditJob = await prisma.job.findFirst({
       where: { campaignId: redditCampaignResponse.body.data.campaign.id },
@@ -749,6 +779,10 @@ describe('Findly auth, verification, and foundation API', () => {
 
     const jobResponse = await agent.get(`/api/jobs/${redditJob.id}`).expect(200);
     expect(jobResponse.body.data.job.id).toBe(redditJob.id);
+    await prisma.job.update({
+      where: { id: redditJob.id },
+      data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+    });
 
     const otherUser = await prisma.user.create({
       data: {
@@ -894,12 +928,13 @@ describe('Findly auth, verification, and foundation API', () => {
       .post(`/api/search/campaigns/${campaignResponse.body.data.campaign.id}/run`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
-      .expect(200);
+      .expect(202);
 
-    expect(runResponse.body.data.leadsReturned).toBeGreaterThan(0);
-    expect(runResponse.body.data.resultCount).toBe(runResponse.body.data.leadsReturned);
-    expect(runResponse.body.data.leadListId).toBeTruthy();
-    expect(runResponse.body.data.creditsUsed).toBe(5 + runResponse.body.data.leadsReturned);
+    expect(runResponse.body.data.status).toBe('QUEUED');
+    const completed = await processCampaignJobForAgent(agent, campaignResponse.body.data.campaign.id);
+    expect(completed.resultCount).toBeGreaterThan(0);
+    expect(completed.leadListId).toBeTruthy();
+    expect(completed.creditsUsed).toBe(5 + completed.resultCount);
     expect(JSON.stringify(runResponse.body.data)).not.toContain('GOOGLE_PLACES_API_KEY');
     for (const hiddenField of ['fallbackUsed', 'sourceRequested', 'sourceUsed', 'fallbackReason', 'searchMode', 'sourceMode', 'matchedLeads']) {
       expect(runResponse.body.data).not.toHaveProperty(hiddenField);
@@ -908,12 +943,12 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(JSON.stringify(runResponse.body.data)).not.toContain('DATASET_IMPORT');
 
     const balanceAfterFallback = (await agent.get('/api/credits').expect(200)).body.data.credits.balance;
-    expect(balanceAfterFallback).toBe(balanceBeforeFallback - runResponse.body.data.creditsUsed);
+    expect(balanceAfterFallback).toBe(balanceBeforeFallback - completed.creditsUsed);
 
     const completedCampaign = await prisma.searchCampaign.findUnique({
       where: { id: campaignResponse.body.data.campaign.id },
     });
-    expect(completedCampaign.creditsUsed).toBe(runResponse.body.data.creditsUsed);
+    expect(completedCampaign.creditsUsed).toBe(completed.creditsUsed);
 
     const ledger = await prisma.creditLedger.findFirst({
       where: {
@@ -923,16 +958,16 @@ describe('Findly auth, verification, and foundation API', () => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    expect(ledger.amount).toBe(-runResponse.body.data.creditsUsed);
+    expect(ledger.amount).toBe(-completed.creditsUsed);
     expect(ledger.type).toBe('CREDIT_USED');
 
-    const snapshotResponse = await agent.get(`/api/search/lists/${runResponse.body.data.leadListId}`).expect(200);
+    const snapshotResponse = await agent.get(`/api/search/lists/${completed.leadListId}`).expect(200);
     expect(snapshotResponse.body.data.list).not.toHaveProperty('sourceRequested');
     expect(snapshotResponse.body.data.list).not.toHaveProperty('sourceUsed');
     expect(snapshotResponse.body.data.list).not.toHaveProperty('fallbackUsed');
-    expect(snapshotResponse.body.data.list.leadCount).toBe(runResponse.body.data.leadsReturned);
+    expect(snapshotResponse.body.data.list.leadCount).toBe(completed.resultCount);
 
-    const snapshotLeadsResponse = await agent.get(`/api/search/lists/${runResponse.body.data.leadListId}/leads`).expect(200);
+    const snapshotLeadsResponse = await agent.get(`/api/search/lists/${completed.leadListId}/leads`).expect(200);
     expect(snapshotLeadsResponse.body.data.leads.some((lead) => lead.businessName === 'Sample Cafe')).toBe(true);
     expect(snapshotLeadsResponse.body.data.leads[0].catalogLeadId).toBeTruthy();
     expect(snapshotLeadsResponse.body.data.leads[0]).not.toHaveProperty('sourceFile');

@@ -44,7 +44,28 @@ npx prisma migrate dev
 npm run import:datasets:dry-run
 npm run import:datasets
 npm run admin:promote -- --email founder@example.com
+npm run worker
+npm run load:smoke
+npm run load:search
 ```
+
+## Search Worker
+
+Campaign runs are queued instead of executing heavy search work inside the HTTP request. `POST /api/search/campaigns/:id/run` returns `202` with a `jobId`, and clients should poll `GET /api/search/campaigns/:id/status`.
+
+For simple local deployment you can run the worker in the API process:
+
+```bash
+ENABLE_WORKER=true npm start
+```
+
+For production, prefer a separate background worker:
+
+```bash
+npm run worker
+```
+
+See `docs/SCALING.md` for queue limits, worker env vars, and Render deployment guidance.
 
 ## Health Check
 

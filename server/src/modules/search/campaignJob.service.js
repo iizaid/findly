@@ -2,7 +2,35 @@ import { prisma } from '../../db/prisma.js';
 import { env } from '../../config/env.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
-export const RUNNABLE_CAMPAIGN_STATUSES = ['DRAFT', 'FAILED', 'CANCELLED'];
+export const QUEUEABLE_CAMPAIGN_STATUSES = ['DRAFT', 'FAILED', 'CANCELLED'];
+export const RUNNABLE_CAMPAIGN_STATUSES = [...QUEUEABLE_CAMPAIGN_STATUSES, 'QUEUED'];
+
+export const markCampaignQueued = async ({ tx = prisma, campaignId, userId, requestedLimit, lockedBy = 'api' }) => {
+  const queued = await tx.searchCampaign.updateMany({
+    where: {
+      id: campaignId,
+      userId,
+      status: { in: QUEUEABLE_CAMPAIGN_STATUSES },
+    },
+    data: {
+      status: 'QUEUED',
+      lockedAt: new Date(),
+      lockedBy,
+      startedAt: null,
+      failedAt: null,
+      completedAt: null,
+      errorCode: null,
+      errorMessage: null,
+      progressCurrent: 0,
+      progressTotal: requestedLimit,
+      lastStep: 'Queued for search',
+    },
+  });
+
+  if (queued.count !== 1) {
+    throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Campaign is already queued, running, or cannot be run.', 409);
+  }
+};
 
 export const markCampaignRunning = async ({ campaignId, userId, requestedLimit, lockedBy = 'api' }) => {
   const locked = await prisma.searchCampaign.updateMany({

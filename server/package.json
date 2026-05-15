@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "worker": "node src/workers/workerRunner.js",
     "lint": "node scripts/check-syntax.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "import:datasets": "node scripts/import-datasets.js",
     "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
-    "admin:promote": "node scripts/promote-admin.js"
+    "admin:promote": "node scripts/promote-admin.js",
+    "load:smoke": "node load-tests/smoke.js",
+    "load:search": "node load-tests/search-queue.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

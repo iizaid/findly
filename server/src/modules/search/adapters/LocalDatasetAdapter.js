@@ -1,5 +1,7 @@
 import { BaseAdapter } from './BaseAdapter.js';
 import { prisma } from '../../../db/prisma.js';
+import { env } from '../../../config/env.js';
+import { logger } from '../../../utils/logger.js';
 import { getDatasetStatus } from '../../datasets/datasetPaths.js';
 import { leadMatchesGovernorate, normalizeCountry, normalizeGovernorate } from '../locationNormalization.js';
 
@@ -134,6 +136,35 @@ const hasFacebook = (lead) => {
 const hasContact = (lead) => {
   const signals = signalSet(lead);
   return Boolean(lead.phone || lead.whatsappNumber || lead.email || signals.has('HAS_PHONE') || signals.has('HAS_WHATSAPP'));
+};
+
+const catalogLeadSearchSelect = {
+  id: true,
+  businessName: true,
+  category: true,
+  country: true,
+  city: true,
+  address: true,
+  phone: true,
+  whatsappNumber: true,
+  email: true,
+  websiteUrl: true,
+  websiteStatus: true,
+  instagramUrl: true,
+  instagramUsername: true,
+  facebookUrl: true,
+  googleMapsUrl: true,
+  source: true,
+  sourceId: true,
+  rating: true,
+  reviewCount: true,
+  latitude: true,
+  longitude: true,
+  detectedSignals: true,
+  enrichmentData: true,
+  importedAt: true,
+  createdAt: true,
+  updatedAt: true,
 };
 
 const matchesBusinessType = (lead, businessType) => {
@@ -275,18 +306,59 @@ export class LocalDatasetAdapter extends BaseAdapter {
 
   async search(input = {}) {
     const maxResults = Math.max(1, Math.min(Number(input.maxResults) || 20, 100));
+    const candidateLimit = Math.max(100, Math.min(Number(env.LOCAL_DATASET_CANDIDATE_LIMIT) || 1000, 10000));
+    const startedAt = Date.now();
     const businessTypes = [
       input.targetBusinessType,
       ...(Array.isArray(input.businessTypes) ? input.businessTypes : []),
     ].filter(Boolean);
 
-    const candidates = await prisma.leadCatalog.findMany({
-      where: {
-        source: { in: datasetSources },
-      },
+    const baseWhere = { source: { in: datasetSources } };
+    const businessTypeTerms = [...new Set(businessTypes.flatMap(expandBusinessTypeTerms))]
+      .filter((term) => term.length > 2)
+      .slice(0, 12);
+    const categoryWhere = businessTypeTerms.length
+      ? {
+          OR: businessTypeTerms.map((term) => ({
+            category: { contains: term, mode: 'insensitive' },
+          })),
+        }
+      : {};
+    const countryWhere = input.country ? { country: { equals: normalizeCountry(input.country), mode: 'insensitive' } } : {};
+    const cityWhere = input.city ? { city: { equals: normalizeGovernorate(input.city) || input.city, mode: 'insensitive' } } : {};
+
+    const fetchCandidates = (where, take = candidateLimit) => prisma.leadCatalog.findMany({
+      where,
+      select: catalogLeadSearchSelect,
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take,
     });
+
+    let candidates = await fetchCandidates({
+      ...baseWhere,
+      ...countryWhere,
+      ...cityWhere,
+      ...categoryWhere,
+    });
+
+    if (candidates.length < maxResults && (input.city || businessTypeTerms.length)) {
+      candidates = await fetchCandidates({
+        ...baseWhere,
+        ...countryWhere,
+        ...categoryWhere,
+      });
+    }
+
+    if (candidates.length < maxResults && input.country) {
+      candidates = await fetchCandidates({
+        ...baseWhere,
+        ...countryWhere,
+      });
+    }
+
+    if (candidates.length < maxResults) {
+      candidates = await fetchCandidates(baseWhere);
+    }
 
     const countryPool = input.country
       ? candidates.filter((lead) => normalizeCountry(lead.country) === normalizeCountry(input.country) || !lead.country)
@@ -311,6 +383,14 @@ export class LocalDatasetAdapter extends BaseAdapter {
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, maxResults);
+
+    logger.info('local_dataset.search.completed', {
+      candidateCount: candidates.length,
+      scoringPoolCount: searchCandidates.length,
+      scoredCount: scored.length,
+      resultCount: scored.length,
+      durationMs: Date.now() - startedAt,
+    });
 
     return scored.map(({ lead, score }) => ({
       ...lead,

@@ -9,6 +9,7 @@ const unique = Date.now().toString(36);
 let createApp;
 let prisma;
 let getTestOutbox;
+let processNextSearchJob;
 let agent1;
 let agent2;
 let user1Id;
@@ -63,6 +64,16 @@ beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ getTestOutbox } = await import('../../src/modules/mail/mail.service.js'));
+  ({ processNextSearchJob } = await import('../../src/workers/searchWorker.js'));
+
+  await prisma.job.updateMany({
+    where: { status: { in: ['QUEUED', 'RUNNING'] } },
+    data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+  });
+  await prisma.searchCampaign.updateMany({
+    where: { status: { in: ['QUEUED', 'RUNNING'] } },
+    data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+  });
 
   // Setup User 1
   agent1 = request.agent(createApp());
@@ -199,6 +210,15 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+const processCampaignJob = async (campaignId) => {
+  const result = await processNextSearchJob({ workerId: `test-worker-${unique}` });
+  expect(result?.status).toBe('COMPLETED');
+
+  const statusResponse = await agent1.get(`/api/search/campaigns/${campaignId}/status`).expect(200);
+  expect(statusResponse.body.data.campaign.status).toBe('COMPLETED');
+  return statusResponse.body.data.campaign;
+};
+
 describe('LeadList Workflow Architecture', () => {
   it('verifies status and notes can be updated via the new item endpoints', async () => {
     const csrfToken = await getCsrfToken(agent1);
@@ -306,25 +326,30 @@ describe('LeadList Workflow Architecture', () => {
       .set('X-CSRF-Token', csrfToken)
       .send({});
 
-    expect(runRes.status).toBe(200);
+    expect(runRes.status).toBe(202);
     const runData = runRes.body.data;
 
-    expect(runData.platformsRequested).toContain('INSTAGRAM');
-    expect(runData.platformsRequested).toContain('GOOGLE_MAPS');
-    expect(runData.leadListId).toBeDefined();
-    expect(runData.leadsReturned).toBeGreaterThanOrEqual(1); // Should match our global catalog
-    expect(runData.resultCount).toBe(runData.leadsReturned);
-    expect(runData.creditsUsed).toBe(5 + runData.leadsReturned);
+    expect(runData.status).toBe('QUEUED');
+    expect(runData.jobId).toBeDefined();
+    await agent1.post(`/api/search/campaigns/${newCampaignId}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(409);
+
+    const completed = await processCampaignJob(newCampaignId);
+    expect(completed.leadListId).toBeDefined();
+    expect(completed.resultCount).toBeGreaterThanOrEqual(1); // Should match our global catalog
+    expect(completed.creditsUsed).toBe(5 + completed.resultCount);
     for (const hiddenField of ['sourceUsed', 'fallbackUsed', 'fallbackReason', 'searchMode', 'sourceMode', 'sourceRequested', 'matchedLeads']) {
       expect(runData).not.toHaveProperty(hiddenField);
     }
     expect(JSON.stringify(runData)).not.toContain('LOCAL_DATASET');
 
     const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
-    expect(afterCredits).toBe(beforeCredits - runData.creditsUsed);
+    expect(afterCredits).toBe(beforeCredits - completed.creditsUsed);
 
     const campaign = await prisma.searchCampaign.findUnique({ where: { id: newCampaignId } });
-    expect(campaign.creditsUsed).toBe(runData.creditsUsed);
+    expect(campaign.creditsUsed).toBe(completed.creditsUsed);
   });
 
   it('does not expose internal source metadata from user-facing search endpoints', async () => {
@@ -445,6 +470,66 @@ describe('LeadList Workflow Architecture', () => {
     expectNoUserFacingSourceDisclosure(page2.body);
   });
 
+  it('claims queued jobs once, retries failed jobs within attempts, and cleans stale running jobs', async () => {
+    const {
+      claimNextJob,
+      cleanupStaleJobs,
+      retryJobIfAllowed,
+    } = await import('../../src/modules/jobs/jobQueue.service.js');
+
+    const queuedJob = await prisma.job.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'QUEUED',
+        payload: { test: true },
+      },
+    });
+
+    const claims = await Promise.all([
+      claimNextJob({ workerId: 'parallel-worker-a', type: 'SEARCH_CAMPAIGN_RUN' }),
+      claimNextJob({ workerId: 'parallel-worker-b', type: 'SEARCH_CAMPAIGN_RUN' }),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.filter(Boolean)[0].id).toBe(queuedJob.id);
+
+    const failedJob = await prisma.job.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'FAILED',
+        attempts: 1,
+        maxAttempts: 3,
+        errorCode: 'TEST_FAILURE',
+      },
+    });
+    const retried = await retryJobIfAllowed({ jobId: failedJob.id });
+    expect(retried.status).toBe('QUEUED');
+
+    const staleJob = await prisma.job.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'RUNNING',
+        attempts: 1,
+        lockedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        lockedBy: 'stale-worker',
+      },
+    });
+    const cleanup = await cleanupStaleJobs();
+    expect(cleanup.count).toBeGreaterThanOrEqual(1);
+    const cleaned = await prisma.job.findUnique({ where: { id: staleJob.id } });
+    expect(cleaned.status).toBe('FAILED');
+
+    await prisma.job.updateMany({
+      where: { id: { in: [queuedJob.id, failedJob.id] } },
+      data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+    });
+  });
+
   it('blocks stored-intelligence campaign runs when the user cannot cover the maximum estimated search cost', async () => {
     const csrfToken = await getCsrfToken(agent2);
     const me2 = await agent2.get('/api/auth/me').expect(200);
@@ -475,6 +560,47 @@ describe('LeadList Workflow Architecture', () => {
 
     const lists = await prisma.leadList.count({ where: { campaignId: campaignRes.body.data.campaign.id } });
     expect(lists).toBe(0);
+  });
+
+  it('rejects new campaign runs when the user already has too many active search jobs', async () => {
+    const csrfToken = await getCsrfToken(agent2);
+    const me2 = await agent2.get('/api/auth/me').expect(200);
+
+    const blockers = await Promise.all([0, 1].map((index) => prisma.job.create({
+      data: {
+        userId: me2.body.data.user.id,
+        workspaceId: me2.body.data.workspace.id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'QUEUED',
+        payload: { blocker: index },
+      },
+    })));
+
+    const campaignRes = await agent2.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: me2.body.data.workspace.id,
+        name: 'Backpressure search',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 5,
+      })
+      .expect(201);
+
+    const runRes = await agent2.post(`/api/search/campaigns/${campaignRes.body.data.campaign.id}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(409);
+
+    expect(runRes.body.error.code).toBe('JOB_ALREADY_RUNNING');
+
+    await prisma.job.updateMany({
+      where: { id: { in: blockers.map((job) => job.id) } },
+      data: { status: 'CANCELLED' },
+    });
   });
 
   it('calculates zero-result search cost as zero while preserving maximum pre-run reservation', async () => {
@@ -512,13 +638,15 @@ describe('LeadList Workflow Architecture', () => {
     const runRes = await agent1.post(`/api/search/campaigns/${campaignId}/run`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
-      .expect(200);
+      .expect(202);
 
     const runData = runRes.body.data;
-    expect(runData.leadsReturned).toBeGreaterThanOrEqual(1);
+    expect(runData.status).toBe('QUEUED');
     expect(runData).not.toHaveProperty('matchedLeads');
+    const completed = await processCampaignJob(campaignId);
+    expect(completed.resultCount).toBeGreaterThanOrEqual(1);
 
-    const leadsRes = await agent1.get(`/api/search/lists/${runData.leadListId}/leads`).expect(200);
+    const leadsRes = await agent1.get(`/api/search/lists/${completed.leadListId}/leads`).expect(200);
     expect(leadsRes.body.data.leads.some((lead) => lead.businessName.includes('Specialty Roastery'))).toBe(true);
     expect(leadsRes.body.data.leads[0]).not.toHaveProperty('sourceFile');
     expect(JSON.stringify(leadsRes.body.data.leads)).not.toContain('LOCAL_DATASET');

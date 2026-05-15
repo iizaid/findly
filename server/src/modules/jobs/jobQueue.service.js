@@ -16,6 +16,20 @@ export const enqueueJob = async ({ userId, workspaceId, campaignId = null, type,
   });
 };
 
+export const enqueueJobWithTx = async (tx, { userId, workspaceId, campaignId = null, type, payload = {}, maxAttempts = 3 }) => {
+  return tx.job.create({
+    data: {
+      userId,
+      workspaceId,
+      campaignId,
+      type,
+      payload,
+      maxAttempts,
+      status: 'QUEUED',
+    },
+  });
+};
+
 export const claimNextJob = async ({ workerId = 'api-worker', type = null } = {}) => {
   const where = { status: 'QUEUED', ...(type ? { type } : {}) };
   const job = await prisma.job.findFirst({
@@ -146,4 +160,19 @@ export const cleanupStaleJobs = () => {
       errorMessage: 'Job was marked failed because it stayed running past the stale job timeout.',
     },
   });
+};
+
+export const getSearchJobBackpressureState = async ({ userId }) => {
+  const activeWhere = {
+    type: 'SEARCH_CAMPAIGN_RUN',
+    status: { in: ['QUEUED', 'RUNNING'] },
+  };
+
+  const [queuedCount, runningCount, userActiveCount] = await prisma.$transaction([
+    prisma.job.count({ where: { type: 'SEARCH_CAMPAIGN_RUN', status: 'QUEUED' } }),
+    prisma.job.count({ where: { type: 'SEARCH_CAMPAIGN_RUN', status: 'RUNNING' } }),
+    prisma.job.count({ where: { ...activeWhere, userId } }),
+  ]);
+
+  return { queuedCount, runningCount, userActiveCount };
 };

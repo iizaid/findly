@@ -3,13 +3,15 @@ import { successResponse } from '../../utils/apiResponse.js';
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { toPagination } from '../../utils/pagination.js';
-import { analyzeCampaign, analyzeLead, createCampaign, estimateCampaignCost, runCampaign } from './search.service.js';
+import { analyzeCampaign, analyzeLead, createCampaign, estimateCampaignCost, estimateSearchCreditsRequired } from './search.service.js';
 import { getSourceStatusesWithRuntime } from './source.service.js';
 import { getDashboardSummary, getCampaignAnalytics } from './dashboard.service.js';
 import { enrichWebsiteUrl, mergeSignals } from './websiteEnrichment.service.js';
-import { enqueueJob, markJobFailed } from '../jobs/jobQueue.service.js';
+import { enqueueJobWithTx, getSearchJobBackpressureState } from '../jobs/jobQueue.service.js';
 import { deductCredits } from '../credits/credit.service.js';
 import { runRuleBasedAnalysis } from './analysis.service.js';
+import { markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
+import { env } from '../../config/env.js';
 import {
   getSupportedJordanGovernorates,
   leadMatchesGovernorate,
@@ -311,49 +313,74 @@ export const getCampaignById = asyncHandler(async (req, res) => {
 export const runExistingCampaign = asyncHandler(async (req, res) => {
   const campaign = await prisma.searchCampaign.findFirst({
     where: { id: req.validated.params.id, userId: req.user.id },
-    select: { id: true, workspaceId: true, status: true },
+    select: { id: true, workspaceId: true, status: true, requestedLimit: true },
   });
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
 
-  const job = await enqueueJob({
-    userId: req.user.id,
-    workspaceId: campaign.workspaceId,
-    campaignId: campaign.id,
-    type: 'SEARCH_CAMPAIGN_RUN',
-    payload: { campaignId: campaign.id },
+  if (['QUEUED', 'RUNNING'].includes(campaign.status)) {
+    throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Campaign is already queued or running.', 409);
+  }
+
+  if (!QUEUEABLE_CAMPAIGN_STATUSES.includes(campaign.status)) {
+    throw new AppError(errorCodes.CAMPAIGN_NOT_RUNNABLE, `Campaign cannot be run while status is ${campaign.status}.`, 409);
+  }
+
+  const { queuedCount, runningCount, userActiveCount } = await getSearchJobBackpressureState({ userId: req.user.id });
+  if (queuedCount >= env.MAX_QUEUED_SEARCH_JOBS || runningCount >= env.MAX_RUNNING_SEARCH_JOBS) {
+    throw new AppError(errorCodes.RATE_LIMITED, 'Search queue is busy. Try again shortly.', 429);
+  }
+  if (userActiveCount >= env.MAX_ACTIVE_SEARCH_JOBS_PER_USER) {
+    throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'You already have active searches. Wait for one to finish before starting another.', 409);
+  }
+
+  const maxCreditsRequired = estimateSearchCreditsRequired(campaign.requestedLimit || 20);
+  const creditUser = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { creditsBalance: true },
+  });
+  if (!creditUser || creditUser.creditsBalance < maxCreditsRequired) {
+    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
+  }
+
+  const job = await prisma.$transaction(async (tx) => {
+    await markCampaignQueued({
+      tx,
+      campaignId: campaign.id,
+      userId: req.user.id,
+      requestedLimit: campaign.requestedLimit || 20,
+      lockedBy: 'api-queue',
+    });
+
+    const createdJob = await enqueueJobWithTx(tx, {
+      userId: req.user.id,
+      workspaceId: campaign.workspaceId,
+      campaignId: campaign.id,
+      type: 'SEARCH_CAMPAIGN_RUN',
+      payload: { campaignId: campaign.id },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'SEARCH_CAMPAIGN_QUEUED',
+        entityType: 'SearchCampaign',
+        entityId: campaign.id,
+        metadata: {
+          workspaceId: campaign.workspaceId,
+          jobId: createdJob.id,
+        },
+      },
+    });
+
+    return createdJob;
   });
 
-  try {
-    const result = await runCampaign(req.validated.params.id, req.user.id, { jobId: job.id });
-    return successResponse(res, { ...result, campaignId: campaign.id, jobId: job.id, status: 'COMPLETED' }, 'Campaign run completed.');
-  } catch (error) {
-    const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
-    const errorMessage = error instanceof AppError ? error.message : 'Campaign run failed.';
-
-    await markJobFailed({
-      jobId: job.id,
-      errorCode,
-      errorMessage,
-    }).catch(() => {});
-
-    if ([errorCodes.SOURCE_NOT_CONFIGURED, errorCodes.SOURCE_UNAVAILABLE, errorCodes.PROVIDER_NOT_CONFIGURED, errorCodes.PROVIDER_AUTH_FAILED, errorCodes.PROVIDER_RATE_LIMITED, errorCodes.PROVIDER_TIMEOUT, errorCodes.PROVIDER_BAD_RESPONSE, errorCodes.PROVIDER_UNAVAILABLE].includes(errorCode)) {
-      await prisma.searchCampaign.updateMany({
-        where: {
-          id: campaign.id,
-          userId: req.user.id,
-          status: { in: ['DRAFT', 'QUEUED'] },
-        },
-        data: {
-          status: 'FAILED',
-          failedAt: new Date(),
-          errorCode,
-          errorMessage,
-        },
-      }).catch(() => {});
-    }
-
-    throw error;
-  }
+  return successResponse(res, {
+    campaignId: campaign.id,
+    jobId: job.id,
+    status: 'QUEUED',
+    nextAction: 'POLL_STATUS',
+  }, 'Campaign queued. Poll the campaign status endpoint.', 202);
 });
 
 export const getCampaignStatus = asyncHandler(async (req, res) => {
@@ -388,6 +415,14 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
           createdAt: true,
         },
       },
+      leadLists: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          id: true,
+          resultCount: true,
+        },
+      },
     },
   });
 
@@ -397,7 +432,10 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
     campaign: {
       ...campaign,
       job: campaign.jobs?.[0] || null,
+      leadListId: campaign.leadLists?.[0]?.id || null,
+      resultCount: campaign.resultCount || campaign.leadLists?.[0]?.resultCount || 0,
       jobs: undefined,
+      leadLists: undefined,
     },
   }, 'Campaign status loaded.');
 });
