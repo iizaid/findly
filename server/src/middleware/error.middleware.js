@@ -44,8 +44,8 @@ export const errorHandler = (err, req, res, _next) => {
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      logBackendError(req, 413, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large. Maximum size is 50MB.');
-      return errorResponse(res, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large. Maximum size is 50MB.', 413);
+      logBackendError(req, 413, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large.');
+      return errorResponse(res, errorCodes.PAYLOAD_TOO_LARGE, 'File is too large.', 413);
     }
     logBackendError(req, 400, errorCodes.VALIDATION_ERROR, err.message || 'File upload error.');
     return errorResponse(res, errorCodes.VALIDATION_ERROR, err.message || 'File upload error.', 400);

@@ -186,7 +186,7 @@ function App() {
         <SearchSourcesStrip />
         <ProductFilmSection />
         <OpportunityEngineSection onNotice={openNotice} />
-        <PricingSection onAuthOpen={openAuth} />
+        <PricingSection onAuthOpen={openAuth} currentUser={currentUser} onNavigate={navigate} />
         <Footer onNotice={openNotice} onAuthOpen={openAuth} />
       </div>
       <NoticeModal notice={notice} onClose={() => setNotice(null)} />

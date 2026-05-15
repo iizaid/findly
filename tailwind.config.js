@@ -12,6 +12,7 @@ export default {
         graphite: "#2E3238",
         secondary: "#6B7280",
         accent: "#A6FF00",
+        accentDark: "#659A00",
         accentSoft: "#D9FFB3",
         border: "#E5E7EB",
       },

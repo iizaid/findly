@@ -27,6 +27,10 @@ export const requireAllowedOrigin = (req, _res, next) => {
   }
 
   if (!env.CLIENT_ORIGINS.includes(requestOrigin)) {
+    if (!env.IS_PRODUCTION) {
+      console.warn(`[ORIGIN] Allowing unconfigured origin in DEV mode: "${requestOrigin}"`);
+      return next();
+    }
     return next(new AppError(errorCodes.FORBIDDEN, 'Request origin is not allowed.', 403));
   }
 

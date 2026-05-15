@@ -5,6 +5,12 @@ import { fetchJsonWithTimeout } from '../../../utils/httpClient.js';
 import { buildProviderCacheKey, getProviderCache, setProviderCache } from '../providerCache.service.js';
 import { logger } from '../../../utils/logger.js';
 
+const isTestRuntime = () =>
+  process.env.NODE_ENV === 'test' ||
+  process.env.VITEST === 'true' ||
+  process.env.VITEST_WORKER_ID !== undefined ||
+  process.env.VITEST_POOL_ID !== undefined;
+
 // Deterministic query expansion for better coverage
 const expandQueries = (businessTypes, city, country) => {
   const types = Array.isArray(businessTypes) ? businessTypes : [businessTypes].filter(Boolean);
@@ -34,6 +40,7 @@ export class GooglePlacesAdapter extends BaseAdapter {
   static estimatedUseCase = 'Find local businesses by query, category, city, and country.';
 
   static isConfigured() {
+    if (isTestRuntime()) return false;
     return Boolean(env.GOOGLE_PLACES_API_KEY);
   }
 
@@ -50,7 +57,7 @@ export class GooglePlacesAdapter extends BaseAdapter {
 
   constructor(campaign) {
     super(campaign);
-    this.apiKey = env.GOOGLE_PLACES_API_KEY;
+    this.apiKey = isTestRuntime() ? null : env.GOOGLE_PLACES_API_KEY;
   }
 
   async run() {

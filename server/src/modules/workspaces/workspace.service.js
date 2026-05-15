@@ -92,3 +92,19 @@ export const getWorkspaceForUser = async (workspaceId, userId) => {
 
   return workspace;
 };
+
+export const updateWorkspace = async (workspaceId, userId, data) => {
+  const member = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, userId }
+  });
+
+  if (!member || member.role !== 'OWNER') {
+    throw new AppError(errorCodes.FORBIDDEN, 'Only workspace owners can update settings.', 403);
+  }
+
+  return prisma.workspace.update({
+    where: { id: workspaceId },
+    data: { name: data.name },
+    select: { id: true, ownerId: true, name: true, createdAt: true, updatedAt: true }
+  });
+};

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { paginationQuerySchema } from '../../utils/pagination.js';
 
-const sourceSchema = z.enum(['GOOGLE_MAPS', 'REDDIT', 'WEBSITE', 'LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'SERPAPI', 'CSV', 'INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'TIKTOK', 'YELP', 'TRIPADVISOR', 'YOUTUBE', 'X']);
+const sourceSchema = z.enum(['GOOGLE_MAPS', 'REDDIT', 'WEBSITE', 'LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN', 'SERPAPI', 'CSV', 'INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'TIKTOK', 'YELP', 'TRIPADVISOR', 'YOUTUBE', 'X']);
 
 export const createProfileSchema = z.object({
   body: z.object({

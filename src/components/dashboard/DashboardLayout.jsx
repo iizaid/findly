@@ -28,13 +28,13 @@ const DashboardLayout = ({ children, user, workspace, credits, routePath, onNavi
   };
 
   return (
-    <main className="min-h-screen bg-[#eef1ed] text-black">
-      <div className="grid min-h-screen overflow-hidden bg-[#F7F8F6] lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="hidden lg:block">
+    <main className="h-screen w-full bg-[#eef1ed] text-black overflow-hidden">
+      <div className="grid h-full bg-[#F7F8F6] lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="hidden lg:block h-full">
           <DashboardSidebar user={user} workspace={workspace} currentPath={routePath} onNavigate={handleNavigate} onLogout={onLogout} />
         </div>
 
-        <section className="min-w-0 px-4 py-5 md:px-6 md:py-6 xl:px-8 2xl:px-10">
+        <section className="min-w-0 h-full overflow-y-auto px-4 py-5 md:px-6 md:py-6 xl:px-8 2xl:px-10">
           <DashboardTopbar
             routePath={routePath}
             credits={credits}

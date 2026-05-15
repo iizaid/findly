@@ -1,6 +1,6 @@
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
-import { getWorkspaceForUser, listUserWorkspaces } from './workspace.service.js';
+import { getWorkspaceForUser, listUserWorkspaces, updateWorkspace } from './workspace.service.js';
 
 export const listWorkspaces = asyncHandler(async (req, res) => {
   const workspaces = await listUserWorkspaces(req.user.id);
@@ -12,4 +12,10 @@ export const getWorkspace = asyncHandler(async (req, res) => {
   const workspace = await getWorkspaceForUser(req.validated.params.id, req.user.id);
 
   return successResponse(res, { workspace }, 'Workspace loaded.');
+});
+
+export const updateWorkspaceHandler = asyncHandler(async (req, res) => {
+  const { name } = req.validated.body;
+  const workspace = await updateWorkspace(req.validated.params.id, req.user.id, { name });
+  return successResponse(res, { workspace }, 'Workspace updated successfully.');
 });

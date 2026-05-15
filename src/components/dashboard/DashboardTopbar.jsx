@@ -31,19 +31,18 @@ const DashboardTopbar = ({ routePath, credits, onNavigate, onMenuOpen }) => {
   const meta = pageTitles[routePath] || pageTitles['/dashboard'];
 
   return (
-    <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <header className="flex flex-col gap-4 pb-6 pt-2 md:flex-row md:items-center md:justify-between border-b border-black/[0.04]">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onMenuOpen}
           aria-label="Open dashboard menu"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-black/[0.08] bg-white text-black shadow-[0_12px_35px_rgba(0,0,0,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-black shadow-sm outline-none ring-1 ring-black/5 focus-visible:ring-2 focus-visible:ring-accent lg:hidden"
         >
           <Menu size={20} />
         </button>
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">{meta.eyebrow}</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tighter md:text-4xl xl:text-5xl">{meta.title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-black md:text-3xl">{meta.title}</h1>
         </div>
       </div>
 
@@ -51,25 +50,25 @@ const DashboardTopbar = ({ routePath, credits, onNavigate, onMenuOpen }) => {
         <button
           type="button"
           onClick={() => onNavigate('/dashboard/credits')}
-          className="inline-flex h-11 items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 text-sm font-bold text-black transition-colors hover:bg-[#F7F8F6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3.5 text-[13px] font-medium text-black shadow-sm outline-none ring-1 ring-black/5 transition-all hover:bg-black/[0.02] focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <WalletCards size={17} />
-          {credits?.balance ?? 0} credits
+          <WalletCards size={16} className="text-black/50" />
+          {credits?.balance ?? 0}
         </button>
         <button
           type="button"
           aria-label="Open settings"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-black/[0.08] bg-white text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-black/70 shadow-sm outline-none ring-1 ring-black/5 transition-all hover:bg-black/[0.02] hover:text-black focus-visible:ring-2 focus-visible:ring-accent"
           onClick={() => onNavigate('/dashboard/settings')}
         >
-          <Settings size={17} />
+          <Settings size={18} />
         </button>
         <button
           type="button"
           onClick={() => onNavigate('/dashboard/find-leads')}
-          className="hidden h-11 items-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:inline-flex"
+          className="hidden h-10 items-center gap-2 rounded-xl bg-black px-4 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent sm:inline-flex"
         >
-          <ScanSearch size={17} />
+          <ScanSearch size={16} />
           Find Leads
         </button>
       </div>

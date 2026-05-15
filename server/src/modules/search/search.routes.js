@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { requireAuth, requireVerifiedEmail } from '../../middleware/auth.middleware.js';
-import { chargeWebsiteEnrichment } from '../../middleware/billing.middleware.js';
 import { billDatasetBackedSearch } from '../../middleware/localSearchBilling.middleware.js';
 import { analysisRateLimiter, searchRateLimiter } from '../../middleware/rateLimit.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
@@ -50,7 +49,7 @@ searchRouter.get('/leads', validate(v.getLeadsQuerySchema), ctrl.getLeads);
 searchRouter.get('/leads/map', ctrl.getLeadsForMap);
 searchRouter.get('/leads/:id', validate(v.idParamSchema), ctrl.getLeadDetail);
 searchRouter.post('/leads/:id/analyze', analysisRateLimiter, validate(v.idParamSchema), ctrl.analyzeExistingLead);
-searchRouter.post('/leads/:id/enrich-website', analysisRateLimiter, validate(v.idParamSchema), chargeWebsiteEnrichment, ctrl.enrichLeadWebsite);
+searchRouter.post('/leads/:id/enrich-website', analysisRateLimiter, validate(v.idParamSchema), ctrl.enrichLeadWebsite);
 searchRouter.patch('/leads/:id/status', analysisRateLimiter, validate(v.updateLeadStatusSchema), ctrl.updateLeadStatus);
 searchRouter.delete('/leads/:id', validate(v.idParamSchema), ctrl.deleteLead);
 

@@ -3,7 +3,7 @@ import { prisma } from '../../../db/prisma.js';
 import { getDatasetStatus } from '../../datasets/datasetPaths.js';
 import { leadMatchesGovernorate, normalizeCountry, normalizeGovernorate } from '../locationNormalization.js';
 
-const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET'];
+const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'];
 
 const compact = (value) => (value || '').toString().trim().toLowerCase();
 const normalizeSearchText = (value) => compact(value)

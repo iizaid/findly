@@ -62,7 +62,7 @@ const plans = [
   },
 ];
 
-const PlanCard = ({ plan, index, onAuthOpen }) => (
+const PlanCard = ({ plan, index, onAuthOpen, currentUser, onNavigate }) => (
   <motion.div
     initial={{ opacity: 0, y: 28 }}
     whileInView={{ opacity: 1, y: 0 }}
@@ -97,7 +97,13 @@ const PlanCard = ({ plan, index, onAuthOpen }) => (
 
     <button
       type="button"
-      onClick={() => onAuthOpen?.('signup', plan.name)}
+      onClick={() => {
+        if (currentUser) {
+          onNavigate?.('/dashboard/settings');
+        } else {
+          onAuthOpen?.('signup', plan.name);
+        }
+      }}
       className={`mt-4 inline-flex h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
         plan.featured
           ? 'bg-accent text-black hover:bg-white'
@@ -123,7 +129,7 @@ const PlanCard = ({ plan, index, onAuthOpen }) => (
   </motion.div>
 );
 
-const PricingSection = ({ onAuthOpen }) => {
+const PricingSection = ({ onAuthOpen, currentUser, onNavigate }) => {
   return (
     <section id="pricing" className="relative overflow-hidden border-t border-black/[0.06] bg-white px-4 py-16 scroll-mt-24 sm:px-5 md:px-8 md:py-28">
       <div className="mx-auto max-w-[1480px]">
@@ -184,7 +190,7 @@ const PricingSection = ({ onAuthOpen }) => {
 
         <div className="mt-10 grid gap-4 md:mt-14 md:grid-cols-3">
           {plans.map((plan, index) => (
-            <PlanCard key={plan.name} plan={plan} index={index} onAuthOpen={onAuthOpen} />
+            <PlanCard key={plan.name} plan={plan} index={index} onAuthOpen={onAuthOpen} currentUser={currentUser} onNavigate={onNavigate} />
           ))}
         </div>
         

@@ -9,6 +9,12 @@ export const corsMiddleware = cors({
       return callback(null, true);
     }
 
+    if (!env.IS_PRODUCTION) {
+      console.warn(`[CORS] Allowing unconfigured origin in DEV mode: "${origin}"`);
+      return callback(null, true);
+    }
+
+    console.error(`[CORS REJECTED] Origin not allowed: "${origin}"`);
     return callback(new Error('Origin is not allowed by CORS'));
   },
   credentials: true,

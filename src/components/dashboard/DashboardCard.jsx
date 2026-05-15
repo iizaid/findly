@@ -3,7 +3,7 @@ const DashboardCard = ({ children, className = '' }) => {
 
   return (
     <section
-      className={`rounded-[24px] border border-black/[0.08] ${hasCustomBackground ? '' : 'bg-white'} shadow-[0_14px_42px_rgba(0,0,0,0.045)] ${className}`}
+      className={`rounded-[22px] border border-black/[0.04] ${hasCustomBackground ? '' : 'bg-white'} shadow-sm ${className}`}
     >
       {children}
     </section>

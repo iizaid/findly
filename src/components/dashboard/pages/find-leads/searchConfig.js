@@ -45,11 +45,11 @@ export const PLATFORM_LABELS = {
 };
 
 export const SEARCH_STEPS = [
-  'Preparing campaign',
-  'Reading selected platform signals',
-  'Matching businesses by location and category',
-  'Ranking opportunity fit',
-  'Building your lead list',
+  'Preparing search',
+  'Checking available sources',
+  'Matching business records',
+  'Saving lead list',
+  'Ready',
 ];
 
 export const EMPTY_FORM_STATE = {

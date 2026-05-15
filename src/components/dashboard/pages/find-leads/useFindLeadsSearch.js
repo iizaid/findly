@@ -168,6 +168,11 @@ export const useFindLeadsSearch = ({ workspace }) => {
     }
 
     const { service, businessType, goal, country, city, maxResults } = formState;
+    if (!service || !businessType || !goal || !country || !city) {
+      setError('Complete the service, business type, goal, country, and governorate before starting the search.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSearchStep(0);
 

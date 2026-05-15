@@ -8,57 +8,63 @@ import { sendVerificationForUser } from './emailVerification.service.js';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
 const DUMMY_PASSWORD_HASH = '$2b$10$NLcXp1cWaAG/68QxrfVK0O7GHN3vtnlM8kAOqNtfI/Ki4r2a3Q1bS';
-const failedLoginAttempts = new Map();
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
 
 const requestContext = (req) => ({
   ipAddress: req.ip,
   userAgent: req.get('user-agent') || null,
 });
 
-const failedLoginKey = (email, ipAddress) => `${ipAddress || 'unknown'}:${email}`;
-
-const sleep = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
-
-const pruneFailedLogins = () => {
-  const now = Date.now();
-  for (const [key, value] of failedLoginAttempts.entries()) {
-    if (value.expiresAt < now) {
-      failedLoginAttempts.delete(key);
-    }
-  }
-};
-
 const recordFailedLogin = async ({ tx = prisma, userId = null, email, context }) => {
-  pruneFailedLogins();
-  const key = failedLoginKey(email, context.ipAddress);
-  const current = failedLoginAttempts.get(key) || { attempts: 0, expiresAt: 0 };
-  const newAttempts = Math.min(current.attempts + 1, 10);
-  
-  failedLoginAttempts.set(key, {
-    attempts: newAttempts,
-    expiresAt: Date.now() + (env.FAILED_LOGIN_ATTEMPT_TTL_MINUTES * 60 * 1000),
-  });
+  const emailHash = hashAuditValue(email);
+  const expiresAt = new Date(Date.now() + (env.FAILED_LOGIN_ATTEMPT_TTL_MINUTES || 15) * 60 * 1000);
 
-  await tx.auditLog.create({
-    data: {
-      userId,
-      action: 'FAILED_LOGIN',
-      metadata: {
-        emailHash: hashAuditValue(email),
+  // Atomic UPSERT: High-performance rate limiting counter
+  const attemptRecord = await tx.failedLoginAttempt.upsert({
+    where: {
+      ipAddress_emailHash: {
+        ipAddress: context.ipAddress || 'unknown',
+        emailHash,
       },
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
+    },
+    update: {
+      attempts: { increment: 1 },
+      expiresAt,
+    },
+    create: {
+      ipAddress: context.ipAddress || 'unknown',
+      emailHash,
+      attempts: 1,
+      expiresAt,
     },
   });
 
+  // Log the attempt for security audits (fire and forget, don't await if high load)
+  tx.auditLog.create({
+    data: {
+      userId,
+      action: 'FAILED_LOGIN',
+      metadata: { emailHash, attempts: attemptRecord.attempts },
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+    },
+  }).catch(() => {});
+
+  const newAttempts = Math.min(attemptRecord.attempts, 10);
   const delayMs = Math.min(150 * newAttempts, 1500);
   if (delayMs > 0) await sleep(delayMs);
 };
 
-const clearFailedLogin = (email, ipAddress) => {
-  failedLoginAttempts.delete(failedLoginKey(email, ipAddress));
+const clearFailedLogin = async (email, ipAddress) => {
+  const emailHash = hashAuditValue(email);
+  await prisma.failedLoginAttempt.deleteMany({
+    where: {
+      ipAddress: ipAddress || 'unknown',
+      emailHash,
+    },
+  }).catch(() => {});
 };
 
 export const registerUser = async ({ name, email, password }, req) => {
@@ -223,6 +229,53 @@ export const logoutUser = async (req) => {
       entityId: req.session.id,
       ipAddress: req.ip,
       userAgent: req.get('user-agent') || null,
+    },
+  });
+};
+
+export const updatePassword = async (userId, currentPassword, newPassword) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
+
+  const passwordMatches = await verifyPassword(currentPassword, user.passwordHash);
+  if (!passwordMatches) {
+    throw new AppError(errorCodes.UNAUTHORIZED, 'Incorrect current password.', 401);
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId,
+      action: 'PASSWORD_UPDATED',
+      entityType: 'User',
+      entityId: userId,
+    },
+  });
+};
+
+export const logoutEverywhere = async (userId) => {
+  await prisma.session.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId,
+      action: 'LOGGED_OUT_EVERYWHERE',
+      entityType: 'User',
+      entityId: userId,
     },
   });
 };

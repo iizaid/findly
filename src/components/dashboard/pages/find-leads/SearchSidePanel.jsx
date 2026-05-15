@@ -1,41 +1,39 @@
-import { Globe2, Goal, MapPin, Sparkles } from 'lucide-react';
+import { Database, Goal, MapPin, Sparkles } from 'lucide-react';
 import DashboardCard from '../../DashboardCard';
 
 const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames, totalLeads }) => (
   <div className="space-y-5">
     <DashboardCard className="p-5 md:p-6">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Campaign preview</p>
-      <h3 className="mt-3 text-3xl font-bold tracking-tighter">Live Opportunity Search.</h3>
-      <p className="mt-3 text-sm font-semibold leading-7 text-secondary">
-        Findly uses selected platform signals and available business intelligence to find matching opportunities. Connected official sources can be added later without changing your workflow.
+      <h3 className="text-xl font-semibold tracking-tight text-black">Search Preview</h3>
+      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-black/50">
+        A focused search setup that turns your service, location, and source choices into a saved lead list.
       </p>
       <div className="mt-6 grid gap-3">
         {[
-          [Sparkles, 'Service fit', 'Searches will be guided by what the user sells.'],
-          [MapPin, 'Location intent', 'Country and governorate shape the search scope.'],
-          [Globe2, 'Platform mix', `Using ${selectedPlatformCount} selected platform${selectedPlatformCount === 1 ? '' : 's'}${selectedPlatformNames ? `: ${selectedPlatformNames}` : ''}.`],
-          [Goal, 'Search goal', 'Finding real opportunities with actionable signals.'],
-        ].map(([Icon, title, description]) => (
-          <div key={title} className="flex gap-3 rounded-2xl bg-[#F7F8F6] p-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-black">
-              <Icon size={18} />
+          [Sparkles, 'Service fit', 'Matches leads to the service being sold.', 'bg-accent/20 text-black'],
+          [MapPin, 'Location intent', 'Country and governorate shape the search scope.', 'bg-black/5 text-black'],
+          [Database, 'Source mix', `${selectedPlatformCount} selected source${selectedPlatformCount === 1 ? '' : 's'}${selectedPlatformNames ? `: ${selectedPlatformNames}` : ''}.`, 'bg-black/5 text-black'],
+          [Goal, 'Opportunity goal', 'Prioritizes the signals behind the selected search goal.', 'bg-black/5 text-black'],
+        ].map(([Icon, title, description, colorClass]) => (
+          <div key={title} className="flex gap-3 rounded-xl border border-black/5 bg-black/[0.02] p-4">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${colorClass}`}>
+              <Icon size={18} strokeWidth={2} />
             </span>
             <div>
-              <p className="text-sm font-bold">{title}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-secondary">{description}</p>
+              <p className="text-[13px] font-semibold text-black">{title}</p>
+              <p className="mt-1 text-[12px] font-medium leading-snug text-black/50">{description}</p>
             </div>
           </div>
         ))}
       </div>
     </DashboardCard>
 
-    <DashboardCard className="!bg-black p-5 text-white md:p-6">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">Credits</p>
-      <h3 className="mt-3 text-2xl font-bold tracking-tighter">Usage cost</h3>
-      <p className="mt-3 text-sm font-semibold leading-7 text-white/58">
-        Searches using available platform intelligence are free during testing. Analysis still uses normal Opportunity Credit rules.
+    <DashboardCard className="!bg-[#000000] p-5 text-white md:p-6">
+      <h3 className="text-xl font-semibold tracking-tight text-white">Credits</h3>
+      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-white/50">
+        Search uses available stored intelligence during testing. Analysis keeps the normal credit rules.
       </p>
-      <p className="mt-4 rounded-2xl bg-white/8 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em] text-white/70">
+      <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-medium text-white/80">
         Available lead intelligence: {totalLeads}
       </p>
     </DashboardCard>

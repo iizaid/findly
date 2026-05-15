@@ -448,6 +448,67 @@ describe('Findly auth, verification, and foundation API', () => {
     await agent.get('/api/auth/me').expect(401);
   });
 
+  it('updates dashboard settings with safe envelopes and does not fake two-factor enablement', async () => {
+    const settingsEmail = `test.${unique}.settings@findly.local`;
+    const { agent } = await registerAccount({ userEmail: settingsEmail, name: 'Settings User' });
+    const token = verificationTokenFor(settingsEmail);
+    await request(createApp()).post('/api/auth/verify-email').send({ token }).expect(200);
+    await agent.post('/api/auth/login').send({ email: settingsEmail, password }).expect(200);
+
+    const csrfToken = await getCsrfToken(agent);
+    const meResponse = await agent.get('/api/auth/me').expect(200);
+    const workspaceId = meResponse.body.data.workspace.id;
+
+    const profileResponse = await agent
+      .patch('/api/users/me')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        name: 'Updated Settings User',
+        notifyReports: false,
+        notifySecurity: true,
+        notifyMarketing: true,
+      })
+      .expect(200);
+
+    expect(profileResponse.body.success).toBe(true);
+    expect(profileResponse.body.data.user.name).toBe('Updated Settings User');
+    expect(profileResponse.body.data.user.passwordHash).toBeUndefined();
+    expect(profileResponse.body.data.user.notifyReports).toBe(false);
+
+    const fake2FAResponse = await agent
+      .patch('/api/users/me')
+      .set('X-CSRF-Token', csrfToken)
+      .send({ twoFactorEnabled: true })
+      .expect(400);
+    expect(fake2FAResponse.body.error.code).toBe('VALIDATION_ERROR');
+
+    const workspaceResponse = await agent
+      .patch(`/api/workspaces/${workspaceId}`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({ name: 'Updated Workspace' })
+      .expect(200);
+    expect(workspaceResponse.body.data.workspace.name).toBe('Updated Workspace');
+
+    const passwordResponse = await agent
+      .patch('/api/auth/password')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        currentPassword: password,
+        newPassword: 'NewSecure12345@#$',
+      })
+      .expect(200);
+    expect(passwordResponse.body.success).toBe(true);
+
+    await request(createApp())
+      .post('/api/auth/login')
+      .send({ email: settingsEmail, password })
+      .expect(401);
+    await request(createApp())
+      .post('/api/auth/login')
+      .send({ email: settingsEmail, password: 'NewSecure12345@#$' })
+      .expect(200);
+  });
+
   it('exposes safe readiness/source status and blocks unconfigured campaign runs cleanly', async () => {
     const agent = request.agent(createApp());
     await agent.post('/api/auth/login').send({ email, password }).expect(200);

@@ -76,3 +76,12 @@ export const emptyAuthBodySchema = z.object({
   params: z.object({}).optional(),
   query: z.object({}).optional(),
 });
+
+export const updatePasswordSchema = z.object({
+  body: z.object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: passwordSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});

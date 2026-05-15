@@ -11,7 +11,7 @@ import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 
 const SEARCH_BASE_CREDITS = 5;
 const SEARCH_PER_SAVED_LEAD_CREDITS = 1;
-const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT'];
+const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
 
 const sourceLabels = {
@@ -114,11 +114,16 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   }
 
   const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
-  const runnableSources = sources.map((source) => ({ source, ...getRunnableAdapter(source) }));
+  const externalSourceKeys = sources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
+  const runnableSources = externalSourceKeys.map((source) => ({ source, ...getRunnableAdapter(source) }));
+  const runnableExternalSources = runnableSources.filter((source) => source.runnable);
   const unavailable = runnableSources.find((source) => !source.runnable);
-  
-  const fallbackSourcesRequested = sources.some(s => LOCAL_FALLBACK_SOURCE_KEYS.includes(s));
-  const shouldUseLocalDataset = localDatasetRequested || (fallbackSourcesRequested && unavailable);
+
+  const fallbackSourcesRequested = externalSourceKeys.some((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
+  const allUnavailableSourcesCanFallback = externalSourceKeys.length > 0
+    && externalSourceKeys.every((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
+  const shouldUseLocalDataset = localDatasetRequested
+    || (fallbackSourcesRequested && runnableExternalSources.length === 0 && allUnavailableSourcesCanFallback);
 
   if (shouldUseLocalDataset) {
     return runLocalDatasetCampaign({
@@ -130,10 +135,14 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     });
   }
 
-  if (unavailable) {
+  if (unavailable && runnableExternalSources.length === 0) {
     const message = unavailable.status?.reason || `${unavailable.source} is not available.`;
     const code = unavailable.status?.status === 'not_configured' ? errorCodes.SOURCE_NOT_CONFIGURED : errorCodes.SOURCE_UNAVAILABLE;
     throw new AppError(code, message, 400);
+  }
+
+  if (runnableExternalSources.length === 0) {
+    throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'No selected search source is currently available.', 400);
   }
 
   const maxCreditsRequired = SEARCH_BASE_CREDITS + ((campaign.requestedLimit || 20) * SEARCH_PER_SAVED_LEAD_CREDITS);
@@ -157,7 +166,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
 
   try {
     const normalizedLeadGroups = [];
-    for (const source of runnableSources) {
+    for (const source of runnableExternalSources) {
       await prisma.searchCampaign.update({
         where: { id: campaign.id },
         data: { lastStep: `Searching ${source.status.label}` },
@@ -541,16 +550,40 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
     throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
   }
 
-  const leads = await prisma.lead.findMany({
-    where: {
-      campaignId,
-      userId,
-      analyses: { none: {} },
-    },
-    take: 100,
-  });
+  const [leads, leadListItems] = await Promise.all([
+    prisma.lead.findMany({
+      where: {
+        campaignId,
+        userId,
+        analyses: { none: {} },
+      },
+      take: 100,
+    }),
+    prisma.leadListLead.findMany({
+      where: {
+        leadList: {
+          campaignId,
+          userId,
+        },
+        analyses: { none: {} },
+      },
+      include: {
+        lead: true,
+        catalogLead: true,
+      },
+      take: 100,
+    }),
+  ]);
 
-  if (leads.length === 0) {
+  const directLeadIds = new Set(leads.map((lead) => lead.id));
+  const analyzableListItems = leadListItems.filter((item) => {
+    const sourceLead = item.lead || item.catalogLead;
+    if (!sourceLead) return false;
+    return !item.leadId || !directLeadIds.has(item.leadId);
+  });
+  const analysisCount = leads.length + analyzableListItems.length;
+
+  if (analysisCount === 0) {
     return { analyzedCount: 0, creditsUsed: 0 };
   }
 
@@ -561,7 +594,7 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
       tx,
       userId,
       workspaceId: campaign.workspaceId,
-      amount: leads.length,
+      amount: analysisCount,
       type: 'CREDIT_USED',
       reason: `Analyzed campaign leads: ${campaign.name}`,
       referenceType: 'SearchCampaign',
@@ -580,6 +613,30 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
       }));
     }
 
+    for (const item of analyzableListItems) {
+      const sourceLead = item.lead || item.catalogLead;
+      const analysis = await runRuleBasedAnalysis({
+        tx,
+        lead: sourceLead,
+        profile,
+        userId,
+        workspaceId: campaign.workspaceId,
+        campaignId: campaign.id,
+        leadListLeadId: item.id,
+      });
+
+      await tx.leadListLead.update({
+        where: { id: item.id },
+        data: {
+          analysisStatus: 'COMPLETED',
+          analyzedAt: new Date(),
+          score: analysis.opportunityScore,
+        },
+      });
+
+      analyses.push(analysis);
+    }
+
     await tx.auditLog.create({
       data: {
         userId,
@@ -589,7 +646,7 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
         metadata: {
           workspaceId: campaign.workspaceId,
           analyzedCount: analyses.length,
-          creditsUsed: leads.length,
+          creditsUsed: analysisCount,
         },
       },
     });
@@ -597,5 +654,5 @@ export const analyzeCampaign = async ({ campaignId, userId }) => {
     return analyses;
   });
 
-  return { analyzedCount: result.length, creditsUsed: leads.length };
+  return { analyzedCount: result.length, creditsUsed: analysisCount };
 };

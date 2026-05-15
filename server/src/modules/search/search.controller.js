@@ -105,6 +105,8 @@ const mapCatalogLeadForResponse = (catalogLead, item = {}) => ({
   instagramUsername: catalogLead.instagramUsername,
   facebookUrl: catalogLead.facebookUrl,
   googleMapsUrl: catalogLead.googleMapsUrl,
+  latitude: catalogLead.latitude,
+  longitude: catalogLead.longitude,
   source: catalogLead.source,
   sourceFile: catalogLead.sourceFile,
   rating: catalogLead.rating,
@@ -120,6 +122,47 @@ const mapCatalogLeadForResponse = (catalogLead, item = {}) => ({
   listRank: item.rank,
   localDatasetScore: item.score,
 });
+
+const catalogLeadSelect = {
+  id: true,
+  businessName: true,
+  category: true,
+  country: true,
+  city: true,
+  address: true,
+  phone: true,
+  whatsappNumber: true,
+  email: true,
+  websiteUrl: true,
+  websiteStatus: true,
+  instagramUrl: true,
+  instagramUsername: true,
+  facebookUrl: true,
+  googleMapsUrl: true,
+  latitude: true,
+  longitude: true,
+  source: true,
+  sourceFile: true,
+  rating: true,
+  reviewCount: true,
+  importedAt: true,
+  detectedSignals: true,
+  enrichmentData: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const sortLeadResponses = (leads, sortBy, sortOrder) => {
+  const direction = sortOrder === 'asc' ? 1 : -1;
+  const field = ['rating', 'reviewCount', 'createdAt'].includes(sortBy) ? sortBy : 'createdAt';
+
+  return [...leads].sort((a, b) => {
+    const av = field === 'createdAt' ? new Date(a.createdAt || 0).getTime() : (a[field] ?? -Infinity);
+    const bv = field === 'createdAt' ? new Date(b.createdAt || 0).getTime() : (b[field] ?? -Infinity);
+    if (av === bv) return 0;
+    return av > bv ? direction : -direction;
+  });
+};
 
 const leadMatchesFilters = (lead, { source, city, status, missingWebsite, scoreLevel }) => {
   if (source && lead.source !== source) return false;
@@ -146,7 +189,7 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
 
   const workspaceId = workspace?.workspaceId || null;
   const leadWhere = {
-    source: { in: ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET'] },
+    source: { in: ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'] },
   };
 
   const [leads, totalDatasetLeads, sources] = await Promise.all([
@@ -401,12 +444,33 @@ export const getCampaignLeads = asyncHandler(async (req, res) => {
   });
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
 
-  const leads = await prisma.lead.findMany({
-    where: { campaignId: campaign.id, userId: req.user.id },
-    include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
-    orderBy: { createdAt: 'desc' },
-  });
-  return successResponse(res, { leads }, 'Campaign leads loaded.');
+  const [directLeads, listItems] = await Promise.all([
+    prisma.lead.findMany({
+      where: { campaignId: campaign.id, userId: req.user.id },
+      include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.leadListLead.findMany({
+      where: {
+        leadList: {
+          campaignId: campaign.id,
+          userId: req.user.id,
+        },
+      },
+      include: {
+        catalogLead: { select: catalogLeadSelect },
+        lead: { include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } } },
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
+
+  const snapshotLeads = listItems
+    .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
+    .filter(Boolean);
+
+  return successResponse(res, { leads: [...snapshotLeads, ...directLeads] }, 'Campaign leads loaded.');
 });
 
 export const getCampaignAnalyticsData = asyncHandler(async (req, res) => {
@@ -533,30 +597,7 @@ export const getLeads = asyncHandler(async (req, res) => {
       include: {
         catalogLead: {
           select: {
-            id: true,
-            businessName: true,
-            category: true,
-            country: true,
-            city: true,
-            address: true,
-            phone: true,
-            whatsappNumber: true,
-            email: true,
-            websiteUrl: true,
-            websiteStatus: true,
-            instagramUrl: true,
-            instagramUsername: true,
-            facebookUrl: true,
-            googleMapsUrl: true,
-            source: true,
-            sourceFile: true,
-            rating: true,
-            reviewCount: true,
-            importedAt: true,
-            detectedSignals: true,
-            enrichmentData: true,
-            createdAt: true,
-            updatedAt: true,
+            ...catalogLeadSelect,
           },
         },
         lead: {
@@ -565,19 +606,20 @@ export const getLeads = asyncHandler(async (req, res) => {
         analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }],
-      skip: pagination.skip,
-      take: pagination.take,
+      take: 2000,
     });
-    const totalItems = await prisma.leadListLead.count({ where: { leadListId: listId } });
     const mapped = items
       .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
       .filter(Boolean)
       .filter((lead) => leadMatchesFilters(lead, { source, city, status, missingWebsite, scoreLevel }));
 
-    return successResponse(res, { leads: mapped, pagination: { page: pagination.page, limit: pagination.limit, total: totalItems } }, 'Leads loaded.');
+    return successResponse(res, {
+      leads: mapped.slice(pagination.skip, pagination.skip + pagination.take),
+      pagination: { page: pagination.page, limit: pagination.limit, total: mapped.length },
+    }, 'Leads loaded.');
   }
 
-  const [leads, total] = await prisma.$transaction([
+  const [leads, total, listItems, totalListItems] = await prisma.$transaction([
     prisma.lead.findMany({
       where,
       select: {
@@ -613,15 +655,54 @@ export const getLeads = asyncHandler(async (req, res) => {
       take: pagination.take,
     }),
     prisma.lead.count({ where }),
+    prisma.leadListLead.findMany({
+      where: {
+        leadList: {
+          userId: req.user.id,
+          ...(campaignId ? { campaignId } : {}),
+        },
+      },
+      include: {
+        catalogLead: { select: catalogLeadSelect },
+        lead: { include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } } },
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 1000,
+    }),
+    prisma.leadListLead.count({
+      where: {
+        leadList: {
+          userId: req.user.id,
+          ...(campaignId ? { campaignId } : {}),
+        },
+      },
+    }),
   ]);
 
-  // Filter by scoreLevel client-side since it's on the analysis relation
-  let filtered = leads;
-  if (scoreLevel) {
-    filtered = leads.filter((l) => l.analyses?.[0]?.scoreLevel === scoreLevel);
-  }
+  const mappedListItems = listItems
+    .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
+    .filter(Boolean);
 
-  return successResponse(res, { leads: filtered, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Leads loaded.');
+  const combined = [...mappedListItems, ...leads];
+  const seen = new Set();
+  const deduped = combined.filter((lead) => {
+    const key = lead.leadListItemId || lead.id;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const filtered = sortLeadResponses(
+    deduped.filter((lead) => leadMatchesFilters(lead, { source, city, status, missingWebsite, scoreLevel })),
+    sortBy,
+    sortOrder,
+  ).slice(pagination.skip, pagination.skip + pagination.take);
+
+  return successResponse(res, {
+    leads: filtered,
+    pagination: { page: pagination.page, limit: pagination.limit, total: total + totalListItems },
+  }, 'Leads loaded.');
 });
 
 export const getLeadDetail = asyncHandler(async (req, res) => {
@@ -632,8 +713,32 @@ export const getLeadDetail = asyncHandler(async (req, res) => {
       leadList: { select: { id: true, name: true } },
     },
   });
-  if (!lead) throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
-  return successResponse(res, { lead }, 'Lead detail loaded.');
+  if (lead) return successResponse(res, { lead }, 'Lead detail loaded.');
+
+  const item = await prisma.leadListLead.findFirst({
+    where: {
+      OR: [
+        { id: req.validated.params.id },
+        { catalogLeadId: req.validated.params.id },
+      ],
+      leadList: { userId: req.user.id },
+    },
+    include: {
+      catalogLead: { select: catalogLeadSelect },
+      leadList: { select: { id: true, name: true, campaignId: true } },
+      analyses: { orderBy: { createdAt: 'desc' } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  if (!item?.catalogLead) throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+
+  return successResponse(res, {
+    lead: {
+      ...mapCatalogLeadForResponse(item.catalogLead, { ...item, analyses: item.analyses }),
+      leadList: item.leadList,
+    },
+  }, 'Lead detail loaded.');
 });
 
 export const analyzeExistingLead = asyncHandler(async (req, res) => {
@@ -646,31 +751,53 @@ export const analyzeExistingLead = asyncHandler(async (req, res) => {
 });
 
 export const getLeadsForMap = asyncHandler(async (req, res) => {
-  const leads = await prisma.lead.findMany({
-    where: {
-      userId: req.user.id,
-      latitude: { not: null },
-      longitude: { not: null },
-    },
-    select: {
-      id: true,
-      businessName: true,
-      category: true,
-      city: true,
-      latitude: true,
-      longitude: true,
-      rating: true,
-      reviewCount: true,
-      websiteUrl: true,
-      phone: true,
-      status: true,
-      source: true,
-      analyses: { orderBy: { createdAt: 'desc' }, take: 1, select: { opportunityScore: true, scoreLevel: true, suggestedService: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 500,
-  });
-  return successResponse(res, { leads }, 'Map leads loaded.');
+  const [directLeads, listItems] = await Promise.all([
+    prisma.lead.findMany({
+      where: {
+        userId: req.user.id,
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+      select: {
+        id: true,
+        businessName: true,
+        category: true,
+        city: true,
+        latitude: true,
+        longitude: true,
+        rating: true,
+        reviewCount: true,
+        websiteUrl: true,
+        phone: true,
+        status: true,
+        source: true,
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1, select: { opportunityScore: true, scoreLevel: true, suggestedService: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    }),
+    prisma.leadListLead.findMany({
+      where: {
+        leadList: { userId: req.user.id },
+        catalogLead: {
+          latitude: { not: null },
+          longitude: { not: null },
+        },
+      },
+      include: {
+        catalogLead: { select: catalogLeadSelect },
+        analyses: { orderBy: { createdAt: 'desc' }, take: 1, select: { opportunityScore: true, scoreLevel: true, suggestedService: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 500,
+    }),
+  ]);
+
+  const catalogLeads = listItems
+    .map((item) => mapCatalogLeadForResponse(item.catalogLead, item))
+    .filter((lead) => lead.latitude != null && lead.longitude != null);
+
+  return successResponse(res, { leads: [...catalogLeads, ...directLeads].slice(0, 500) }, 'Map leads loaded.');
 });
 
 export const updateLeadStatus = asyncHandler(async (req, res) => {
@@ -708,6 +835,7 @@ export const enrichLeadWebsite = asyncHandler(async (req, res) => {
     where: { id: req.validated.params.id, userId: req.user.id },
     select: {
       id: true,
+      businessName: true,
       workspaceId: true,
       websiteUrl: true,
       detectedSignals: true,
@@ -720,35 +848,52 @@ export const enrichLeadWebsite = asyncHandler(async (req, res) => {
   const enrichment = await enrichWebsiteUrl(lead.websiteUrl);
   const detectedSignals = mergeSignals(lead.detectedSignals, enrichment.detectedSignals);
 
-  const updatedLead = await prisma.lead.update({
-    where: { id: lead.id },
-    data: {
-      websiteStatus: enrichment.websiteStatus,
-      enrichmentData: enrichment,
-      detectedSignals,
-    },
-    select: {
-      id: true,
-      websiteStatus: true,
-      enrichmentData: true,
-      detectedSignals: true,
-      updatedAt: true,
-    },
-  });
-
-  await prisma.auditLog.create({
-    data: {
+  const updatedLead = await prisma.$transaction(async (tx) => {
+    const creditResult = await deductCredits({
+      tx,
       userId: req.user.id,
-      action: 'LEAD_WEBSITE_ENRICHED',
-      entityType: 'Lead',
-      entityId: lead.id,
-      metadata: {
-        workspaceId: lead.workspaceId,
+      workspaceId: lead.workspaceId,
+      amount: 1,
+      type: 'CREDIT_USED',
+      reason: `Website enrichment: ${lead.businessName}`,
+      referenceType: 'Lead',
+      referenceId: lead.id,
+    });
+
+    const updated = await tx.lead.update({
+      where: { id: lead.id },
+      data: {
         websiteStatus: enrichment.websiteStatus,
+        enrichmentData: enrichment,
+        detectedSignals,
       },
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent') || null,
-    },
+      select: {
+        id: true,
+        websiteStatus: true,
+        enrichmentData: true,
+        detectedSignals: true,
+        updatedAt: true,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAD_WEBSITE_ENRICHED',
+        entityType: 'Lead',
+        entityId: lead.id,
+        metadata: {
+          workspaceId: lead.workspaceId,
+          websiteStatus: enrichment.websiteStatus,
+          creditsUsed: 1,
+          balanceAfter: creditResult.balanceAfter,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || null,
+      },
+    });
+
+    return updated;
   });
 
   return successResponse(res, { lead: updatedLead }, 'Website enrichment completed.');

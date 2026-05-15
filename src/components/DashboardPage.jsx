@@ -57,6 +57,17 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
     }
   }, [onAuthOpen, onSessionChange]);
 
+  // Silent refresh: updates data in background without showing loading screen
+  const refreshDashboard = useCallback(async () => {
+    try {
+      const response = await apiRequest('/api/dashboard');
+      onSessionChange?.(response.data.user);
+      setState((prev) => ({ ...prev, data: response.data }));
+    } catch {
+      // Silent fail — user stays on current page
+    }
+  }, [onSessionChange]);
+
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
@@ -172,7 +183,17 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
     '/dashboard/analysis': <DashboardAnalysisPage onNavigate={onNavigate} onNotice={onNotice} />,
     '/dashboard/credits': <DashboardCreditsPage credits={credits} />,
     '/dashboard/admin': <DashboardAdminPage user={user} onNavigate={onNavigate} />,
-    '/dashboard/settings': <DashboardSettingsPage user={user} workspace={workspace} onLogout={logout} />,
+    '/dashboard/settings': (
+      <DashboardSettingsPage
+        user={user}
+        workspace={workspace}
+        credits={credits}
+        onLogout={logout}
+        onUpdate={refreshDashboard}
+        onNavigate={onNavigate}
+        onNotice={onNotice}
+      />
+    ),
   };
 
   return (

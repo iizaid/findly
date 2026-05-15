@@ -1,8 +1,7 @@
 import { prisma } from '../db/prisma.js';
-import { deductCredits, estimateSearchCreditReservation } from '../modules/credits/credit.service.js';
 import { getRunnableAdapter } from '../modules/search/source.registry.js';
 
-const LOCAL_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT'];
+const LOCAL_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const DATASET_BACKED_SOURCES = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
 
 export const billDatasetBackedSearch = async (req, _res, next) => {
@@ -23,18 +22,7 @@ export const billDatasetBackedSearch = async (req, _res, next) => {
 
     if (!usesDataset) return next();
 
-    const amount = estimateSearchCreditReservation({ requestedLimit: campaign.requestedLimit || 20 });
-    const creditResult = await deductCredits({
-      userId: req.user.id,
-      workspaceId: campaign.workspaceId,
-      amount,
-      type: 'CREDIT_USED',
-      reason: `Dataset-backed search: ${campaign.name}`,
-      referenceType: 'SearchCampaign',
-      referenceId: campaign.id,
-    });
-
-    req.billing = { ...(req.billing || {}), datasetSearch: { creditsUsed: amount, balanceAfter: creditResult.balanceAfter } };
+    req.billing = { ...(req.billing || {}), datasetSearch: { creditsUsed: 0, balanceAfter: null } };
     return next();
   } catch (error) {
     return next(error);

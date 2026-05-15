@@ -1,7 +1,7 @@
 import { prisma } from '../../db/prisma.js';
 import { getSourceStatuses as getBaseSourceStatuses } from './source.registry.js';
 
-const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET'];
+const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'];
 const localFallbackSourceKeys = new Set([
   'GOOGLE_MAPS',
   'INSTAGRAM',

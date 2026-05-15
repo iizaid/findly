@@ -20,6 +20,8 @@ import { sessionRouter } from './modules/sessions/session.routes.js';
 import { sourceRouter } from './modules/sources/source.routes.js';
 import { workspaceRouter } from './modules/workspaces/workspace.routes.js';
 import { searchRouter } from './modules/search/search.routes.js';
+import usersRouter from './modules/users/users.routes.js';
+import path from 'path';
 
 export const createApp = () => {
   const app = express();
@@ -37,6 +39,8 @@ export const createApp = () => {
   app.use(cookieParser());
   app.use(csrfProtection);
 
+  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
   app.use('/api/health', healthRouter);
   app.use('/api/ready', readyRouter);
   app.use('/api/sources', sourceRouter);
@@ -49,6 +53,7 @@ export const createApp = () => {
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/jobs', jobRouter);
   app.use('/api/search', searchRouter);
+  app.use('/api/users', usersRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

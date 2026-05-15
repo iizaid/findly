@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Table2, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2 } from 'lucide-react';
+import { Plus, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2 } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest } from '../../../lib/api';
@@ -254,26 +254,22 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
     <DashboardCard className="min-h-[calc(100vh-132px)] overflow-hidden p-5 md:p-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-black">
-            <Table2 size={26} />
-          </div>
-          <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Saved search results</p>
-          <h2 className="mt-3 text-4xl font-bold tracking-tighter md:text-5xl">Lead Lists</h2>
-          <p className="mt-4 max-w-3xl text-sm font-semibold leading-7 text-secondary">
-            Every search is saved as a structured result set. It stays here until you decide to remove it.
+          <h2 className="text-2xl font-semibold tracking-tight md:text-3xl text-black">Lead Lists</h2>
+          <p className="mt-2 text-sm font-medium text-black/50">
+            Structured search results and opportunity lists.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {savedLists.length > 0 && (
-            <select
+              <select
               value={selectedListId || ''}
               onChange={(e) => onNavigate?.(`/dashboard/lead-lists?listId=${e.target.value}`)}
-              className="h-11 min-w-[240px] rounded-full border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none"
+              className="h-10 min-w-[240px] rounded-xl border border-black/5 bg-black/[0.02] px-4 text-[13px] font-medium text-black outline-none transition-colors hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-accent"
               aria-label="Saved searches"
             >
               {savedLists.map((list) => (
                 <option key={list.id} value={list.id}>
-                  {list.name} · {list.leadCount || 0} leads
+                  {list.name} • {list.leadCount || 0} leads
                 </option>
               ))}
             </select>
@@ -283,7 +279,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
               type="button"
               onClick={analyzeList}
               disabled={analyzingList}
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-5 text-sm font-bold text-black transition-colors hover:bg-black/5 disabled:opacity-50"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white shadow-sm ring-1 ring-black/5 px-4 text-[13px] font-medium text-black transition-colors hover:bg-black/[0.02] disabled:opacity-50"
             >
               {analyzingList ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
               Analyze List
@@ -292,7 +288,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
           <button
             type="button"
             onClick={() => onNavigate('/dashboard/find-leads')}
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black"
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-black px-4 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent"
           >
             <Plus size={16} />
             New Campaign
@@ -315,17 +311,16 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       )}
 
       {selectedListId && activeList && (
-        <div className="mt-6 rounded-[20px] border border-accent/40 bg-accent/10 p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Active result set</p>
-          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="mt-8 rounded-2xl border border-black/5 bg-black/[0.01] p-5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-xl font-bold tracking-tight">{activeList.name}</h3>
-              <p className="mt-1 text-sm font-semibold text-secondary">
-                Platforms: {listPlatformLabel(activeList)}
+              <h3 className="text-lg font-semibold tracking-tight text-black">{activeList.name}</h3>
+              <p className="mt-1 text-[13px] text-black/50">
+                Sources: {listPlatformLabel(activeList)}
               </p>
             </div>
-            <span className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black">
-              {activeList.leadCount || 0} matched leads
+            <span className="inline-flex h-8 items-center rounded-lg bg-black/[0.04] px-3 text-[12px] font-medium text-black/70">
+              {activeList.leadCount || 0} leads matched
             </span>
           </div>
         </div>
@@ -333,44 +328,44 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
 
       <div className="mt-6 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary/50" />
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/30" />
           <input
             type="text"
             placeholder="Search leads..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-10 w-full rounded-xl border border-black/[0.08] bg-[#F7F8F6] pl-10 pr-4 text-xs font-semibold outline-none focus:border-black/20 focus:bg-white"
+            className="h-10 w-full rounded-xl border border-black/5 bg-black/[0.02] pl-10 pr-4 text-[13px] font-medium outline-none transition-colors hover:bg-black/[0.04] focus:border-black/20 focus:bg-white"
           />
         </div>
-        <select value={filterSource} onChange={(e) => setFilterSource(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
+        <select value={filterSource} onChange={(e) => setFilterSource(e.target.value)} className="h-10 rounded-xl border border-black/5 bg-black/[0.02] px-3 text-[13px] font-medium outline-none transition-colors hover:bg-black/[0.04]">
           <option value="">All Platforms</option>
           {sources.map((s) => <option key={s} value={s}>{formatSignalSource(s)}</option>)}
         </select>
-        <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
+        <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="h-10 rounded-xl border border-black/5 bg-black/[0.02] px-3 text-[13px] font-medium outline-none transition-colors hover:bg-black/[0.04]">
           <option value="">All Cities</option>
           {cities.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={filterScore} onChange={(e) => setFilterScore(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
+        <select value={filterScore} onChange={(e) => setFilterScore(e.target.value)} className="h-10 rounded-xl border border-black/5 bg-black/[0.02] px-3 text-[13px] font-medium outline-none transition-colors hover:bg-black/[0.04]">
           <option value="">All Scores</option>
           <option value="GOLD">Gold</option>
           <option value="HIGH">High</option>
           <option value="MEDIUM">Medium</option>
           <option value="LOW">Low</option>
         </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-xs font-bold outline-none">
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="h-10 rounded-xl border border-black/5 bg-black/[0.02] px-3 text-[13px] font-medium outline-none transition-colors hover:bg-black/[0.04]">
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
-        <label className="flex items-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 py-2 text-xs font-bold cursor-pointer">
-          <input type="checkbox" checked={filterMissingWeb} onChange={(e) => setFilterMissingWeb(e.target.checked)} className="accent-accent" />
+        <label className="flex h-10 items-center gap-2 rounded-xl border border-black/5 bg-black/[0.02] px-3 text-[13px] font-medium cursor-pointer transition-colors hover:bg-black/[0.04]">
+          <input type="checkbox" checked={filterMissingWeb} onChange={(e) => setFilterMissingWeb(e.target.checked)} className="accent-black" />
           No website
         </label>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-[20px] border border-black/[0.08] bg-white">
+      <div className="mt-5 overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-sm ring-1 ring-black/5">
         <div className="overflow-x-auto">
           <div className="min-w-[1200px]">
-            <div className="grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] gap-2 bg-[#F7F8F6] px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-secondary">
+            <div className="grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] gap-2 border-b border-black/[0.04] bg-[#FBFBFB] px-5 py-3 text-[12px] font-medium text-black/50">
               <span>Business</span>
               <span>Category</span>
               <span>City</span>
@@ -399,47 +394,47 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                   
                   return (
                     <div key={targetId} className="flex flex-col">
-                      <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3 text-sm font-semibold text-black transition-colors ${isExpanded ? 'bg-accent/5' : 'hover:bg-[#F7F8F6]'}`}>
+                      <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-black/90 transition-colors ${isExpanded ? 'bg-black/[0.02]' : 'hover:bg-black/[0.01]'}`}>
                         <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
-                          <p className="truncate font-bold text-xs">{lead.businessName}</p>
-                          {lead.rating && <p className="text-[10px] text-secondary mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
+                          <p className="truncate font-semibold text-black">{lead.businessName}</p>
+                          {lead.rating && <p className="text-[11px] text-black/50 mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
                         </div>
-                        <div className="truncate text-xs text-secondary">{lead.category || '-'}</div>
-                        <div className="truncate text-xs">{lead.city || '-'}</div>
-                        <div className="truncate text-[10px] font-bold text-secondary" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
-                        <div className="text-xs">
+                        <div className="truncate text-black/60">{lead.category || '-'}</div>
+                        <div className="truncate">{lead.city || '-'}</div>
+                        <div className="truncate text-[11px] text-black/60" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
+                        <div>
                           {lead.websiteUrl ? (
-                            <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
-                              <Link2 size={12} /> Visit
+                            <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                              <Link2 size={13} /> Visit
                             </a>
-                          ) : <span className="text-red-400 text-[10px] font-bold">Missing</span>}
+                          ) : <span className="text-red-500 text-[11px]">Missing</span>}
                         </div>
-                        <div className="text-xs">
+                        <div>
                           {lead.instagramUrl ? (
-                            <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-dark hover:underline">
-                              <ExternalLink size={12} /> Open
+                            <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
+                              <ExternalLink size={13} /> Open
                             </a>
-                          ) : (lead.instagramUsername ? <span className="text-[10px] font-bold">@{lead.instagramUsername}</span> : <span className="text-secondary/40">-</span>)}
+                          ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">-</span>)}
                         </div>
-                        <div className="truncate text-xs text-secondary">{lead.phone || '-'}</div>
+                        <div className="truncate text-black/60">{lead.phone || '-'}</div>
                         <div className="min-w-0">
                           {a?.detectedSignals?.length ? (
-                            <div className="flex flex-wrap gap-0.5">
+                            <div className="flex flex-wrap gap-1">
                               {a.detectedSignals.slice(0, 2).map((sig) => (
-                                <span key={sig} className="rounded bg-black/[0.04] px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider">{sig.replace(/_/g, ' ')}</span>
+                                <span key={sig} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-black/60">{sig.replace(/_/g, ' ')}</span>
                               ))}
-                              {a.detectedSignals.length > 2 && <span className="text-[9px] text-secondary">+{a.detectedSignals.length - 2}</span>}
+                              {a.detectedSignals.length > 2 && <span className="text-[10px] text-black/50">+{a.detectedSignals.length - 2}</span>}
                             </div>
-                          ) : <span className="text-secondary/40 text-xs">-</span>}
+                          ) : <span className="text-black/30">-</span>}
                         </div>
-                        <div>{scoreBadge(a) || <span className="text-secondary/40 text-xs">-</span>}</div>
+                        <div>{scoreBadge(a) || <span className="text-black/30">-</span>}</div>
                         <div className="relative">
                           <select
                             value={lead.status}
                             onChange={(e) => updateStatus(lead, e.target.value)}
                             disabled={isCatalogLeadWithoutList || updatingStatus === targetId}
                             title={isCatalogLeadWithoutList ? 'Status updates will be available after saving a catalog lead to your workspace.' : 'Update lead status'}
-                            className={`h-7 rounded-lg border-0 px-1.5 text-[10px] font-bold uppercase outline-none ${isCatalogLeadWithoutList ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} ${statusColor(lead.status)}`}
+                            className={`h-7 w-full rounded-md border-0 px-2 text-[11px] font-medium outline-none ${isCatalogLeadWithoutList ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${statusColor(lead.status)} ring-1 ring-black/5`}
                           >
                             {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
                           </select>
@@ -460,70 +455,69 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                           )}
                         </div>
                       </div>
-
                       {isExpanded && (
-                        <div className="bg-accent/5 px-5 pb-5 pt-2">
+                        <div className="bg-black/[0.01] px-5 pb-5 pt-3 border-t border-black/[0.02]">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="rounded-xl border border-black/[0.08] bg-white p-4">
+                            <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
                               <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary">AI Analysis</h4>
+                                <h4 className="text-[13px] font-semibold text-black">AI Analysis</h4>
                                 {!a && !isCatalogLeadWithoutList && (
                                   <button 
                                     onClick={() => analyzeLead(lead)}
                                     disabled={analyzingLead === targetId}
-                                    className="flex items-center gap-1 text-xs font-bold text-accent-dark hover:underline disabled:opacity-50"
+                                    className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors"
                                   >
-                                    {analyzingLead === targetId ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                    {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                                     Analyze
                                   </button>
                                 )}
                               </div>
                               
                               {a ? (
-                                <div className="space-y-3">
-                                  <div className="flex gap-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary w-20">Service:</span>
-                                    <span className="text-xs font-bold">{a.suggestedService}</span>
+                                <div className="space-y-4 mt-2">
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[12px] font-medium text-black/40">Suggested Service</span>
+                                    <span className="text-[13px] font-medium text-black">{a.suggestedService}</span>
                                   </div>
-                                  <div className="flex gap-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary w-20">Angle:</span>
-                                    <span className="text-xs text-black/80 leading-relaxed">{a.outreachAngle}</span>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[12px] font-medium text-black/40">Outreach Angle</span>
+                                    <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary block mb-1">Message Draft:</span>
-                                    <div className="bg-[#F7F8F6] p-3 rounded-lg text-xs leading-relaxed text-black/80 whitespace-pre-wrap">
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[12px] font-medium text-black/40">Message Draft</span>
+                                    <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] p-4 text-[13px] leading-relaxed text-black/80 whitespace-pre-wrap">
                                       {a.messageDraft}
                                     </div>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="py-6 text-center">
-                                  <p className="text-xs text-secondary">Not analyzed yet.</p>
+                                <div className="py-8 text-center">
+                                  <p className="text-[13px] text-black/40">No analysis available for this lead yet.</p>
                                 </div>
                               )}
                             </div>
 
                             <div className="space-y-4">
                               {isListItem && (
-                                <div className="rounded-xl border border-black/[0.08] bg-white p-4">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-secondary flex items-center gap-1"><FileText size={12} /> Notes</h4>
+                                <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-[13px] font-semibold text-black flex items-center gap-1.5"><FileText size={14} className="text-black/40" /> Notes</h4>
                                     {editingNotes !== targetId ? (
                                       <button 
                                         onClick={() => {
                                           setNotesValue(lead.notes || '');
                                           setEditingNotes(targetId);
                                         }}
-                                        className="text-[10px] font-bold text-accent-dark hover:underline"
+                                        className="text-[12px] font-medium text-blue-600 hover:underline"
                                       >
                                         Edit
                                       </button>
                                     ) : (
                                       <button 
                                         onClick={() => saveNotes(lead)}
-                                        className="flex items-center gap-1 text-[10px] font-bold text-green-600 hover:underline"
+                                        className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:underline"
                                       >
-                                        <CheckCircle2 size={12} /> Save
+                                        <CheckCircle2 size={14} /> Save
                                       </button>
                                     )}
                                   </div>
@@ -532,26 +526,26 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
                                     <textarea
                                       value={notesValue}
                                       onChange={(e) => setNotesValue(e.target.value)}
-                                      className="w-full rounded-lg border border-black/10 bg-[#F7F8F6] p-2 text-xs outline-none focus:border-accent min-h-[80px]"
+                                      className="w-full rounded-xl border border-black/10 bg-black/[0.01] p-3 text-[13px] outline-none focus:border-accent focus:ring-1 focus:ring-accent min-h-[80px]"
                                       placeholder="Add your notes here..."
                                     />
                                   ) : (
-                                    <p className="text-xs text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
-                                      {lead.notes || <span className="text-secondary/50 italic">No notes added.</span>}
+                                    <p className="text-[13px] text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
+                                      {lead.notes || <span className="text-black/30 italic">No notes added.</span>}
                                     </p>
                                   )}
                                 </div>
                               )}
 
-                              <div className="rounded-xl border border-black/[0.08] bg-white p-4">
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary mb-3">Lead Details</h4>
-                                <div className="grid grid-cols-2 gap-y-2 text-xs">
-                                  <div className="text-secondary">Email</div>
-                                  <div className="truncate" title={lead.email}>{lead.email || '-'}</div>
-                                  <div className="text-secondary">Address</div>
-                                  <div className="truncate" title={lead.address}>{lead.address || '-'}</div>
-                                  <div className="text-secondary">Record Type</div>
-                                  <div>{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
+                              <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
+                                <h4 className="text-[13px] font-semibold text-black mb-4">Lead Details</h4>
+                                <div className="grid grid-cols-2 gap-y-3 text-[13px]">
+                                  <div className="text-black/50 font-medium">Email</div>
+                                  <div className="truncate text-black/90" title={lead.email}>{lead.email || '-'}</div>
+                                  <div className="text-black/50 font-medium">Address</div>
+                                  <div className="truncate text-black/90" title={lead.address}>{lead.address || '-'}</div>
+                                  <div className="text-black/50 font-medium">Record Type</div>
+                                  <div className="text-black/90">{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
                                 </div>
                               </div>
                             </div>

@@ -3,7 +3,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
 import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { clearCookieOptions, getCookieOptions } from '../sessions/session.service.js';
-import { loginUser, logoutUser, registerUser } from './auth.service.js';
+import { loginUser, logoutUser, registerUser, updatePassword as updatePasswordService, logoutEverywhere as logoutEverywhereService } from './auth.service.js';
 import { resendVerificationEmail, verifyEmailToken } from './emailVerification.service.js';
 
 export const register = asyncHandler(async (req, res) => {
@@ -92,4 +92,17 @@ export const verifyEmail = asyncHandler(async (req, res) => {
     },
     result.alreadyVerified ? 'Email is already verified.' : 'Email verified successfully.',
   );
+});
+
+export const updatePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.validated.body;
+
+  await updatePasswordService(req.user.id, currentPassword, newPassword);
+  return successResponse(res, {}, 'Password updated successfully.');
+});
+
+export const logoutEverywhere = asyncHandler(async (req, res) => {
+  await logoutEverywhereService(req.user.id);
+  res.clearCookie(env.COOKIE_NAME, clearCookieOptions);
+  return successResponse(res, {}, 'Logged out from all devices successfully.');
 });
