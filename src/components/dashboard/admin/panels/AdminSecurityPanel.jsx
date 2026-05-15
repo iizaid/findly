@@ -1,7 +1,7 @@
 import AdminDataTable, { StatusPill } from '../AdminDataTable';
 import { fullDate, actionLabel, severityStyle } from '../admin.utils';
 
-const AdminSecurityPanel = ({ events = [] }) => {
+const AdminSecurityPanel = ({ events = [], onSelect }) => {
   const columns = [
     {
       key: 'action', label: 'Event',
@@ -40,6 +40,7 @@ const AdminSecurityPanel = ({ events = [] }) => {
       description="Recent authentication, access, and session events."
       columns={columns}
       rows={events}
+      onRowClick={onSelect}
       emptyTitle="All clear"
       emptyDesc="No security events to report."
     />

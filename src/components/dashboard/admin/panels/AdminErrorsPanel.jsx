@@ -1,7 +1,7 @@
 import AdminDataTable, { StatusPill, CopyId } from '../AdminDataTable';
 import { fullDate, httpStatusStyle } from '../admin.utils';
 
-const AdminErrorsPanel = ({ errors = [] }) => {
+const AdminErrorsPanel = ({ errors = [], onSelect }) => {
   const columns = [
     {
       key: 'statusCode', label: 'Status',
@@ -45,6 +45,7 @@ const AdminErrorsPanel = ({ errors = [] }) => {
       description="Tracked backend errors and failures."
       columns={columns}
       rows={errors}
+      onRowClick={onSelect}
       emptyTitle="No errors recorded"
       emptyDesc="Backend is running cleanly."
       minWidth="950px"

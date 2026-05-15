@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Database } from 'lucide-react';
+import { Search } from 'lucide-react';
 import AdminDataTable, { ContactChips } from '../AdminDataTable';
 import { fullDate, sourceLabel, fmt } from '../admin.utils';
 import { apiRequest } from '../../../../lib/api';
 
-const AdminCatalogPanel = ({ catalog }) => {
+const AdminCatalogPanel = ({ catalog, onSelect }) => {
   const [data, setData] = useState({ leads: [], loading: true });
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -68,7 +68,7 @@ const AdminCatalogPanel = ({ catalog }) => {
     },
   ];
 
-  /* ---- Quick Stats ---- */
+  /* Quick stats */
   const stats = catalog ? (
     <div className="grid gap-3 sm:grid-cols-3 mb-5">
       <div className="rounded-[18px] border border-black/[0.04] bg-white p-4 shadow-sm">
@@ -98,16 +98,17 @@ const AdminCatalogPanel = ({ catalog }) => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 w-full rounded-xl border border-black/[0.08] bg-[#FAFAF9] pl-8 pr-3 text-sm font-semibold text-black outline-none transition-colors focus:border-black/20 focus:bg-white"
+          aria-label="Search data catalog"
         />
       </div>
       {categories.length > 0 && (
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none">
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} aria-label="Filter by category" className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none">
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c.category} value={c.category}>{c.category} ({c.count})</option>)}
         </select>
       )}
       {governorates.length > 0 && (
-        <select value={govFilter} onChange={(e) => setGovFilter(e.target.value)} className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none">
+        <select value={govFilter} onChange={(e) => setGovFilter(e.target.value)} aria-label="Filter by location" className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none">
           <option value="">All Locations</option>
           {governorates.map((g) => <option key={g.governorate} value={g.governorate}>{g.governorate} ({g.count})</option>)}
         </select>
@@ -126,6 +127,7 @@ const AdminCatalogPanel = ({ catalog }) => {
         rows={data.leads}
         loading={data.loading}
         toolbar={toolbar}
+        onRowClick={onSelect}
         emptyTitle="No records found"
         emptyDesc="Try adjusting your search or filters."
       />

@@ -1,7 +1,7 @@
 import AdminDataTable, { StatusPill } from '../AdminDataTable';
 import { fullDate, sourceLabel, campaignStatusStyle } from '../admin.utils';
 
-const AdminCampaignsPanel = ({ campaigns = [] }) => {
+const AdminCampaignsPanel = ({ campaigns = [], onSelect }) => {
   const columns = [
     {
       key: 'name', label: 'Campaign',
@@ -43,6 +43,7 @@ const AdminCampaignsPanel = ({ campaigns = [] }) => {
       description={`${campaigns.length} campaign${campaigns.length !== 1 ? 's' : ''}`}
       columns={columns}
       rows={campaigns}
+      onRowClick={onSelect}
       emptyTitle="No campaigns yet"
       emptyDesc="Campaigns will appear here once users start searching."
     />

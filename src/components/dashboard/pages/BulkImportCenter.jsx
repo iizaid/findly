@@ -1,6 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertCircle, Play, Settings } from 'lucide-react';
-import DashboardCard from '../DashboardCard';
+import { Upload, Loader2, CheckCircle2, AlertCircle, Play, ArrowRight } from 'lucide-react';
 import { apiRequest, ApiError } from '../../../lib/api';
 
 const ALLOWED_TARGET_FIELDS = [
@@ -11,23 +10,94 @@ const ALLOWED_TARGET_FIELDS = [
   'rating', 'reviewCount', 'notes', 'sourceUrl', 'sourceType',
 ];
 
+const FIELD_LABELS = {
+  ignore: 'Skip this column',
+  businessName: 'Business Name',
+  category: 'Category',
+  country: 'Country',
+  governorate: 'Governorate',
+  city: 'City',
+  address: 'Address',
+  phone: 'Phone',
+  whatsappNumber: 'WhatsApp',
+  email: 'Email',
+  websiteUrl: 'Website URL',
+  instagramUrl: 'Instagram URL',
+  instagramUsername: 'Instagram Username',
+  facebookUrl: 'Facebook URL',
+  googleMapsUrl: 'Google Maps URL',
+  rating: 'Rating',
+  reviewCount: 'Review Count',
+  notes: 'Notes',
+  sourceUrl: 'Source URL',
+  sourceType: 'Source Type',
+};
+
+/* ============================================================== */
+/*  STEP INDICATOR                                                 */
+/* ============================================================== */
+const STEPS = ['Upload', 'Map Columns', 'Review', 'Complete'];
+
+const StepIndicator = ({ current }) => (
+  <div className="flex items-center justify-center gap-0 mb-6">
+    {STEPS.map((step, i) => {
+      const isDone = i < current;
+      const isActive = i === current;
+      return (
+        <div key={step} className="flex items-center">
+          <div className="flex items-center gap-2">
+            <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
+              isDone ? 'bg-emerald-500 text-white' : isActive ? 'bg-black text-white' : 'bg-black/[0.06] text-black/30'
+            }`}>
+              {isDone ? '✓' : i + 1}
+            </div>
+            <span className={`text-[12px] font-bold whitespace-nowrap ${isActive ? 'text-black' : isDone ? 'text-emerald-600' : 'text-black/30'}`}>
+              {step}
+            </span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`mx-3 h-[2px] w-8 rounded-full ${isDone ? 'bg-emerald-400' : 'bg-black/[0.06]'}`} />
+          )}
+        </div>
+      );
+    })}
+  </div>
+);
+
+/* ============================================================== */
+/*  MAIN COMPONENT                                                 */
+/* ============================================================== */
 const BulkImportCenter = ({ onSuccess }) => {
   const [file, setFile] = useState(null);
   const [inspection, setInspection] = useState(null);
-  const [status, setStatus] = useState('idle'); // 'idle', 'parsing', 'review', 'committing', 'success', 'error'
+  const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
   const [mappingState, setMappingState] = useState({});
+  const [isDragActive, setIsDragActive] = useState(false);
   const fileInputRef = useRef(null);
+
+  const currentStep = status === 'idle' || status === 'parsing' ? 0
+    : status === 'review' ? 1
+    : status === 'committing' ? 2
+    : status === 'success' ? 3 : 0;
 
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileSelection(e.dataTransfer.files[0]);
     }
@@ -164,141 +234,168 @@ const BulkImportCenter = ({ onSuccess }) => {
     setMappingState({});
   };
 
+  /* ---- SUCCESS STATE ---- */
   if (status === 'success' && summary) {
     return (
-      <DashboardCard className="p-8 max-w-3xl mx-auto text-center">
-        <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-[#E6F4EA] text-[#137333] mb-6">
-          <CheckCircle2 size={32} />
+      <section className="rounded-[22px] border border-black/[0.04] bg-white p-8 shadow-sm max-w-3xl">
+        <StepIndicator current={3} />
+        <div className="text-center">
+          <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-emerald-50 text-emerald-600 mb-5">
+            <CheckCircle2 size={28} />
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight mb-1">Import Complete</h2>
+          <p className="text-sm font-semibold text-secondary mb-6">Successfully imported records from {summary.fileName}</p>
         </div>
-        <h2 className="text-3xl font-bold tracking-tight mb-2">Import Complete</h2>
-        <p className="text-secondary mb-8">Successfully imported {summary.importedRows} leads from {summary.fileName}</p>
         
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 text-left">
-          <div className="p-4 rounded-xl bg-black/5">
-            <p className="text-xs font-bold uppercase text-secondary mb-1">Total</p>
-            <p className="text-2xl font-bold">{summary.totalRows}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          <div className="p-4 rounded-[16px] border border-black/[0.04] bg-[#FAFAF9]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-1">Total</p>
+            <p className="text-2xl font-bold tabular-nums">{summary.totalRows}</p>
           </div>
-          <div className="p-4 rounded-xl bg-[#E6F4EA]/50">
-            <p className="text-xs font-bold uppercase text-secondary mb-1">Imported</p>
-            <p className="text-2xl font-bold text-[#137333]">{summary.importedRows}</p>
+          <div className="p-4 rounded-[16px] border border-emerald-100 bg-emerald-50/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Imported</p>
+            <p className="text-2xl font-bold tabular-nums text-emerald-700">{summary.importedRows}</p>
           </div>
-          <div className="p-4 rounded-xl bg-black/5">
-            <p className="text-xs font-bold uppercase text-secondary mb-1">Skipped</p>
-            <p className="text-2xl font-bold">{summary.skippedRows}</p>
+          <div className="p-4 rounded-[16px] border border-black/[0.04] bg-[#FAFAF9]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-1">Skipped</p>
+            <p className="text-2xl font-bold tabular-nums">{summary.skippedRows}</p>
           </div>
-          <div className="p-4 rounded-xl bg-red-50">
-            <p className="text-xs font-bold uppercase text-secondary mb-1">Errors/Dupes</p>
-            <p className="text-2xl font-bold text-red-700">{summary.errorRows + summary.duplicateRows}</p>
+          <div className="p-4 rounded-[16px] border border-red-100 bg-red-50/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-red-500 mb-1">Errors / Dupes</p>
+            <p className="text-2xl font-bold tabular-nums text-red-700">{summary.errorRows + summary.duplicateRows}</p>
           </div>
         </div>
 
-        <button onClick={reset} className="rounded-full bg-black px-8 py-3 font-bold text-white hover:bg-accent hover:text-black transition-colors">
-          Import Another File
-        </button>
-      </DashboardCard>
+        <div className="text-center">
+          <button type="button" onClick={reset} className="inline-flex items-center gap-2 rounded-full bg-black px-6 py-2.5 text-sm font-bold text-white hover:bg-black/80 transition-colors">
+            Import Another File
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </section>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Bulk Import Center</h2>
-          <p className="text-secondary text-sm mt-1">Upload and map large datasets to the global catalog.</p>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <section className="rounded-[22px] border border-black/[0.04] bg-white p-6 shadow-sm">
+        <StepIndicator current={currentStep} />
 
-      {error && (
-        <div className="rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700 flex items-center gap-2">
-          <AlertCircle size={16} /> {error}
-        </div>
-      )}
-
-      {status === 'idle' && (
-        <div 
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-black/20 rounded-2xl p-12 text-center hover:border-accent hover:bg-accent/5 cursor-pointer transition-colors"
-        >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={(e) => e.target.files?.[0] && handleFileSelection(e.target.files[0])} 
-            className="hidden" 
-            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
-          />
-          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-black/5 text-black/40 mb-4">
-            <Upload size={24} />
+        {error && (
+          <div className="mb-5 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-bold text-red-700 flex items-center gap-2">
+            <AlertCircle size={15} className="shrink-0" /> {error}
           </div>
-          <h3 className="text-lg font-bold mb-1">Drag & drop your file here</h3>
-          <p className="text-sm text-secondary">Supports .csv and .xlsx up to 50MB</p>
-        </div>
-      )}
+        )}
 
-      {status === 'parsing' && (
-        <DashboardCard className="p-12 text-center">
-          <Loader2 className="animate-spin text-accent mx-auto mb-4" size={32} />
-          <h3 className="text-lg font-bold mb-1">Parsing {file?.name}...</h3>
-          <p className="text-sm text-secondary">Analyzing sheets, columns, and detecting data types.</p>
-        </DashboardCard>
-      )}
+        {/* ---- UPLOAD ZONE ---- */}
+        {status === 'idle' && (
+          <div 
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`rounded-[18px] border-2 border-dashed p-12 text-center cursor-pointer transition-all ${
+              isDragActive
+                ? 'border-accent bg-accent/5 scale-[1.01]'
+                : 'border-black/[0.12] hover:border-black/25 hover:bg-black/[0.01]'
+            }`}
+          >
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={(e) => e.target.files?.[0] && handleFileSelection(e.target.files[0])} 
+              className="hidden" 
+              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+              aria-label="Select file to import"
+            />
+            <div className={`flex h-14 w-14 mx-auto items-center justify-center rounded-2xl mb-4 transition-colors ${
+              isDragActive ? 'bg-accent text-black' : 'bg-black/[0.04] text-black/40'
+            }`}>
+              <Upload size={22} />
+            </div>
+            <h3 className="text-lg font-bold tracking-tight mb-1">
+              {isDragActive ? 'Drop your file here' : 'Drag & drop your file here'}
+            </h3>
+            <p className="text-sm font-semibold text-secondary">Supports .csv and .xlsx</p>
+          </div>
+        )}
 
+        {/* ---- PARSING ---- */}
+        {status === 'parsing' && (
+          <div className="py-14 text-center">
+            <Loader2 className="animate-spin text-accent mx-auto mb-4" size={32} />
+            <h3 className="text-lg font-bold tracking-tight mb-1">Parsing {file?.name}…</h3>
+            <p className="text-sm font-semibold text-secondary">Analyzing sheets, columns, and detecting data types.</p>
+          </div>
+        )}
+      </section>
+
+      {/* ---- REVIEW & MAPPING ---- */}
       {(status === 'review' || status === 'committing') && inspection && (
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-6">
-            <DashboardCard className="p-6">
-              <div className="flex items-center justify-between mb-6 border-b border-black/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <Settings className="text-accent" size={24} />
-                  <div>
-                    <h3 className="font-bold">Map Columns: {inspection.fileName}</h3>
-                    <p className="text-xs text-secondary">{inspection.sheets.reduce((acc, s) => acc + s.rowCount, 0)} total rows detected</p>
-                  </div>
+        <div className="grid lg:grid-cols-[1fr_300px] gap-5">
+          {/* Main mapping area */}
+          <section className="rounded-[22px] border border-black/[0.04] bg-white shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-black/[0.04] bg-[#FAFAF9]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold tracking-tight">Column Mapping</h3>
+                  <p className="text-[11px] font-semibold text-secondary mt-0.5">
+                    {inspection.fileName} — {inspection.sheets.reduce((acc, s) => acc + s.rowCount, 0)} rows detected
+                  </p>
                 </div>
-                <div className="bg-black/5 px-3 py-1 rounded-lg text-xs font-bold uppercase">
+                <span className="rounded-md bg-black/[0.06] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-secondary">
                   {inspection.sourceType}
-                </div>
+                </span>
               </div>
+            </div>
 
+            <div className="p-5 space-y-6">
               {inspection.sheets.map((sheet, i) => (
-                <div key={i} className="mb-8 last:mb-0">
-                  <h4 className="font-bold text-sm uppercase tracking-wider text-secondary mb-4">{sheet.name} ({sheet.rowCount} rows)</h4>
+                <div key={i}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary mb-3">
+                    {sheet.name} <span className="text-black/30">({sheet.rowCount} rows)</span>
+                  </p>
                   
                   {sheet.skippedSheet ? (
-                    <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm font-bold">
+                    <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-bold text-red-700">
                       Skipped: {sheet.errorMessage || 'No valid headers found'}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm border-collapse">
-                        <thead>
-                          <tr className="border-b border-black/10 text-xs uppercase tracking-wider text-secondary">
-                            <th className="py-3 pr-4 font-bold">Source Column</th>
-                            <th className="py-3 pr-4 font-bold">Target Field</th>
-                            <th className="py-3 font-bold text-black/40">Sample Value</th>
+                    <div className="overflow-x-auto rounded-xl border border-black/[0.06]">
+                      <table className="w-full text-left text-sm" style={{ minWidth: '600px' }}>
+                        <thead className="bg-[#FAFAF9] text-[10px] font-bold uppercase tracking-[0.14em] text-secondary">
+                          <tr className="border-b border-black/[0.06]">
+                            <th className="py-2.5 px-4">Source Column</th>
+                            <th className="py-2.5 px-4">Map To</th>
+                            <th className="py-2.5 px-4 text-black/30">Sample</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-black/[0.04]">
                           {sheet.headers.map((header, j) => {
                             const currentTarget = mappingState[sheet.name]?.[header] || 'ignore';
                             const sampleValue = sheet.sampleRows?.[0]?.[j];
+                            const isIgnored = currentTarget === 'ignore';
                             return (
-                              <tr key={j} className="border-b border-black/5 last:border-0 hover:bg-black/5">
-                                <td className="py-3 pr-4 font-bold text-black/80">{header}</td>
-                                <td className="py-3 pr-4">
+                              <tr key={j} className={`transition-colors ${isIgnored ? 'opacity-50' : 'hover:bg-black/[0.01]'}`}>
+                                <td className="py-2.5 px-4 font-bold text-black/80 text-[13px]">{header}</td>
+                                <td className="py-2.5 px-4">
                                   <select
                                     value={currentTarget}
                                     onChange={(e) => handleMappingChange(sheet.name, header, e.target.value)}
-                                    className="w-full rounded-lg border border-black/20 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                                    aria-label={`Map column ${header}`}
+                                    className={`w-full rounded-lg border px-3 py-1.5 text-[13px] font-semibold outline-none transition-colors ${
+                                      isIgnored
+                                        ? 'border-black/[0.06] bg-[#FAFAF9] text-secondary'
+                                        : 'border-black/[0.12] bg-white text-black focus:border-black/30'
+                                    }`}
                                   >
                                     {ALLOWED_TARGET_FIELDS.map(f => (
-                                      <option key={f} value={f}>{f}</option>
+                                      <option key={f} value={f}>{FIELD_LABELS[f] || f}</option>
                                     ))}
                                   </select>
                                 </td>
-                                <td className="py-3 text-black/50 truncate max-w-[200px]" title={String(sampleValue || '')}>
-                                  {String(sampleValue || '-')}
+                                <td className="py-2.5 px-4 text-[12px] text-secondary truncate max-w-[180px]" title={String(sampleValue || '')}>
+                                  {String(sampleValue || '—')}
                                 </td>
                               </tr>
                             );
@@ -309,50 +406,61 @@ const BulkImportCenter = ({ onSuccess }) => {
                   )}
                 </div>
               ))}
-            </DashboardCard>
-          </div>
+            </div>
+          </section>
 
-          <div className="space-y-6">
-            <DashboardCard className="p-6">
-              <h3 className="font-bold mb-4">Ready to Import?</h3>
+          {/* Sticky action panel */}
+          <div className="lg:sticky lg:top-4 self-start">
+            <section className="rounded-[22px] border border-black/[0.04] bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-bold tracking-tight mb-3">Ready to Import?</h3>
               
               {validationIssues.length > 0 ? (
-                <div className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-700 space-y-2">
-                  <div className="font-bold flex items-center gap-2">
-                    <AlertCircle size={16} /> 
-                    Please fix mapping errors:
-                  </div>
-                  <ul className="list-disc pl-6 opacity-90 text-xs">
+                <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-3 text-[12px] text-red-700 space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <AlertCircle size={13} /> Fix mapping errors:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5">
                     {validationIssues.map((issue, idx) => (
                       <li key={idx}>{issue}</li>
                     ))}
                   </ul>
                 </div>
               ) : (
-                <p className="text-sm text-secondary mb-6">
-                  Rows will be normalized and deduplicated against the global catalog automatically. Ignored columns will not be imported.
+                <p className="text-[12px] font-semibold text-secondary mb-4 leading-relaxed">
+                  Rows will be normalized and deduplicated against the global catalog. Ignored columns will not be imported.
                 </p>
               )}
               
               <button 
+                type="button"
                 onClick={handleCommit} 
                 disabled={status === 'committing' || validationIssues.length > 0}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white hover:bg-accent hover:text-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-bold text-white hover:bg-black/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {status === 'committing' ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} fill="currentColor" />}
-                {status === 'committing' ? 'Importing...' : 'Start Import'}
+                {status === 'committing' ? <Loader2 className="animate-spin" size={15} /> : <Play size={14} fill="currentColor" />}
+                {status === 'committing' ? 'Importing…' : 'Start Import'}
               </button>
               
               <button 
+                type="button"
                 onClick={reset} 
                 disabled={status === 'committing'}
-                className="mt-3 w-full text-center text-sm font-bold text-secondary hover:text-black transition-colors"
+                className="mt-2.5 w-full text-center text-[13px] font-bold text-secondary hover:text-black transition-colors disabled:opacity-40"
               >
                 Cancel
               </button>
-            </DashboardCard>
+            </section>
           </div>
         </div>
+      )}
+
+      {/* ---- COMMITTING OVERLAY ---- */}
+      {status === 'committing' && (
+        <section className="rounded-[22px] border border-black/[0.04] bg-white p-8 shadow-sm text-center">
+          <Loader2 className="animate-spin text-accent mx-auto mb-4" size={28} />
+          <p className="text-sm font-bold">Importing records into the catalog…</p>
+          <p className="text-[12px] text-secondary mt-1">This may take a moment for large datasets.</p>
+        </section>
       )}
     </div>
   );

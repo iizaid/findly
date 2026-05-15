@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import AdminDataTable, { StatusPill } from '../AdminDataTable';
 import { fullDate } from '../admin.utils';
 
-const AdminUsersPanel = ({ users = [] }) => {
+const AdminUsersPanel = ({ users = [], onSelect }) => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [verifiedFilter, setVerifiedFilter] = useState('');
@@ -60,14 +60,15 @@ const AdminUsersPanel = ({ users = [] }) => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 w-full rounded-xl border border-black/[0.08] bg-[#FAFAF9] pl-8 pr-3 text-sm font-semibold text-black outline-none transition-colors focus:border-black/20 focus:bg-white"
+          aria-label="Search users"
         />
       </div>
-      <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none focus:border-black/20">
+      <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role" className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none focus:border-black/20">
         <option value="">All Roles</option>
         <option value="ADMIN">Admin</option>
         <option value="USER">User</option>
       </select>
-      <select value={verifiedFilter} onChange={(e) => setVerifiedFilter(e.target.value)} className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none focus:border-black/20">
+      <select value={verifiedFilter} onChange={(e) => setVerifiedFilter(e.target.value)} aria-label="Filter by status" className="h-9 rounded-xl border border-black/[0.08] bg-[#FAFAF9] px-3 text-sm font-semibold text-black outline-none focus:border-black/20">
         <option value="">All Status</option>
         <option value="yes">Verified</option>
         <option value="no">Unverified</option>
@@ -82,6 +83,7 @@ const AdminUsersPanel = ({ users = [] }) => {
       columns={columns}
       rows={filtered}
       toolbar={toolbar}
+      onRowClick={onSelect}
       emptyTitle="No users found"
       emptyDesc="Try adjusting your filters."
     />

@@ -1,14 +1,13 @@
 import AdminDataTable, { StatusPill } from '../AdminDataTable';
 import { fullDate, importStatusStyle, fmt } from '../admin.utils';
 
-const AdminImportsPanel = ({ imports = [] }) => {
+const AdminImportsPanel = ({ imports = [], onSelect }) => {
   const columns = [
     {
       key: 'fileName', label: 'File',
       render: (r) => (
         <div>
           <p className="font-bold text-black text-sm truncate max-w-[200px]">{r.fileName || '—'}</p>
-          <p className="text-[11px] text-secondary">{r.sourceType?.replace(/_/g, ' ') || 'Unknown'}</p>
         </div>
       ),
     },
@@ -67,6 +66,7 @@ const AdminImportsPanel = ({ imports = [] }) => {
       description={`${imports.length} import${imports.length !== 1 ? 's' : ''}`}
       columns={columns}
       rows={imports}
+      onRowClick={onSelect}
       emptyTitle="No imports yet"
       emptyDesc="Import records will appear after using Bulk Import."
       minWidth="900px"

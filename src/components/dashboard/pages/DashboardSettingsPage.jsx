@@ -149,7 +149,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsLoadingWorkspace(false);
     }
-  }, [workspace?.id, workspaceName, onUpdate]);
+  }, [workspace, workspaceName, onUpdate]);
 
   const handleUpdatePassword = useCallback(async () => {
     setIsLoadingPassword(true);
