@@ -16,7 +16,42 @@ const localFallbackSourceKeys = new Set([
   'TIKTOK',
 ]);
 
-export const getSourceStatuses = getBaseSourceStatuses;
+const userVisibleSourceKeys = new Set([
+  'GOOGLE_MAPS',
+  'INSTAGRAM',
+  'FACEBOOK',
+  'WEBSITE',
+  'YELP',
+  'SERPAPI',
+  'TRIPADVISOR',
+  'YOUTUBE',
+  'X',
+  'LINKEDIN',
+  'TIKTOK',
+  'REDDIT',
+]);
+
+const sanitizeSourceForUserResponse = (source, { fallbackAvailable = false } = {}) => {
+  if (!userVisibleSourceKeys.has(source.key)) return null;
+
+  const canSearch = Boolean(source.available || (fallbackAvailable && localFallbackSourceKeys.has(source.key)));
+  const later = Boolean(source.comingSoon) && !canSearch;
+
+  return {
+    key: source.key,
+    label: source.label,
+    group: source.group,
+    status: canSearch ? 'ready' : later ? 'later' : 'later',
+    available: canSearch,
+    searchable: canSearch,
+    comingSoon: later,
+    reason: canSearch ? 'Ready to search online business sources.' : 'This source will be available later.',
+  };
+};
+
+export const getSourceStatuses = () => getBaseSourceStatuses()
+  .map((source) => sanitizeSourceForUserResponse(source))
+  .filter(Boolean);
 
 export const getSourceStatusesWithRuntime = async () => {
   const catalogWhere = {
@@ -26,7 +61,7 @@ export const getSourceStatusesWithRuntime = async () => {
   const localLeadCount = await prisma.leadCatalog.count({ where: catalogWhere }).catch(() => 0);
   const fallbackAvailable = localLeadCount > 0;
 
-  return getBaseSourceStatuses().map((source) => {
+  const internalStatuses = getBaseSourceStatuses().map((source) => {
     if (source.key === 'LOCAL_DATASET') {
       return {
         ...source,
@@ -52,4 +87,8 @@ export const getSourceStatusesWithRuntime = async () => {
 
     return source;
   });
+
+  return internalStatuses
+    .map((source) => sanitizeSourceForUserResponse(source, { fallbackAvailable }))
+    .filter(Boolean);
 };

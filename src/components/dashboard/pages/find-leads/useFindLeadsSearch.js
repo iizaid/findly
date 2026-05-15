@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, apiRequest } from '../../../../lib/api';
 import {
-  DATASET_BACKED_SOURCES,
   DEFAULT_GOALS,
   EMPTY_FORM_STATE,
   MAX_SELECTED_PLATFORMS,
@@ -39,9 +38,7 @@ const normalizeSourceOptions = (sources = []) => [...sources]
     ...source,
     id: source.key,
     name: source.label,
-    canRun:
-      (source.key === 'GOOGLE_MAPS' && (source.available || source.fallbackAvailable))
-      || (DATASET_BACKED_SOURCES.has(source.key) && source.fallbackAvailable),
+    canRun: Boolean(source.searchable || source.available),
   }));
 
 export const useFindLeadsSearch = ({ workspace }) => {
@@ -55,7 +52,6 @@ export const useFindLeadsSearch = ({ workspace }) => {
     cities: [],
     searchGoals: DEFAULT_GOALS,
     maxResultsOptions: [10, 20, 50],
-    datasetStats: {},
   });
   const [formState, setFormState] = useState(loadSavedFormState);
   const [sourcesLoading, setSourcesLoading] = useState(true);
@@ -87,7 +83,6 @@ export const useFindLeadsSearch = ({ workspace }) => {
           cities: nextOptions.cities || [],
           searchGoals,
           maxResultsOptions: nextOptions.maxResultsOptions || [10, 20, 50],
-          datasetStats: nextOptions.datasetStats || {},
         });
         setSourceOptions(orderedSources);
         setFormState((current) => ({ ...current, goal: current.goal || searchGoals[0] || DEFAULT_GOALS[0] }));
@@ -232,7 +227,6 @@ export const useFindLeadsSearch = ({ workspace }) => {
         leadListId: runData.leadListId,
         count: leadsReturned,
         platformsRequested: runData.platformsRequested || selectedSources,
-        sourceMode: runData.sourceMode,
       });
     } catch (err) {
       setError(friendlyErrorMessage(err));

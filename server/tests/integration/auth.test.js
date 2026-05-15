@@ -49,6 +49,24 @@ const getCsrfToken = async (agent) => {
   return response.body.data.csrfToken;
 };
 
+const expectNoUserFacingSourceDisclosure = (payload) => {
+  const text = JSON.stringify(payload).toLowerCase();
+  for (const term of [
+    'local_dataset',
+    'dataset_import',
+    'datasetstats',
+    'importedleadcount',
+    'fallbackavailable',
+    'sourcefile',
+    'business intelligence index',
+    'stored',
+    'local',
+    'fallback',
+  ]) {
+    expect(text).not.toContain(term);
+  }
+};
+
 const registerAccount = async ({ agent = request.agent(createApp()), userEmail, name = 'Backend Test' }) => {
   const response = await agent
     .post('/api/auth/register')
@@ -524,19 +542,12 @@ describe('Findly auth, verification, and foundation API', () => {
     const googleMaps = sourceResponse.body.data.sources.find((source) => source.key === 'GOOGLE_MAPS');
     const website = sourceResponse.body.data.sources.find((source) => source.key === 'WEBSITE');
     const reddit = sourceResponse.body.data.sources.find((source) => source.key === 'REDDIT');
-    const localDataset = sourceResponse.body.data.sources.find((source) => source.key === 'LOCAL_DATASET');
-    expect(googleMaps.requiresApiKey).toBe(true);
+    expectNoUserFacingSourceDisclosure(sourceResponse.body.data);
+    expect(googleMaps.status).toMatch(/^(ready|later)$/);
     expect(googleMaps).not.toHaveProperty('apiKey');
     expect(website.available).toBe(true);
-    expect(website.estimatedUseCase).toContain('metadata');
     expect(reddit).toBeTruthy();
-    expect(reddit.available).toBe(false);
-    expect(reddit.requiresApiKey).toBe(true);
-    expect(reddit.requiresApproval).toBe(true);
-    expect(localDataset).toBeTruthy();
-    expect(localDataset.available).toBe(true);
-    expect(localDataset.requiresApiKey).toBe(false);
-    expect(JSON.stringify(localDataset)).not.toContain('sample-leads.csv');
+    expect(reddit.reason).toMatch(/Ready to search online business sources.|This source will be available later./);
     if (process.env.REDDIT_CLIENT_SECRET) {
       expect(JSON.stringify(reddit)).not.toContain(process.env.REDDIT_CLIENT_SECRET);
     }
@@ -719,12 +730,14 @@ describe('Findly auth, verification, and foundation API', () => {
 
     const sourceStatusResponse = await agent.get('/api/search/sources/status').expect(200);
     const googleMaps = sourceStatusResponse.body.data.sources.find((source) => source.key === 'GOOGLE_MAPS');
-    const localDataset = sourceStatusResponse.body.data.sources.find((source) => source.key === 'LOCAL_DATASET');
-    expect(localDataset.searchable).toBe(true);
-    expect(localDataset.importedLeadCount).toBeGreaterThanOrEqual(2);
-    expect(googleMaps.fallbackAvailable).toBe(true);
+    expectNoUserFacingSourceDisclosure(sourceStatusResponse.body.data);
+    expect(sourceStatusResponse.body.data.sources.find((source) => source.key === 'LOCAL_DATASET')).toBeUndefined();
+    expect(googleMaps.searchable).toBe(true);
+    expect(googleMaps.reason).toBe('Ready to search online business sources.');
 
     const optionsResponse = await agent.get('/api/search/options').expect(200);
+    expectNoUserFacingSourceDisclosure(optionsResponse.body.data);
+    expect(optionsResponse.body.data).not.toHaveProperty('datasetStats');
     expect(optionsResponse.body.data.services).toContain('Website Development');
     expect(optionsResponse.body.data.businessTypes).toContain('Cafes');
     expect(optionsResponse.body.data.countries).toContain('Jordan');
@@ -735,7 +748,6 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(optionsResponse.body.data.cities).not.toContain('Jordan / Online');
     expect(optionsResponse.body.data.cities).not.toContain('Multi-Governorate');
     expect(optionsResponse.body.data.searchGoals).toContain('Find businesses without websites');
-    expect(optionsResponse.body.data.datasetStats.totalLeads).toBeGreaterThanOrEqual(2);
 
     const csrfToken = await getCsrfToken(agent);
     const balanceBeforeFallback = (await agent.get('/api/credits').expect(200)).body.data.credits.balance;

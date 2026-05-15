@@ -1,7 +1,7 @@
 import { Database, Goal, MapPin, Sparkles } from 'lucide-react';
 import DashboardCard from '../../DashboardCard';
 
-const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames, totalLeads }) => (
+const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames }) => (
   <div className="space-y-5">
     <DashboardCard className="p-5 md:p-6">
       <h3 className="text-xl font-semibold tracking-tight text-black">Search Preview</h3>
@@ -31,10 +31,10 @@ const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames, totalLe
     <DashboardCard className="!bg-[#000000] p-5 text-white md:p-6">
       <h3 className="text-xl font-semibold tracking-tight text-white">Credits</h3>
       <p className="mt-2 text-[13px] font-semibold leading-relaxed text-white/50">
-        Search uses available stored intelligence during testing. Analysis keeps the normal credit rules.
+        Search runs across ready sources and saves matching opportunities into a lead list.
       </p>
       <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-medium text-white/80">
-        Available lead intelligence: {totalLeads}
+        Credits are charged only by server-side billing rules.
       </p>
     </DashboardCard>
   </div>

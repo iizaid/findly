@@ -9,7 +9,6 @@ import {
   SiYelp,
   SiYoutube,
 } from 'react-icons/si';
-import { DATASET_BACKED_SOURCES } from './searchConfig';
 
 const iconMap = {
   GOOGLE_MAPS: SiGooglemaps,
@@ -42,8 +41,8 @@ const iconColorClass = {
 const PlatformButton = ({ source, selected, onClick }) => {
   const disabled = !source.canRun;
   const Icon = iconMap[source.key] || Search;
-  const usesStoredIntelligence = source.fallbackAvailable && DATASET_BACKED_SOURCES.has(source.key) && !source.available;
-  const statusLabel = source.available ? 'Connected' : usesStoredIntelligence ? 'Ready' : 'Later';
+  const isSearchReady = Boolean(source.searchable || source.available);
+  const statusLabel = isSearchReady ? 'Ready' : 'Later';
 
   return (
     <button
@@ -68,7 +67,7 @@ const PlatformButton = ({ source, selected, onClick }) => {
       <span className={`shrink-0 rounded-full px-2.5 py-1.5 text-[10px] font-black ${
         selected
           ? 'bg-white/12 text-white'
-          : usesStoredIntelligence
+          : isSearchReady
             ? 'bg-accent text-black'
             : 'bg-black/[0.055] text-black/50'
       }`}>

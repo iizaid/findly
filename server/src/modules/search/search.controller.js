@@ -238,20 +238,17 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     source: { in: ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'] },
   };
 
-  const [leads, totalDatasetLeads, sources] = await Promise.all([
+  const [leads, sources] = await Promise.all([
     prisma.leadCatalog.findMany({
       where: leadWhere,
       select: {
         category: true,
         country: true,
         city: true,
-        source: true,
-        sourceFile: true,
       },
       orderBy: { createdAt: 'desc' },
       take: 1000,
     }),
-    prisma.leadCatalog.count({ where: leadWhere }).catch(() => 0),
     getSourceStatusesWithRuntime({ userId: req.user.id, workspaceId }),
   ]);
 
@@ -270,13 +267,8 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     governorates,
     cities,
     searchGoals: searchGoalPresets,
-    sources: sources.filter(s => s.key !== 'LOCAL_DATASET'),
+    sources,
     maxResultsOptions: [10, 20, 50, 100],
-    datasetStats: {
-      totalLeads: totalDatasetLeads,
-      sources: uniqueSorted(leads.map((lead) => lead.source)),
-      filesCount: new Set(leads.map((lead) => lead.sourceFile).filter(Boolean)).size,
-    },
   }, 'Search options loaded.');
 });
 

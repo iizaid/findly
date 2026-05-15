@@ -115,7 +115,7 @@ const FindLeadsView = ({ workspace, onNavigate }) => {
           </form>
         </DashboardCard>
 
-        <SearchSidePanel selectedPlatformCount={search.selectedSources.length} selectedPlatformNames={search.selectedPlatformNames} totalLeads={search.searchOptions.datasetStats?.totalLeads || 0} />
+        <SearchSidePanel selectedPlatformCount={search.selectedSources.length} selectedPlatformNames={search.selectedPlatformNames} />
       </div>
     </>
   );
