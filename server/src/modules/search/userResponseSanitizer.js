@@ -24,6 +24,7 @@ const internalSignals = new Set([
   'SOURCE_LOCAL_DATASET',
   'SOURCE_DATASET_IMPORT',
   'SOURCE_MANUAL_ADMIN',
+  'MANUAL_ADMIN_ENTRY',
 ]);
 
 export const mapSourceForUserResponse = (source) => sourceLabelsForUsers[source] || source || null;
