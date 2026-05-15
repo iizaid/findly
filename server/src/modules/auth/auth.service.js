@@ -214,7 +214,7 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
     throw new AppError(errorCodes.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE, 401);
   }
 
-  clearFailedLogin(email, context.ipAddress);
+  await clearFailedLogin(email, context.ipAddress);
 
   const sessionResult = await createSession({
     userId: user.id,

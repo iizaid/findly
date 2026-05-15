@@ -276,22 +276,7 @@ describe('Findly auth, verification, and foundation API', () => {
     // We already have our loaded env available. We just need to load it dynamically
     // while providing mock process.env variables.
     
-    const { z } = await import('zod');
-    
-    const createBooleanParser = (defaultValue) => z.preprocess((val) => {
-      if (val === undefined || val === '') return defaultValue;
-      if (typeof val === 'boolean') return val;
-      if (typeof val === 'string') {
-        const lower = val.toLowerCase().trim();
-        if (lower === 'true' || lower === '1') return true;
-        if (lower === 'false' || lower === '0') return false;
-      }
-      if (typeof val === 'number') {
-        if (val === 1) return true;
-        if (val === 0) return false;
-      }
-      return val;
-    }, defaultValue === undefined ? z.boolean().optional() : z.boolean());
+    const { createBooleanParser } = await import('../../src/config/envParsers.js');
 
     const parseBoolean = createBooleanParser(undefined);
     const parseBooleanWithDefault = createBooleanParser(false);
@@ -480,13 +465,30 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(expiredResponse.body.error.code).toBe('VERIFICATION_TOKEN_EXPIRED');
   });
 
-  it('blocks dashboard for unverified users and supports resend with CSRF', async () => {
+  it('blocks product endpoints for unverified users but allows auth state and resend with CSRF', async () => {
     const unverifiedEmail = `test.${unique}.unverified@findly.local`;
-    const { agent } = await registerAccount({ userEmail: unverifiedEmail, name: 'Unverified User' });
+    const { agent, response: registerResponse } = await registerAccount({ userEmail: unverifiedEmail, name: 'Unverified User' });
 
-    const dashboardResponse = await agent.get('/api/dashboard').expect(403);
-    expect(dashboardResponse.body.error.code).toBe('EMAIL_NOT_VERIFIED');
+    // 1. /api/auth/me should return 200 (auth state is readable)
+    const meResponse = await agent.get('/api/auth/me').expect(200);
+    expect(meResponse.body.data.user.emailVerified).toBe(false);
+    const workspaceId = meResponse.body.data.workspace.id;
 
+    // 2. Product endpoints should return 403 EMAIL_NOT_VERIFIED
+    const endpoints = [
+      '/api/dashboard',
+      '/api/credits',
+      '/api/credits/history',
+      '/api/workspaces',
+      `/api/workspaces/${workspaceId}`
+    ];
+
+    for (const endpoint of endpoints) {
+      const res = await agent.get(endpoint).expect(403);
+      expect(res.body.error.code).toBe('EMAIL_NOT_VERIFIED');
+    }
+
+    // 3. Resend verification should work after cooldown and with CSRF token
     const immediateCsrfToken = await getCsrfToken(agent);
     const immediateResendResponse = await agent
       .post('/api/auth/resend-verification')

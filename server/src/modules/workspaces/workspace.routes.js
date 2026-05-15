@@ -6,7 +6,7 @@ import { updateWorkspaceSchema, workspaceIdParamSchema } from './workspace.schem
 
 export const workspaceRouter = Router();
 
-workspaceRouter.use(requireAuth);
+workspaceRouter.use(requireAuth, requireVerifiedEmail);
 workspaceRouter.get('/', listWorkspaces);
 workspaceRouter.get('/:id', validate(workspaceIdParamSchema), getWorkspace);
-workspaceRouter.patch('/:id', requireVerifiedEmail, validate(updateWorkspaceSchema), updateWorkspaceHandler);
+workspaceRouter.patch('/:id', validate(updateWorkspaceSchema), updateWorkspaceHandler);
