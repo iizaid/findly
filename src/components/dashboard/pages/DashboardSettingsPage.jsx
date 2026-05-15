@@ -74,7 +74,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
   ];
 
   // Handlers
-  const handleUpdateProfile = async () => {
+  const handleUpdateProfile = useCallback(async () => {
     setIsLoadingProfile(true);
     setProfileMessage(null);
     try {
@@ -89,15 +89,15 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsLoadingProfile(false);
     }
-  };
+  }, [name, onUpdate]);
 
-  const handleAvatarChange = (e) => {
+  const handleAvatarChange = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     // Validate size before cropping
-    if (file.size > 2 * 1024 * 1024) {
-      setProfileMessage({ type: 'error', text: 'Image is too large. Please select an image under 2MB.' });
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileMessage({ type: 'error', text: 'Image is too large. Please select an image under 5MB.' });
       return;
     }
 
@@ -105,9 +105,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     setCropperImageSrc(url);
     setIsCropperOpen(true);
     e.target.value = null;
-  };
+  }, []);
 
-  const handleCroppedUpload = async (croppedBlob) => {
+  const handleCroppedUpload = useCallback(async (croppedBlob) => {
     setIsCropperOpen(false);
     setIsUploadingAvatar(true);
     setProfileMessage(null);
@@ -131,9 +131,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
         setCropperImageSrc(null);
       }
     }
-  };
+  }, [cropperImageSrc, onUpdate]);
 
-  const handleUpdateWorkspace = async () => {
+  const handleUpdateWorkspace = useCallback(async () => {
     if (!workspace?.id) return;
     setIsLoadingWorkspace(true);
     setWorkspaceMessage(null);
@@ -149,9 +149,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsLoadingWorkspace(false);
     }
-  };
+  }, [workspace?.id, workspaceName, onUpdate]);
 
-  const handleUpdatePassword = async () => {
+  const handleUpdatePassword = useCallback(async () => {
     setIsLoadingPassword(true);
     setPasswordMessage(null);
     try {
@@ -168,9 +168,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsLoadingPassword(false);
     }
-  };
+  }, [currentPassword, newPassword]);
 
-  const handleToggleSetting = async (settingName, currentValue, setterFunc) => {
+  const handleToggleSetting = useCallback(async (settingName, currentValue, setterFunc) => {
     if (isUpdatingSetting) return;
     setIsUpdatingSetting(true);
     
@@ -189,7 +189,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsUpdatingSetting(false);
     }
-  };
+  }, [isUpdatingSetting, onUpdate]);
 
   const handleUnavailableTeamInvite = () => {
     showNotice(
@@ -214,7 +214,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     window.location.assign('/#pricing');
   };
 
-  const handleLogoutEverywhere = async () => {
+  const handleLogoutEverywhere = useCallback(async () => {
     setIsLoadingLogoutAll(true);
     try {
       await apiRequest('/api/auth/logout-everywhere', {
@@ -226,9 +226,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
       console.error(error);
       setIsLoadingLogoutAll(false);
     }
-  };
+  }, [onLogout]);
 
-  const handleRemoveAvatar = async () => {
+  const handleRemoveAvatar = useCallback(async () => {
     setIsDeletingAvatar(true);
     try {
       await apiRequest('/api/users/me/avatar', { method: 'DELETE' });
@@ -239,9 +239,9 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     } finally {
       setIsDeletingAvatar(false);
     }
-  };
+  }, [onUpdate]);
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = useCallback(async () => {
     if (!deletePassword) return;
     setIsDeletingAccount(true);
     try {
@@ -255,7 +255,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
       setIsDeletingAccount(false);
       setShowDeleteConfirm(false);
     }
-  };
+  }, [deletePassword, onLogout]);
 
   const pwStrength = useMemo(() => {
     if (!newPassword) return { label: '', color: '', width: '0%' };
