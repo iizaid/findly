@@ -10,12 +10,13 @@ export const WEBSITE_ENRICHMENT_CREDITS = 1;
 
 export const calculateSearchCreditCost = ({ returnedLeadsCount = 0 } = {}) => {
   const normalizedReturnedLeads = Math.max(0, Number(returnedLeadsCount) || 0);
+  if (normalizedReturnedLeads === 0) return 0;
   return SEARCH_BASE_CREDITS + (normalizedReturnedLeads * SEARCH_PER_RETURNED_LEAD_CREDITS);
 };
 
 export const estimateSearchCreditReservation = ({ requestedLimit = 20 } = {}) => {
   const normalizedLimit = Math.max(1, Math.min(Number(requestedLimit) || 20, 100));
-  return calculateSearchCreditCost({ returnedLeadsCount: normalizedLimit });
+  return SEARCH_BASE_CREDITS + (normalizedLimit * SEARCH_PER_RETURNED_LEAD_CREDITS);
 };
 
 export const addCredits = async ({ tx = prisma, userId, workspaceId = null, amount, type = 'CREDIT_GRANTED', reason, referenceType = null, referenceId = null }) => {

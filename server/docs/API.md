@@ -143,7 +143,7 @@ Campaign run rules:
 
 List endpoints are paginated and scoped to the current user. Map results are capped and only return leads with coordinates.
 
-Imported local datasets are stored in the shared internal `LeadCatalog`. Normal users do not import files and cannot browse the raw catalog directly. A user search creates a user-owned `LeadList` snapshot whose rows reference matching catalog records. Snapshot lead responses may include safe lead fields such as `businessName`, `category`, `city`, `source`, `sourceFile`, `instagramUsername`, `whatsappNumber`, and `detectedSignals`; private Excel/CSV files and local file paths are not exposed by normal API responses.
+Imported data is stored in the shared internal `LeadCatalog`. Normal users do not import files and cannot browse the raw catalog directly. A user search creates a user-owned `LeadList` snapshot whose rows reference matching catalog records. Snapshot lead responses may include safe lead fields such as `businessName`, `category`, `city`, user-safe `source`, `instagramUsername`, `whatsappNumber`, and sanitized `detectedSignals`; private files, import provenance, and file paths are not exposed by normal API responses.
 
 ## Analysis
 

@@ -14,7 +14,39 @@ let agent2;
 let user1Id;
 let workspace1Id;
 let leadListId;
+let campaignId;
 let listItems = [];
+
+const hiddenUserSourceTerms = [
+  'LOCAL_DATASET',
+  'DATASET_IMPORT',
+  'MANUAL_ADMIN',
+  'INSTAGRAM_DATASET',
+  'GOOGLE_MAPS_DATASET',
+  'sourceFile',
+  'sourceUsed',
+  'sourceRequested',
+  'fallbackUsed',
+  'fallbackReason',
+  'searchMode',
+  'sourceMode',
+  'localDatasetScore',
+  'datasetStats',
+  'importedLeadCount',
+  'fallbackAvailable',
+  'business intelligence index',
+  'stored',
+  'local',
+  'dataset',
+  'fallback',
+];
+
+const expectNoUserFacingSourceDisclosure = (payload) => {
+  const text = JSON.stringify(payload).toLowerCase();
+  for (const term of hiddenUserSourceTerms) {
+    expect(text).not.toContain(term.toLowerCase());
+  }
+};
 
 const getCsrfToken = async (agent) => {
   const response = await agent.get('/api/csrf-token').expect(200);
@@ -71,6 +103,7 @@ beforeAll(async () => {
       status: 'COMPLETED',
     }
   });
+  campaignId = campaign.id;
 
   const leadList = await prisma.leadList.create({
     data: {
@@ -122,6 +155,23 @@ beforeAll(async () => {
       instagramUsername: `roastery_${unique}`,
       detectedSignals: ['HAS_INSTAGRAM', 'NO_WEBSITE'],
     }
+  });
+
+  await prisma.lead.create({
+    data: {
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      businessName: `Direct Internal Lead ${unique}`,
+      category: 'Cafe',
+      country: 'Jordan',
+      city: 'Amman',
+      source: 'LOCAL_DATASET',
+      sourceFile: 'private-source.xlsx',
+      sourceId: `direct-internal-${unique}`,
+      detectedSignals: ['HAS_INSTAGRAM', 'DATASET_IMPORTED', 'NO_WEBSITE'],
+      rawData: { sourceFile: 'private-source.xlsx', source: 'LOCAL_DATASET' },
+    },
   });
 
   const item1 = await prisma.leadListLead.create({
@@ -277,6 +327,124 @@ describe('LeadList Workflow Architecture', () => {
     expect(campaign.creditsUsed).toBe(runData.creditsUsed);
   });
 
+  it('does not expose internal source metadata from user-facing search endpoints', async () => {
+    const csrfToken = await getCsrfToken(agent1);
+
+    const endpoints = [
+      '/api/search/intelligence',
+      `/api/search/campaigns/${campaignId}/leads`,
+      '/api/search/lists',
+      `/api/search/lists/${leadListId}`,
+      `/api/search/lists/${leadListId}/leads`,
+      '/api/search/leads',
+      `/api/search/leads?listId=${leadListId}`,
+      `/api/search/leads/${listItems[0].id}`,
+      '/api/search/leads/map',
+    ];
+
+    for (const endpoint of endpoints) {
+      const response = await agent1.get(endpoint).expect(200);
+      expectNoUserFacingSourceDisclosure(response.body);
+    }
+
+    const statusResponse = await agent1
+      .patch(`/api/search/lists/${leadListId}/items/${listItems[0].id}/status`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({ status: 'QUALIFIED' })
+      .expect(200);
+    expectNoUserFacingSourceDisclosure(statusResponse.body);
+
+    const notesResponse = await agent1
+      .patch(`/api/search/lists/${leadListId}/items/${listItems[0].id}/notes`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({ notes: 'Safe user note.' })
+      .expect(200);
+    expectNoUserFacingSourceDisclosure(notesResponse.body);
+  });
+
+  it('rejects internal source keys during public campaign creation', async () => {
+    const csrfToken = await getCsrfToken(agent1);
+    const basePayload = {
+      workspaceId: workspace1Id,
+      name: 'Rejected internal source',
+      query: 'cafes in Amman',
+      country: 'Jordan',
+      city: 'Amman',
+      requestedLimit: 5,
+    };
+
+    for (const source of ['LOCAL_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN', 'CSV', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET']) {
+      await agent1
+        .post('/api/search/campaigns')
+        .set('X-CSRF-Token', csrfToken)
+        .send({ ...basePayload, sources: [source] })
+        .expect(400);
+    }
+
+    await agent1
+      .post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({ ...basePayload, name: 'Accepted Instagram source', sources: ['INSTAGRAM'] })
+      .expect(201);
+
+    await agent1
+      .post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({ ...basePayload, name: 'Accepted Google source', sources: ['GOOGLE_MAPS'] })
+      .expect(201);
+  });
+
+  it('paginates merged lead results without duplicates for list-specific queries', async () => {
+    const extraList = await prisma.leadList.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        name: `Pagination List ${unique}`,
+        resultCount: 12,
+      },
+    });
+
+    const createdCatalogLeads = [];
+    for (let index = 0; index < 12; index += 1) {
+      createdCatalogLeads.push(await prisma.leadCatalog.create({
+        data: {
+          businessName: `Pagination Cafe ${index} ${unique}`,
+          category: 'Cafe',
+          country: 'Jordan',
+          city: 'Amman',
+          source: 'LOCAL_DATASET',
+          sourceId: `pagination-${index}-${unique}`,
+          normalizedFingerprint: `pagination-fingerprint-${index}-${unique}`,
+        },
+      }));
+    }
+
+    await prisma.leadListLead.createMany({
+      data: createdCatalogLeads.map((lead, index) => ({
+        leadListId: extraList.id,
+        catalogLeadId: lead.id,
+        rank: index + 1,
+        status: 'NEW',
+      })),
+    });
+
+    const page1 = await agent1.get(`/api/search/leads?listId=${extraList.id}&limit=5&page=1`).expect(200);
+    const page2 = await agent1.get(`/api/search/leads?listId=${extraList.id}&limit=5&page=2`).expect(200);
+
+    expect(page1.body.data.pagination.total).toBe(12);
+    expect(page2.body.data.pagination.total).toBe(12);
+    expect(page1.body.data.leads).toHaveLength(5);
+    expect(page2.body.data.leads).toHaveLength(5);
+
+    const page1Ids = new Set(page1.body.data.leads.map((lead) => lead.id));
+    const page2Ids = new Set(page2.body.data.leads.map((lead) => lead.id));
+    for (const id of page2Ids) {
+      expect(page1Ids.has(id)).toBe(false);
+    }
+    expectNoUserFacingSourceDisclosure(page1.body);
+    expectNoUserFacingSourceDisclosure(page2.body);
+  });
+
   it('blocks stored-intelligence campaign runs when the user cannot cover the maximum estimated search cost', async () => {
     const csrfToken = await getCsrfToken(agent2);
     const me2 = await agent2.get('/api/auth/me').expect(200);
@@ -307,6 +475,18 @@ describe('LeadList Workflow Architecture', () => {
 
     const lists = await prisma.leadList.count({ where: { campaignId: campaignRes.body.data.campaign.id } });
     expect(lists).toBe(0);
+  });
+
+  it('calculates zero-result search cost as zero while preserving maximum pre-run reservation', async () => {
+    const {
+      calculateSearchCreditCost,
+      estimateSearchCreditReservation,
+    } = await import('../../src/modules/credits/credit.service.js');
+
+    expect(calculateSearchCreditCost({ returnedLeadsCount: 0 })).toBe(0);
+    expect(calculateSearchCreditCost({ returnedLeadsCount: -5 })).toBe(0);
+    expect(calculateSearchCreditCost({ returnedLeadsCount: 3 })).toBe(8);
+    expect(estimateSearchCreditReservation({ requestedLimit: 3 })).toBe(8);
   });
 
   it('matches smart business type aliases such as Cafes to Coffee Shop leads', async () => {

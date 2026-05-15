@@ -27,7 +27,9 @@ const parseJson = async (response) => {
   }
 };
 
-export const apiRequest = async (path, options = {}) => {
+const isMutatingMethod = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+const apiRequestInternal = async (path, options = {}, retryState = { csrfRetried: false }) => {
   const method = (options.method || 'GET').toUpperCase();
   const headers = {
     'Content-Type': 'application/json',
@@ -38,7 +40,7 @@ export const apiRequest = async (path, options = {}) => {
     delete headers['Content-Type'];
   }
 
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !CSRF_EXEMPT.has(`${method} ${path}`)) {
+  if (isMutatingMethod(method) && !CSRF_EXEMPT.has(`${method} ${path}`)) {
     headers['X-CSRF-Token'] = await getCsrfToken();
   }
 
@@ -52,8 +54,20 @@ export const apiRequest = async (path, options = {}) => {
   const payload = await parseJson(response);
 
   if (!response.ok || payload?.success === false) {
+    const code = payload?.error?.code || 'REQUEST_FAILED';
+    if (
+      isMutatingMethod(method)
+      && code === 'CSRF_TOKEN_INVALID'
+      && !retryState.csrfRetried
+      && !CSRF_EXEMPT.has(`${method} ${path}`)
+    ) {
+      csrfTokenPromise = null;
+      await getCsrfToken();
+      return apiRequestInternal(path, options, { csrfRetried: true });
+    }
+
     throw new ApiError(
-      payload?.error?.code || 'REQUEST_FAILED',
+      code,
       payload?.error?.message || 'Request failed.',
       response.status,
     );
@@ -61,6 +75,8 @@ export const apiRequest = async (path, options = {}) => {
 
   return payload;
 };
+
+export const apiRequest = (path, options = {}) => apiRequestInternal(path, options);
 
 export const getCsrfToken = async () => {
   csrfTokenPromise ??= fetch(`${API_BASE_URL}/api/csrf-token`, {

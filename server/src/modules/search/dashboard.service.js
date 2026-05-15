@@ -1,4 +1,23 @@
 import { prisma } from '../../db/prisma.js';
+import {
+  mapSourceForUserResponse,
+  sanitizeDetectedSignalsForUserResponse,
+  sanitizeLeadForUserResponse,
+} from './userResponseSanitizer.js';
+
+const mapGroupedSource = (item) => ({
+  source: mapSourceForUserResponse(item.source),
+  count: item._count,
+});
+
+const mergeSourceBreakdown = (items) => {
+  const counts = new Map();
+  for (const item of items.map(mapGroupedSource)) {
+    if (!item.source) continue;
+    counts.set(item.source, (counts.get(item.source) || 0) + item.count);
+  }
+  return [...counts.entries()].map(([source, count]) => ({ source, count }));
+};
 
 export const getDashboardSummary = async (userId, workspaceId) => {
   const [
@@ -60,6 +79,7 @@ export const getDashboardSummary = async (userId, workspaceId) => {
     recentCampaigns,
     recentLeads: recentLeads
       .map((item) => item.lead || (item.catalogLead ? { ...item.catalogLead, status: 'NEW', catalogLeadId: item.catalogLead.id } : null))
+      .map(sanitizeLeadForUserResponse)
       .filter(Boolean),
   };
 };
@@ -128,11 +148,14 @@ export const getCampaignAnalytics = async (campaignId, userId) => {
   return {
     campaign,
     scoreDistribution: scoreDistribution.map((d) => ({ level: d.scoreLevel, count: d._count })),
-    signalBreakdown: Object.entries(signalMap).map(([signal, count]) => ({ signal, count })).sort((a, b) => b.count - a.count),
-    sourceBreakdown: sourceCounts.map((s) => ({ source: s.source, count: s._count })),
+    signalBreakdown: Object.entries(signalMap)
+      .filter(([signal]) => sanitizeDetectedSignalsForUserResponse([signal]).length > 0)
+      .map(([signal, count]) => ({ signal, count }))
+      .sort((a, b) => b.count - a.count),
+    sourceBreakdown: mergeSourceBreakdown(sourceCounts),
     cityBreakdown: cityCounts.map((c) => ({ city: c.city, count: c._count })),
     categoryBreakdown: categoryCounts.filter((c) => c.category).map((c) => ({ category: c.category, count: c._count })),
     statusBreakdown: statusCounts.map((s) => ({ status: s.status, count: s._count })),
-    topLeads: sortedTopLeads,
+    topLeads: sortedTopLeads.map(sanitizeLeadForUserResponse),
   };
 };

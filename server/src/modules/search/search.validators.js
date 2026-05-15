@@ -1,7 +1,22 @@
 import { z } from 'zod';
 import { paginationQuerySchema } from '../../utils/pagination.js';
 
-const sourceSchema = z.enum(['GOOGLE_MAPS', 'REDDIT', 'WEBSITE', 'LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN', 'SERPAPI', 'CSV', 'INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'TIKTOK', 'YELP', 'TRIPADVISOR', 'YOUTUBE', 'X']);
+const publicCampaignSourceSchema = z.enum([
+  'GOOGLE_MAPS',
+  'REDDIT',
+  'WEBSITE',
+  'SERPAPI',
+  'INSTAGRAM',
+  'FACEBOOK',
+  'LINKEDIN',
+  'TIKTOK',
+  'YELP',
+  'TRIPADVISOR',
+  'YOUTUBE',
+  'X',
+]);
+
+const sourceSchema = publicCampaignSourceSchema;
 
 export const createProfileSchema = z.object({
   body: z.object({
@@ -24,7 +39,7 @@ export const createCampaignSchema = z.object({
     country: z.string().trim().min(1).max(80).optional(),
     city: z.string().trim().min(1).max(80).optional(),
     businessTypes: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
-    sources: z.array(sourceSchema).min(1).max(10).optional(),
+    sources: z.array(publicCampaignSourceSchema).min(1).max(10).optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
     requestedLimit: z.number().int().min(1).max(100).optional().default(20),
   }),

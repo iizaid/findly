@@ -101,7 +101,7 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
       detectedSignals.push('HIGH_REVIEW_COUNT');
       detectedSignals.push('STRONG_LOCAL_PRESENCE');
       opportunityScore += 15;
-      reasons.push(`${normalizedLead.reviewCount} reviews indicate a well-established local business.`);
+      reasons.push(`${normalizedLead.reviewCount} reviews indicate a well-established area business.`);
     } else if (normalizedLead.reviewCount >= 30) {
       detectedSignals.push('HIGH_REVIEW_COUNT');
       opportunityScore += 10;
@@ -191,11 +191,11 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   // ═══════════════════════════════════════
   let outreachAngle;
   if (!normalizedLead.websiteUrl) {
-    outreachAngle = `${normalizedLead.businessName} has no website despite ${normalizedLead.reviewCount ? normalizedLead.reviewCount + ' Google reviews' : 'being listed on Google'}. Offer a quick, professional web presence to capture more local traffic.`;
+    outreachAngle = `${normalizedLead.businessName} has no website despite ${normalizedLead.reviewCount ? normalizedLead.reviewCount + ' Google reviews' : 'being listed on Google'}. Offer a quick, professional web presence to capture more nearby search traffic.`;
   } else if (normalizedLead.rating >= 4.0) {
     outreachAngle = `Compliment their ${normalizedLead.rating}★ rating and suggest ways to turn that reputation into more online bookings or leads through an upgraded digital presence.`;
   } else {
-    outreachAngle = `${normalizedLead.businessName} is an active local business in ${normalizedLead.city || 'the area'}. Position your service as a way to stand out from competitors and attract more customers.`;
+    outreachAngle = `${normalizedLead.businessName} is an active business in ${normalizedLead.city || 'the area'}. Position your service as a way to stand out from competitors and attract more customers.`;
   }
 
   // ═══════════════════════════════════════
@@ -204,7 +204,7 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
   const greeting = `Hi ${normalizedLead.businessName}`;
   let body;
   if (!normalizedLead.websiteUrl) {
-    body = `I noticed you don't have a website yet — but your ${normalizedLead.rating ? normalizedLead.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more local searches and convert more visitors into customers.`;
+    body = `I noticed you don't have a website yet — but your ${normalizedLead.rating ? normalizedLead.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more nearby searches and convert more visitors into customers.`;
   } else {
     body = `I came across your business${normalizedLead.rating ? ` and noticed your impressive ${normalizedLead.rating}-star rating` : ''}. I think there's an opportunity to strengthen your online presence and attract more customers.`;
   }

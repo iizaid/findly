@@ -107,27 +107,30 @@ export const commitImportFile = asyncHandler(async (req, res) => {
 
   const owner = { userId: req.user.id, userEmail: req.user.email, workspaceId: workspace.id };
 
-  const summary = await importDatasetFile({ filePath, owner, dryRun: false, mappingConfig: internalMappingConfig, sourceTypeOverride: sourceType });
+  let summary;
+  try {
+    summary = await importDatasetFile({ filePath, owner, dryRun: false, mappingConfig: internalMappingConfig, sourceTypeOverride: sourceType });
 
-  await removeAdminUploadFile(fileKey);
-
-  await prisma.auditLog.create({
-    data: {
-      userId: req.user.id,
-      action: 'ADMIN_BULK_IMPORT_COMMITTED',
-      entityType: 'DatasetImport',
-      entityId: summary.importId,
-      metadata: {
-        workspaceId: workspace.id,
-        fileName: summary.fileName,
-        totalRows: summary.totalRows,
-        importedRows: summary.importedRows,
-        usedCustomMapping: Boolean(mappingConfig),
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ADMIN_BULK_IMPORT_COMMITTED',
+        entityType: 'DatasetImport',
+        entityId: summary.importId,
+        metadata: {
+          workspaceId: workspace.id,
+          fileName: summary.fileName,
+          totalRows: summary.totalRows,
+          importedRows: summary.importedRows,
+          usedCustomMapping: Boolean(mappingConfig),
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
       },
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-    },
-  });
+    });
+  } finally {
+    await removeAdminUploadFile(fileKey).catch(() => {});
+  }
 
   return successResponse(res, { summary }, 'Import completed successfully.', 200);
 });

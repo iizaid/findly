@@ -233,7 +233,7 @@ export const logoutUser = async (req) => {
   });
 };
 
-export const updatePassword = async (userId, currentPassword, newPassword) => {
+export const updatePassword = async (userId, currentPassword, newPassword, { currentSessionId = null } = {}) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
 
@@ -244,19 +244,38 @@ export const updatePassword = async (userId, currentPassword, newPassword) => {
 
   const passwordHash = await hashPassword(newPassword);
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { passwordHash },
+  const revokedSessions = await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    const revoked = await tx.session.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(currentSessionId ? { id: { not: currentSessionId } } : {}),
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: 'PASSWORD_UPDATED',
+        entityType: 'User',
+        entityId: userId,
+        metadata: {
+          otherSessionsRevoked: revoked.count,
+          keptCurrentSession: Boolean(currentSessionId),
+        },
+      },
+    });
+
+    return revoked.count;
   });
 
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: 'PASSWORD_UPDATED',
-      entityType: 'User',
-      entityId: userId,
-    },
-  });
+  return { revokedSessions };
 };
 
 export const logoutEverywhere = async (userId) => {

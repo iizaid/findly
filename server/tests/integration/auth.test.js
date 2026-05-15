@@ -527,6 +527,33 @@ describe('Findly auth, verification, and foundation API', () => {
       .expect(200);
   });
 
+  it('keeps the current session and revokes other sessions after password change', async () => {
+    const sessionEmail = `test.${unique}.session-revoke@findly.local`;
+    const agentA = request.agent(createApp());
+    const agentB = request.agent(createApp());
+
+    await registerAccount({ agent: agentA, userEmail: sessionEmail, name: 'Session Safety' });
+    await request(createApp()).post('/api/auth/verify-email').send({ token: verificationTokenFor(sessionEmail) }).expect(200);
+    await agentA.post('/api/auth/login').send({ email: sessionEmail, password }).expect(200);
+    await agentB.post('/api/auth/login').send({ email: sessionEmail, password }).expect(200);
+
+    await agentA.get('/api/auth/me').expect(200);
+    await agentB.get('/api/auth/me').expect(200);
+
+    const csrfToken = await getCsrfToken(agentA);
+    await agentA
+      .patch('/api/auth/password')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        currentPassword: password,
+        newPassword: 'ChangedSecure12345@#$',
+      })
+      .expect(200);
+
+    await agentA.get('/api/auth/me').expect(200);
+    await agentB.get('/api/auth/me').expect(401);
+  });
+
   it('exposes safe readiness/source status and blocks unconfigured campaign runs cleanly', async () => {
     const agent = request.agent(createApp());
     await agent.post('/api/auth/login').send({ email, password }).expect(200);

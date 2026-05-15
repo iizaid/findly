@@ -129,6 +129,19 @@ export const revokeSession = async (sessionId, userId) => {
   });
 };
 
+export const revokeOtherUserSessions = async (userId, keepSessionId) => {
+  return prisma.session.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+      ...(keepSessionId ? { id: { not: keepSessionId } } : {}),
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+};
+
 export const listUserSessions = async (userId) => {
   return prisma.session.findMany({
     where: {

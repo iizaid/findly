@@ -97,7 +97,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
 export const updatePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.validated.body;
 
-  await updatePasswordService(req.user.id, currentPassword, newPassword);
+  await updatePasswordService(req.user.id, currentPassword, newPassword, { currentSessionId: req.session?.id });
   return successResponse(res, {}, 'Password updated successfully.');
 });
 

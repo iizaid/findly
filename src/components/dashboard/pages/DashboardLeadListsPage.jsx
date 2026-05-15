@@ -28,10 +28,7 @@ const scoreBadge = (analysis) => {
 
 const formatSignalSource = (source) => {
   const map = {
-    LOCAL_DATASET: 'Platform Signals',
-    DATASET_IMPORT: 'Platform Signals',
-    INSTAGRAM_DATASET: 'Instagram Signals',
-    GOOGLE_MAPS_DATASET: 'Google Maps Signals',
+    ONLINE_SOURCE: 'Online Source',
   };
   return map[source] || source?.replace(/_/g, ' ') || 'Available Signals';
 };
@@ -49,8 +46,7 @@ const platformLabel = {
   X: 'X',
 };
 
-const listPlatformLabel = (list) => list?.filters?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
-  || list?.sourceRequested
+const listPlatformLabel = (list) => list?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
   || 'Available Signals';
 
 const DashboardLeadListsPage = ({ onNavigate }) => {

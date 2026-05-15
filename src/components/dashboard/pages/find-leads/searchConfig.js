@@ -17,7 +17,7 @@ export const PREFERRED_SOURCE_ORDER = [
   'X',
 ];
 
-export const DATASET_BACKED_SOURCES = new Set([
+export const SEARCH_READY_SOURCES = new Set([
   'GOOGLE_MAPS',
   'INSTAGRAM',
   'FACEBOOK',

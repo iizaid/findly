@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { paginationQuerySchema } from '../../utils/pagination.js';
 
+const datasetSourceTypeSchema = z.enum([
+  'LOCAL_DATASET',
+  'DATASET_IMPORT',
+  'INSTAGRAM_DATASET',
+  'GOOGLE_MAPS_DATASET',
+  'MANUAL_ADMIN',
+]);
+
 export const adminListQuerySchema = z.object({
   query: paginationQuerySchema.extend({
     search: z.string().trim().max(120).optional(),
@@ -96,7 +104,7 @@ const mappingSheetSchema = z.object({
 export const commitImportSchema = z.object({
   body: z.object({
     fileKey: z.string().min(1).max(200),
-    sourceType: z.string().optional().nullable(),
+    sourceType: datasetSourceTypeSchema.optional().nullable(),
     mappingConfig: z.object({
       sheets: z.array(mappingSheetSchema).min(1),
     }).optional().nullable(),

@@ -22,8 +22,9 @@ const workflowSteps = [
 ];
 
 const sourceStatusIcon = (status) => {
-  if (status === 'available') return '🟢';
+  if (status === 'ready' || status === 'available') return '🟢';
   if (status === 'not_configured') return '🟡';
+  if (status === 'unavailable' || status === 'error') return '🔴';
   return '⬜';
 };
 

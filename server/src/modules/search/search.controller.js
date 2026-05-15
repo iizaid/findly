@@ -15,6 +15,14 @@ import {
   leadMatchesGovernorate,
   normalizeCountry,
 } from './locationNormalization.js';
+import {
+  mapCatalogLeadForUserResponse,
+  mapSourceForUserResponse,
+  sanitizeCampaignForUserResponse,
+  sanitizeLeadForUserResponse,
+  sanitizeLeadListForUserResponse,
+  sanitizeLeadListItemForUserResponse,
+} from './userResponseSanitizer.js';
 
 const servicePresets = [
   'Website Development',
@@ -86,89 +94,6 @@ const normalizeBusinessTypeOption = (value) => {
 };
 
 const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-const sourceLabelsForUsers = {
-  LOCAL_DATASET: 'Findly',
-  DATASET_IMPORT: 'Findly',
-  MANUAL_ADMIN: 'Findly',
-  INSTAGRAM_DATASET: 'Instagram',
-  GOOGLE_MAPS_DATASET: 'Google Maps',
-  GOOGLE_MAPS: 'Google Maps',
-  WEBSITE: 'Website',
-  FACEBOOK: 'Facebook',
-  INSTAGRAM: 'Instagram',
-  YELP: 'Yelp',
-  SERPAPI: 'Search',
-};
-
-const mapSourceForUserResponse = (source) => sourceLabelsForUsers[source] || source || null;
-
-const sanitizeDetectedSignalsForUserResponse = (signals) => {
-  if (!Array.isArray(signals)) return signals;
-  return signals.filter((signal) => !['DATASET_IMPORTED'].includes(signal));
-};
-
-const sanitizeLeadForUserResponse = (lead) => {
-  if (!lead) return lead;
-  const { sourceFile: _sourceFile, ...safeLead } = lead;
-  return {
-    ...safeLead,
-    source: mapSourceForUserResponse(lead.source),
-    detectedSignals: sanitizeDetectedSignalsForUserResponse(lead.detectedSignals),
-  };
-};
-
-const mapCatalogLeadForResponse = (catalogLead, item = {}) => ({
-  id: catalogLead.id,
-  catalogLeadId: catalogLead.id,
-  leadListItemId: item.id,
-  catalogOnly: true,
-  businessName: catalogLead.businessName,
-  category: catalogLead.category,
-  country: catalogLead.country,
-  city: catalogLead.city,
-  address: catalogLead.address,
-  phone: catalogLead.phone,
-  whatsappNumber: catalogLead.whatsappNumber,
-  email: catalogLead.email,
-  websiteUrl: catalogLead.websiteUrl,
-  websiteStatus: catalogLead.websiteStatus,
-  instagramUrl: catalogLead.instagramUrl,
-  instagramUsername: catalogLead.instagramUsername,
-  facebookUrl: catalogLead.facebookUrl,
-  googleMapsUrl: catalogLead.googleMapsUrl,
-  latitude: catalogLead.latitude,
-  longitude: catalogLead.longitude,
-  source: mapSourceForUserResponse(catalogLead.source),
-  rating: catalogLead.rating,
-  reviewCount: catalogLead.reviewCount,
-  importedAt: catalogLead.importedAt,
-  status: item.status || 'NEW',
-  notes: item.notes || null,
-  detectedSignals: sanitizeDetectedSignalsForUserResponse(catalogLead.detectedSignals),
-  enrichmentData: catalogLead.enrichmentData,
-  createdAt: item.createdAt || catalogLead.createdAt,
-  updatedAt: item.updatedAt || catalogLead.updatedAt,
-  analyses: item.analyses || [],
-  listRank: item.rank,
-  localDatasetScore: item.score,
-});
-
-const mapLeadListForUserResponse = (list) => {
-  const {
-    sourceRequested: _sourceRequested,
-    sourceUsed: _sourceUsed,
-    fallbackUsed: _fallbackUsed,
-    searchMode: _searchMode,
-    _count,
-    ...safeList
-  } = list;
-
-  return {
-    ...safeList,
-    leadCount: _count?.leadItems || _count?.leads || 0,
-  };
-};
-
 const catalogLeadSelect = {
   id: true,
   businessName: true,
@@ -188,7 +113,6 @@ const catalogLeadSelect = {
   latitude: true,
   longitude: true,
   source: true,
-  sourceFile: true,
   rating: true,
   reviewCount: true,
   importedAt: true,
@@ -339,7 +263,10 @@ export const getCampaigns = asyncHandler(async (req, res) => {
     }),
     prisma.searchCampaign.count({ where }),
   ]);
-  return successResponse(res, { campaigns, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Campaigns loaded.');
+  return successResponse(res, {
+    campaigns: campaigns.map(sanitizeCampaignForUserResponse),
+    pagination: { page: pagination.page, limit: pagination.limit, total },
+  }, 'Campaigns loaded.');
 });
 
 export const createNewCampaign = asyncHandler(async (req, res) => {
@@ -366,7 +293,7 @@ export const createNewCampaign = asyncHandler(async (req, res) => {
   }
 
   const campaign = await createCampaign({ userId: req.user.id, workspaceId: data.workspaceId, data });
-  return successResponse(res, { campaign }, 'Campaign created.', 201);
+  return successResponse(res, { campaign: sanitizeCampaignForUserResponse(campaign) }, 'Campaign created.', 201);
 });
 
 export const getCampaignById = asyncHandler(async (req, res) => {
@@ -378,7 +305,7 @@ export const getCampaignById = asyncHandler(async (req, res) => {
     },
   });
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
-  return successResponse(res, { campaign }, 'Campaign loaded.');
+  return successResponse(res, { campaign: sanitizeCampaignForUserResponse(campaign) }, 'Campaign loaded.');
 });
 
 export const runExistingCampaign = asyncHandler(async (req, res) => {
@@ -505,10 +432,10 @@ export const getCampaignLeads = asyncHandler(async (req, res) => {
   ]);
 
   const snapshotLeads = listItems
-    .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
+    .map((item) => (item.catalogLead ? mapCatalogLeadForUserResponse(item.catalogLead, item) : sanitizeLeadForUserResponse(item.lead)))
     .filter(Boolean);
 
-  return successResponse(res, { leads: [...snapshotLeads, ...directLeads] }, 'Campaign leads loaded.');
+  return successResponse(res, { leads: [...snapshotLeads, ...directLeads.map(sanitizeLeadForUserResponse)] }, 'Campaign leads loaded.');
 });
 
 export const getCampaignAnalyticsData = asyncHandler(async (req, res) => {
@@ -542,7 +469,7 @@ export const getLeadLists = asyncHandler(async (req, res) => {
     }),
     prisma.leadList.count({ where }),
   ]);
-  const mapped = lists.map(mapLeadListForUserResponse);
+  const mapped = lists.map(sanitizeLeadListForUserResponse);
   return successResponse(res, { lists: mapped, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Lead lists loaded.');
 });
 
@@ -558,7 +485,7 @@ export const getLeadListById = asyncHandler(async (req, res) => {
   if (!list) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
 
   return successResponse(res, {
-    list: mapLeadListForUserResponse(list),
+    list: sanitizeLeadListForUserResponse(list),
   }, 'Lead list loaded.');
 });
 
@@ -641,7 +568,7 @@ export const getLeads = asyncHandler(async (req, res) => {
       take: 2000,
     });
     const mapped = items
-      .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : item.lead))
+      .map((item) => (item.catalogLead ? mapCatalogLeadForUserResponse(item.catalogLead, item) : sanitizeLeadForUserResponse(item.lead)))
       .filter(Boolean)
       .filter((lead) => leadMatchesFilters(lead, { source, city, status, missingWebsite, scoreLevel }));
 
@@ -651,7 +578,8 @@ export const getLeads = asyncHandler(async (req, res) => {
     }, 'Leads loaded.');
   }
 
-  const [leads, total, listItems, totalListItems] = await prisma.$transaction([
+  const candidateLimit = 5000;
+  const [leads, listItems] = await prisma.$transaction([
     prisma.lead.findMany({
       where,
       select: {
@@ -671,7 +599,6 @@ export const getLeads = asyncHandler(async (req, res) => {
         facebookUrl: true,
         googleMapsUrl: true,
         source: true,
-        sourceFile: true,
         rating: true,
         reviewCount: true,
         importedAt: true,
@@ -683,10 +610,8 @@ export const getLeads = asyncHandler(async (req, res) => {
         analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy,
-      skip: pagination.skip,
-      take: pagination.take,
+      take: candidateLimit,
     }),
-    prisma.lead.count({ where }),
     prisma.leadListLead.findMany({
       where: {
         leadList: {
@@ -700,20 +625,12 @@ export const getLeads = asyncHandler(async (req, res) => {
         analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      take: 1000,
-    }),
-    prisma.leadListLead.count({
-      where: {
-        leadList: {
-          userId: req.user.id,
-          ...(campaignId ? { campaignId } : {}),
-        },
-      },
+      take: candidateLimit,
     }),
   ]);
 
   const mappedListItems = listItems
-    .map((item) => (item.catalogLead ? mapCatalogLeadForResponse(item.catalogLead, item) : sanitizeLeadForUserResponse(item.lead)))
+    .map((item) => (item.catalogLead ? mapCatalogLeadForUserResponse(item.catalogLead, item) : sanitizeLeadForUserResponse(item.lead)))
     .filter(Boolean);
 
   const combined = [...mappedListItems, ...leads.map(sanitizeLeadForUserResponse)];
@@ -729,11 +646,11 @@ export const getLeads = asyncHandler(async (req, res) => {
     deduped.filter((lead) => leadMatchesFilters(lead, { source, city, status, missingWebsite, scoreLevel })),
     sortBy,
     sortOrder,
-  ).slice(pagination.skip, pagination.skip + pagination.take);
+  );
 
   return successResponse(res, {
-    leads: filtered,
-    pagination: { page: pagination.page, limit: pagination.limit, total: total + totalListItems },
+    leads: filtered.slice(pagination.skip, pagination.skip + pagination.take),
+    pagination: { page: pagination.page, limit: pagination.limit, total: filtered.length },
   }, 'Leads loaded.');
 });
 
@@ -767,7 +684,7 @@ export const getLeadDetail = asyncHandler(async (req, res) => {
 
   return successResponse(res, {
     lead: {
-      ...mapCatalogLeadForResponse(item.catalogLead, { ...item, analyses: item.analyses }),
+      ...mapCatalogLeadForUserResponse(item.catalogLead, { ...item, analyses: item.analyses }),
       leadList: item.leadList,
     },
   }, 'Lead detail loaded.');
@@ -826,7 +743,7 @@ export const getLeadsForMap = asyncHandler(async (req, res) => {
   ]);
 
   const catalogLeads = listItems
-    .map((item) => mapCatalogLeadForResponse(item.catalogLead, item))
+    .map((item) => mapCatalogLeadForUserResponse(item.catalogLead, item))
     .filter((lead) => lead.latitude != null && lead.longitude != null);
 
   return successResponse(res, {
@@ -960,7 +877,7 @@ export const updateListItemStatus = asyncHandler(async (req, res) => {
     where: { id: itemId, leadListId: listId },
   });
 
-  return successResponse(res, { item }, 'Lead list item status updated.');
+  return successResponse(res, { item: sanitizeLeadListItemForUserResponse(item) }, 'Lead list item status updated.');
 });
 
 export const updateListItemNotes = asyncHandler(async (req, res) => {
@@ -986,7 +903,7 @@ export const updateListItemNotes = asyncHandler(async (req, res) => {
     where: { id: itemId, leadListId: listId },
   });
 
-  return successResponse(res, { item }, 'Lead list item notes updated.');
+  return successResponse(res, { item: sanitizeLeadListItemForUserResponse(item) }, 'Lead list item notes updated.');
 });
 
 export const analyzeListItem = asyncHandler(async (req, res) => {

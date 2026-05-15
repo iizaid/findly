@@ -2,6 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
+import { AppError, errorCodes } from '../../utils/AppError.js';
+
+export const MAX_IMPORT_ROWS = Number(process.env.MAX_IMPORT_ROWS || 25000);
+export const MAX_IMPORT_COLUMNS = Number(process.env.MAX_IMPORT_COLUMNS || 120);
+export const MAX_IMPORT_SHEETS = Number(process.env.MAX_IMPORT_SHEETS || 20);
+export const MAX_XLSX_XML_BYTES = Number(process.env.MAX_XLSX_XML_BYTES || 10 * 1024 * 1024);
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -30,7 +36,11 @@ const readSharedStrings = async (zip) => {
   const file = zip.file('xl/sharedStrings.xml');
   if (!file) return [];
 
-  const xml = xmlParser.parse(await file.async('text'));
+  const sharedStringsBuffer = await file.async('uint8array');
+  if (sharedStringsBuffer.byteLength > MAX_XLSX_XML_BYTES) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Shared strings XML is too large to import safely.', 400);
+  }
+  const xml = xmlParser.parse(Buffer.from(sharedStringsBuffer).toString('utf8'));
   return asArray(xml.sst?.si).map((si) => {
     if (si.t !== undefined) return textOf(si.t);
     return asArray(si.r).map((run) => textOf(run.t)).join('');
@@ -51,7 +61,13 @@ const parseSheetRows = (worksheetXml, sharedStrings) => {
     const values = [];
     for (const cell of asArray(row.c)) {
       const index = columnIndexFromRef(cell.r);
+      if (index >= MAX_IMPORT_COLUMNS) {
+        throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_COLUMNS} columns.`, 400);
+      }
       values[index >= 0 ? index : values.length] = parseCellValue(cell, sharedStrings);
+    }
+    if (values.length > MAX_IMPORT_COLUMNS) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_COLUMNS} columns.`, 400);
     }
     return {
       rowNumber: Number(row.r) || null,
@@ -63,8 +79,11 @@ const parseSheetRows = (worksheetXml, sharedStrings) => {
 export const readXlsxWorkbook = async (filePath) => {
   const zip = await JSZip.loadAsync(await fs.readFile(filePath));
   const sharedStrings = await readSharedStrings(zip);
-  const workbook = xmlParser.parse(await zip.file('xl/workbook.xml').async('text'));
-  const rels = xmlParser.parse(await zip.file('xl/_rels/workbook.xml.rels').async('text'));
+  const workbookFile = zip.file('xl/workbook.xml');
+  const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+  if (!workbookFile || !relsFile) throw new AppError(errorCodes.VALIDATION_ERROR, 'Invalid workbook structure.', 400);
+  const workbook = xmlParser.parse(await workbookFile.async('text'));
+  const rels = xmlParser.parse(await relsFile.async('text'));
   const relMap = Object.fromEntries(
     asArray(rels.Relationships?.Relationship).map((relationship) => [
       relationship.Id,
@@ -73,13 +92,28 @@ export const readXlsxWorkbook = async (filePath) => {
   );
 
   const sheets = [];
-  for (const sheet of asArray(workbook.workbook?.sheets?.sheet)) {
+  const workbookSheets = asArray(workbook.workbook?.sheets?.sheet);
+  if (workbookSheets.length > MAX_IMPORT_SHEETS) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_SHEETS} sheets.`, 400);
+  }
+
+  let totalRows = 0;
+  for (const sheet of workbookSheets) {
     const target = relMap[sheet.id];
     const worksheetFile = target ? zip.file(target) : null;
     if (!worksheetFile) continue;
+    const worksheetBuffer = await worksheetFile.async('uint8array');
+    if (worksheetBuffer.byteLength > MAX_XLSX_XML_BYTES) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, 'Worksheet XML is too large to import safely.', 400);
+    }
+    const rows = parseSheetRows(Buffer.from(worksheetBuffer).toString('utf8'), sharedStrings);
+    totalRows += rows.length;
+    if (totalRows > MAX_IMPORT_ROWS) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_ROWS} rows.`, 400);
+    }
     sheets.push({
       name: sheet.name,
-      rows: parseSheetRows(await worksheetFile.async('text'), sharedStrings),
+      rows,
     });
   }
 
@@ -116,7 +150,17 @@ export const readCsvWorkbook = async (filePath) => {
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line, index) => ({ rowNumber: index + 1, values: parseCsvLine(line) }));
+    .map((line, index) => {
+      const values = parseCsvLine(line);
+      if (values.length > MAX_IMPORT_COLUMNS) {
+        throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_COLUMNS} columns.`, 400);
+      }
+      return { rowNumber: index + 1, values };
+    });
+
+  if (rows.length > MAX_IMPORT_ROWS) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_ROWS} rows.`, 400);
+  }
 
   return {
     fileName: path.basename(filePath),
@@ -129,6 +173,5 @@ export const readDatasetWorkbook = async (filePath) => {
   if (extension === '.xlsx') return readXlsxWorkbook(filePath);
   if (extension === '.csv') return readCsvWorkbook(filePath);
   
-  const { AppError, errorCodes } = await import('../../utils/AppError.js');
   throw new AppError(errorCodes.VALIDATION_ERROR, `Unsupported dataset file extension: ${extension}`, 400);
 };

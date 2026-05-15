@@ -336,7 +336,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                   <p>Hi {detail.businessName},</p>
                   <p className="mt-3">
                     {!detail.websiteUrl
-                      ? `I noticed you don't have a website yet — but your ${detail.rating ? detail.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more local searches and convert more visitors into customers.`
+                      ? `I noticed you don't have a website yet — but your ${detail.rating ? detail.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more nearby searches and convert more visitors into customers.`
                       : `I came across your business on Google${detail.rating ? ` and noticed your impressive ${detail.rating}-star rating` : ''}. ${analysis.outreachAngle}`
                     }
                   </p>

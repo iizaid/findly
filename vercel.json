@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/dashboard/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/verify-email",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/auth",
+      "destination": "/index.html"
+    }
+  ]
+}

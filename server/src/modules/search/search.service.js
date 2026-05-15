@@ -214,16 +214,18 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
 
       totalCreditsUsed = calculateSearchCreditsUsed(savedLeadsCount);
 
-      await deductCredits({
-        tx,
-        userId,
-        workspaceId: campaign.workspaceId,
-        amount: totalCreditsUsed,
-        type: 'CREDIT_USED',
-        reason: `Ran search campaign: ${campaign.name}`,
-        referenceType: 'SearchCampaign',
-        referenceId: campaign.id,
-      });
+      if (totalCreditsUsed > 0) {
+        await deductCredits({
+          tx,
+          userId,
+          workspaceId: campaign.workspaceId,
+          amount: totalCreditsUsed,
+          type: 'CREDIT_USED',
+          reason: `Ran search campaign: ${campaign.name}`,
+          referenceType: 'SearchCampaign',
+          referenceId: campaign.id,
+        });
+      }
 
       await markCampaignCompleted({
         tx,
@@ -357,16 +359,18 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         });
       }
 
-      await deductCredits({
-        tx,
-        userId,
-        workspaceId: campaign.workspaceId,
-        amount: creditsUsed,
-        type: 'CREDIT_USED',
-        reason: `Ran search campaign: ${campaign.name}`,
-        referenceType: 'SearchCampaign',
-        referenceId: campaign.id,
-      });
+      if (creditsUsed > 0) {
+        await deductCredits({
+          tx,
+          userId,
+          workspaceId: campaign.workspaceId,
+          amount: creditsUsed,
+          type: 'CREDIT_USED',
+          reason: `Ran search campaign: ${campaign.name}`,
+          referenceType: 'SearchCampaign',
+          referenceId: campaign.id,
+        });
+      }
 
       await markCampaignCompleted({
         tx,
@@ -432,7 +436,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     };
   } catch (error) {
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
-    const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while searching available business intelligence.';
+    const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while searching available sources.';
 
     await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
     if (jobId) {
