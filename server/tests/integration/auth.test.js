@@ -278,8 +278,8 @@ describe('Findly auth, verification, and foundation API', () => {
     
     const { z } = await import('zod');
     
-    const parseBoolean = z.preprocess((val) => {
-      if (val === undefined || val === '') return undefined;
+    const createBooleanParser = (defaultValue) => z.preprocess((val) => {
+      if (val === undefined || val === '') return defaultValue;
       if (typeof val === 'boolean') return val;
       if (typeof val === 'string') {
         const lower = val.toLowerCase().trim();
@@ -291,7 +291,10 @@ describe('Findly auth, verification, and foundation API', () => {
         if (val === 0) return false;
       }
       return val;
-    }, z.boolean());
+    }, defaultValue === undefined ? z.boolean().optional() : z.boolean());
+
+    const parseBoolean = createBooleanParser(undefined);
+    const parseBooleanWithDefault = createBooleanParser(false);
 
     expect(parseBoolean.parse('true')).toBe(true);
     expect(parseBoolean.parse('false')).toBe(false);
@@ -300,8 +303,12 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(parseBoolean.parse(true)).toBe(true);
     expect(parseBoolean.parse(false)).toBe(false);
     expect(parseBoolean.safeParse('not-a-bool').success).toBe(false);
-    expect(parseBoolean.optional().parse('')).toBeUndefined();
-    expect(parseBoolean.optional().parse(undefined)).toBeUndefined();
+    expect(parseBoolean.parse('')).toBeUndefined();
+    expect(parseBoolean.parse(undefined)).toBeUndefined();
+    
+    expect(parseBooleanWithDefault.parse('')).toBe(false);
+    expect(parseBooleanWithDefault.parse(undefined)).toBe(false);
+    expect(parseBooleanWithDefault.parse('true')).toBe(true);
   });
 
   it('creates a long TTL session when remember=true and short TTL when remember=false', async () => {
