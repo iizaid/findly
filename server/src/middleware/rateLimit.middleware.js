@@ -97,6 +97,6 @@ export const aiProviderTestRateLimiter = makeRateLimit({
   name: 'ai-provider-test',
   windowMs: 10 * 60 * 1000,
   limit: 5,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => req.user?.id || 'guest',
   message: 'Too many AI provider tests. Please try again later.',
 });
