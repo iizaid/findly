@@ -10,6 +10,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import { getAssetUrl } from '../../lib/assets';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: BarChart3 },
@@ -26,7 +27,8 @@ const isActivePath = (currentPath, itemPath) => {
   return currentPath.startsWith(itemPath);
 };
 
-const DashboardSidebar = ({ user, workspace, currentPath, onNavigate, onLogout, onClose, drawer = false }) => {
+const DashboardSidebar = ({ user, workspace, credits, currentPath, onNavigate, onLogout, onClose, drawer = false }) => {
+  const planName = credits?.planId === 'PRO' ? 'Pro Plan' : 'Free Plan';
   const items = user?.role === 'ADMIN'
     ? [...navItems, { label: 'Admin', path: '/dashboard/admin', icon: ShieldCheck }]
     : navItems;
@@ -59,7 +61,7 @@ const DashboardSidebar = ({ user, workspace, currentPath, onNavigate, onLogout, 
       <div className="px-4 pb-2">
         <div className="flex items-center gap-3 rounded-[14px] bg-white/[0.06] p-3 backdrop-blur-md">
           {user?.avatarUrl ? (
-            <img src={`http://localhost:4000${user.avatarUrl}`} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner" />
+            <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner" />
           ) : (
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-white/20 to-white/5 shadow-inner">
               <span className="text-sm font-semibold text-white">{workspace?.name?.charAt(0)?.toUpperCase() || 'W'}</span>
@@ -67,7 +69,7 @@ const DashboardSidebar = ({ user, workspace, currentPath, onNavigate, onLogout, 
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-medium text-white">{workspace?.name || 'Workspace'}</p>
-            <p className="truncate text-[11px] text-white/50">Pro Plan</p>
+            <p className="truncate text-[11px] text-white/50">{planName}</p>
           </div>
         </div>
       </div>
@@ -111,7 +113,7 @@ const DashboardSidebar = ({ user, workspace, currentPath, onNavigate, onLogout, 
         >
           {user?.avatarUrl ? (
             <div className="relative h-9 w-9 shrink-0">
-              <img src={`http://localhost:4000${user.avatarUrl}`} alt="" className="h-full w-full rounded-full object-cover" />
+              <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-full w-full rounded-full object-cover" />
               <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
                 <LogOut size={14} className="text-white" />
               </div>

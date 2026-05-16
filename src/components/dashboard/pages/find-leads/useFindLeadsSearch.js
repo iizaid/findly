@@ -59,7 +59,7 @@ const pollCampaignStatus = async (campaignId, jobId = null) => {
   throw error;
 };
 
-export const useFindLeadsSearch = ({ workspace }) => {
+export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
   const [sourceOptions, setSourceOptions] = useState([]);
   const [searchOptions, setSearchOptions] = useState({
@@ -186,6 +186,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
       count: leadsReturned,
       platformsRequested: runData.platformsRequested || selectedSources,
     });
+    onUpdate?.();
   };
 
   const checkPendingSearchStatus = async () => {
@@ -203,9 +204,11 @@ export const useFindLeadsSearch = ({ workspace }) => {
       } else if (campaign.status === 'FAILED') {
         setPendingSearch(null);
         setError(campaign.errorMessage || 'Search could not be completed.');
+        onUpdate?.();
       } else if (campaign.status === 'CANCELLED') {
         setPendingSearch(null);
         setError('Search was cancelled. Any reserved credits were released.');
+        onUpdate?.();
       } else {
         setError('Search is still running. You can check again shortly or open Lead Lists.');
       }
@@ -226,6 +229,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
       await apiRequest(`/api/search/campaigns/${pendingSearch.campaignId}/cancel`, { method: 'POST' });
       setPendingSearch(null);
       setError('Search was cancelled. Any reserved credits were released.');
+      onUpdate?.();
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
@@ -317,6 +321,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
         });
       }
       setError(friendlyErrorMessage(err));
+      onUpdate?.();
     } finally {
       setIsSubmitting(false);
       setSearchStep(null);

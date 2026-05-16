@@ -65,7 +65,7 @@ const buildMessageDraft = (detail, analysis) => {
   ].join('\n');
 };
 
-const DashboardAnalysisPage = ({ onNavigate }) => {
+const DashboardAnalysisPage = ({ onNavigate, onUpdate }) => {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -101,7 +101,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
     setSelectedLead(leadId);
     try {
       const res = await apiRequest(`/api/search/leads/${leadId}`);
-      setDetail(res.data.lead);
+      setDetail(res.data.lead || null);
     } catch (err) {
       setError(err.message || 'Failed to load lead detail');
     } finally {

@@ -3,6 +3,7 @@ import { LogOut, User, Building2, Shield, WalletCards, Bell, Loader2, Trash2, Ey
 import DashboardCard from '../DashboardCard';
 import AvatarCropperModal from '../AvatarCropperModal';
 import { apiRequest } from '../../../lib/api';
+import { getAssetUrl } from '../../../lib/assets';
 
 const TABS = [
   { id: 'general', label: 'General', icon: User },
@@ -330,7 +331,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
               <div className="flex items-center gap-5">
                 {user?.avatarUrl ? (
                   <img 
-                    src={assetUrl(user.avatarUrl)} 
+                    src={getAssetUrl(user.avatarUrl)} 
                     alt={user.name} 
                     className="flex h-20 w-20 items-center justify-center rounded-[24px] object-cover bg-black/5"
                   />
@@ -483,7 +484,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                         <td className="py-4">
                           <div className="flex items-center gap-3">
                             {user?.avatarUrl && member.isYou ? (
-                              <img src={assetUrl(user.avatarUrl)} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                              <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-10 w-10 rounded-xl object-cover" />
                             ) : (
                               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent font-black text-black">
                                 {member.name.charAt(0).toUpperCase()}

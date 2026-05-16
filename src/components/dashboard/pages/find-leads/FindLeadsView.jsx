@@ -8,8 +8,8 @@ import SearchResultSummary from './SearchResultSummary';
 import SearchSelect from './SearchSelect';
 import SearchSidePanel from './SearchSidePanel';
 
-const FindLeadsView = ({ workspace, onNavigate }) => {
-  const search = useFindLeadsSearch({ workspace });
+const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
+  const search = useFindLeadsSearch({ workspace, onUpdate });
   const locationOptions = search.searchOptions.governorates?.length
     ? search.searchOptions.governorates
     : search.searchOptions.cities;

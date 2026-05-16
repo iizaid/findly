@@ -49,7 +49,7 @@ const platformLabel = {
 const listPlatformLabel = (list) => list?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
   || 'Available Signals';
 
-const DashboardLeadListsPage = ({ onNavigate }) => {
+const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [leads, setLeads] = useState([]);
   const [savedLists, setSavedLists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -221,6 +221,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       }
       if (res?.data?.analysis) {
         setLeads((prev) => prev.map((l) => getTargetId(l) === targetId ? { ...l, analyses: [res.data.analysis] } : l));
+        onUpdate?.();
       }
     } catch (err) {
       setError(err.message);
@@ -238,6 +239,7 @@ const DashboardLeadListsPage = ({ onNavigate }) => {
       if (res?.data?.analyzedCount > 0) {
         const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
         setLeads(refRes.data.leads || []);
+        onUpdate?.();
       }
     } catch (err) {
       setError(err.message);

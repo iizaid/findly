@@ -177,11 +177,11 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
 
   const pages = {
     '/dashboard': <DashboardHome user={user} workspace={workspace} credits={credits} onNavigate={onNavigate} />,
-    '/dashboard/find-leads': <DashboardFindLeadsPage workspace={workspace} onNavigate={onNavigate} onNotice={onNotice} />,
-    '/dashboard/lead-lists': <DashboardLeadListsPage onNavigate={onNavigate} />,
+    '/dashboard/find-leads': <DashboardFindLeadsPage workspace={workspace} onNavigate={onNavigate} onNotice={onNotice} onUpdate={refreshDashboard} />,
+    '/dashboard/lead-lists': <DashboardLeadListsPage onNavigate={onNavigate} onUpdate={refreshDashboard} />,
     '/dashboard/map': <DashboardMapPage onNavigate={onNavigate} />,
-    '/dashboard/analysis': <DashboardAnalysisPage onNavigate={onNavigate} onNotice={onNotice} />,
-    '/dashboard/credits': <DashboardCreditsPage credits={credits} />,
+    '/dashboard/analysis': <DashboardAnalysisPage onNavigate={onNavigate} onNotice={onNotice} onUpdate={refreshDashboard} />,
+    '/dashboard/credits': <DashboardCreditsPage credits={credits} onUpdate={refreshDashboard} />,
     '/dashboard/admin': <DashboardAdminPage user={user} onNavigate={onNavigate} />,
     '/dashboard/settings': (
       <DashboardSettingsPage
