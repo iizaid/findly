@@ -65,7 +65,7 @@ const buildMessageDraft = (detail, analysis) => {
   ].join('\n');
 };
 
-const DashboardAnalysisPage = ({ onNavigate, onUpdate }) => {
+const DashboardAnalysisPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [detail, setDetail] = useState(null);

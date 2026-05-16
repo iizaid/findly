@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { WalletCards, TrendingDown, TrendingUp, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { WalletCards, TrendingDown, TrendingUp, Sparkles, AlertCircle } from 'lucide-react';
 import { apiRequest, ApiError } from '../../../lib/api';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';

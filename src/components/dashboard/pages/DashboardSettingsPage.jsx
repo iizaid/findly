@@ -13,13 +13,7 @@ const TABS = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || '';
 
-const assetUrl = (path) => {
-  if (!path) return '';
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${API_BASE_URL}${path}`;
-};
 
 const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, onNavigate, onNotice }) => {
   const [activeTab, setActiveTab] = useState('general');
