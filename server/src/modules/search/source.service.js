@@ -41,11 +41,13 @@ const sanitizeSourceForUserResponse = (source, { fallbackAvailable = false } = {
     key: source.key,
     label: source.label,
     group: source.group,
-    status: canSearch ? 'ready' : later ? 'later' : 'later',
+    status: canSearch ? (source.available ? 'ready' : 'index_ready') : 'later',
     available: canSearch,
     searchable: canSearch,
     comingSoon: later,
-    reason: canSearch ? 'Ready to search online business sources.' : 'This source will be available later.',
+    reason: canSearch 
+      ? (source.available ? 'Ready to search online business sources.' : 'Available from Findly’s current business intelligence index.') 
+      : 'This source will be available later.',
   };
 };
 
@@ -80,7 +82,7 @@ export const getSourceStatusesWithRuntime = async () => {
         ...source,
         fallbackAvailable,
         reason: fallbackAvailable
-          ? 'Available business intelligence can be used for this platform.'
+          ? 'Available from Findly’s current business intelligence index.'
           : source.reason,
       };
     }

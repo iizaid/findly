@@ -22,7 +22,7 @@ const workflowSteps = [
 ];
 
 const sourceStatusIcon = (status) => {
-  if (status === 'ready' || status === 'available') return '🟢';
+  if (status === 'ready' || status === 'available' || status === 'index_ready') return '🟢';
   if (status === 'not_configured') return '🟡';
   if (status === 'unavailable' || status === 'error') return '🔴';
   return '⬜';
@@ -168,7 +168,7 @@ const DashboardHome = ({ onNavigate }) => {
             </div>
             <h2 className="mt-6 text-3xl font-bold tracking-tighter md:text-4xl">Start discovering opportunities.</h2>
             <p className="mx-auto mt-4 max-w-md text-sm font-semibold leading-7 text-secondary">
-              Create your first search campaign to start building your opportunity database. Findly will collect, analyze, and score leads automatically.
+              Create your first search campaign to start building your opportunity database. Findly will collect matching leads first, then you can analyze and score the best opportunities from Lead Lists.
             </p>
             <button
               type="button"

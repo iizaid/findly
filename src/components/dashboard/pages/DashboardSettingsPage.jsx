@@ -734,7 +734,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
               <div className="grid gap-4 sm:grid-cols-2 mb-6">
                 <div className="rounded-[22px] border border-black/[0.08] bg-[#F7F8F6] p-6">
                   <p className="text-xs font-bold uppercase tracking-wider text-secondary">Current Plan</p>
-                  <p className="mt-2 text-2xl font-bold tracking-tight text-black">{user?.plan || 'FREE'}</p>
+                  <p className="mt-2 text-2xl font-bold tracking-tight text-black">{user?.plan === 'PRO' ? 'Pro Plan' : 'Free Plan'}</p>
                   <p className="mt-1 text-sm font-semibold text-secondary">Billing coming later.</p>
                 </div>
                 <div className="rounded-[22px] border border-accent/30 bg-accent/5 p-6">

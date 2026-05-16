@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LayoutDashboard, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
+import { getAssetUrl } from '../lib/assets';
 
 const navItems = [
   { label: 'Film', target: 'product-film' },
@@ -125,7 +126,7 @@ const Navbar = ({ ready = false, currentUser, onAuthOpen, onNavigate, onLogout }
             <>
               {currentUser.avatarUrl && (
                 <div className="hidden md:flex h-9 w-9 overflow-hidden rounded-full border border-black/10">
-                  <img src={`http://localhost:4000${currentUser.avatarUrl}`} alt="" className="h-full w-full object-cover" />
+                  <img src={getAssetUrl(currentUser.avatarUrl)} alt="" className="h-full w-full object-cover" />
                 </div>
               )}
               <button
@@ -133,7 +134,6 @@ const Navbar = ({ ready = false, currentUser, onAuthOpen, onNavigate, onLogout }
                 onClick={handleDashboardClick}
                 className="hidden items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-bold text-black transition-colors duration-300 hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:inline-flex"
               >
-                <LayoutDashboard size={15} />
                 {currentUser.emailVerified ? 'Dashboard' : 'Verify email'}
               </button>
               <button

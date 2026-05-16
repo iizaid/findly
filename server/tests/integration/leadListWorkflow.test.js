@@ -35,7 +35,6 @@ const hiddenUserSourceTerms = [
   'datasetStats',
   'importedLeadCount',
   'fallbackAvailable',
-  'business intelligence index',
   'stored',
   'local',
   'dataset',

@@ -32,7 +32,7 @@ beforeAll(async () => {
   agent = request.agent(app);
 
   // Login as admin
-  await prisma.user.delete({ where: { email: adminEmail } }).catch(() => {});
+  await prisma.user.deleteMany({ where: { email: adminEmail } }).catch(() => {});
   
   await agent.post('/api/auth/register').send({
     name: 'Admin Mapping Test',

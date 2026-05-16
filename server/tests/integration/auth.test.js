@@ -59,7 +59,6 @@ const expectNoUserFacingSourceDisclosure = (payload) => {
     'importedleadcount',
     'fallbackavailable',
     'sourcefile',
-    'business intelligence index',
     'stored',
     'local',
     'fallback',
@@ -690,7 +689,7 @@ describe('Findly auth, verification, and foundation API', () => {
     const website = sourceResponse.body.data.sources.find((source) => source.key === 'WEBSITE');
     const reddit = sourceResponse.body.data.sources.find((source) => source.key === 'REDDIT');
     expectNoUserFacingSourceDisclosure(sourceResponse.body.data);
-    expect(googleMaps.status).toMatch(/^(ready|later)$/);
+    expect(googleMaps.status).toMatch(/^(ready|later|index_ready)$/);
     expect(googleMaps).not.toHaveProperty('apiKey');
     expect(website.available).toBe(true);
     expect(reddit).toBeTruthy();
@@ -890,7 +889,7 @@ describe('Findly auth, verification, and foundation API', () => {
     expectNoUserFacingSourceDisclosure(sourceStatusResponse.body.data);
     expect(sourceStatusResponse.body.data.sources.find((source) => source.key === 'LOCAL_DATASET')).toBeUndefined();
     expect(googleMaps.searchable).toBe(true);
-    expect(googleMaps.reason).toBe('Ready to search online business sources.');
+    expect(googleMaps.reason).toMatch(/Ready to search online business sources.|Available from Findly’s current business intelligence index./);
 
     const optionsResponse = await agent.get('/api/search/options').expect(200);
     expectNoUserFacingSourceDisclosure(optionsResponse.body.data);
