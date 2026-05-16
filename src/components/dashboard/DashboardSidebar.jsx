@@ -29,7 +29,7 @@ const isActivePath = (currentPath, itemPath) => {
 
 const DashboardSidebar = ({ user, workspace, credits, currentPath, onNavigate, onLogout, onClose, drawer = false }) => {
   const planName = credits?.plan === 'PRO' ? 'Pro Plan' : 'Free Plan';
-  const items = user?.role === 'ADMIN'
+  const items = (user?.role === 'ADMIN' || user?.role === 'ROOT')
     ? [...navItems, { label: 'Admin', path: '/dashboard/admin', icon: ShieldCheck }]
     : navItems;
 

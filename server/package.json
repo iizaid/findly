@@ -16,6 +16,7 @@
     "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
     "admin:promote": "node scripts/promote-admin.js",
     "admin:topup-credits": "node scripts/adminTopupCredits.js",
+    "admin:bootstrap-root": "node scripts/bootstrapRootUser.js",
     "load:smoke": "node load-tests/smoke.js",
     "load:search": "node load-tests/search-queue.js",
     "load:read-path": "node load-tests/queue-metrics.js"

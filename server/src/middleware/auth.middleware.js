@@ -3,6 +3,7 @@ import { prisma } from '../db/prisma.js';
 import { getActiveSessionByToken } from '../modules/sessions/session.service.js';
 import { toSafeUser } from '../modules/users/user.mapper.js';
 import { AppError, errorCodes } from '../utils/AppError.js';
+import { canAccessAdmin, canAccessModeratorAdmin, isRootRole } from '../modules/auth/roles.js';
 
 export const requireAuth = async (req, _res, next) => {
   try {
@@ -55,9 +56,12 @@ export const requireVerifiedEmail = async (req, _res, next) => {
   }
 };
 
+/**
+ * Requires ROOT or ADMIN role.
+ */
 export const requireAdmin = async (req, _res, next) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
+    if (!canAccessAdmin(req.user?.role)) {
       await prisma.auditLog.create({
         data: {
           userId: req.user?.id,
@@ -70,6 +74,60 @@ export const requireAdmin = async (req, _res, next) => {
       }).catch(() => {});
 
       throw new AppError(errorCodes.FORBIDDEN, 'Admin access required.', 403);
+    }
+
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Requires ROOT, ADMIN, or MODERATOR role.
+ */
+export const requireModeratorOrAdmin = async (req, _res, next) => {
+  try {
+    if (!canAccessModeratorAdmin(req.user?.role)) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user?.id,
+          action: 'ADMIN_ACCESS_DENIED',
+          entityType: 'User',
+          entityId: req.user?.id,
+          metadata: { requiredLevel: 'MODERATOR', actualRole: req.user?.role || null },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') || null,
+        },
+      }).catch(() => {});
+
+      throw new AppError(errorCodes.FORBIDDEN, 'Admin access required.', 403);
+    }
+
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Requires ROOT role only.
+ */
+export const requireRoot = async (req, _res, next) => {
+  try {
+    if (!isRootRole(req.user?.role)) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user?.id,
+          action: 'ROOT_ACCESS_DENIED',
+          entityType: 'User',
+          entityId: req.user?.id,
+          metadata: { actualRole: req.user?.role || null },
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') || null,
+        },
+      }).catch(() => {});
+
+      throw new AppError(errorCodes.FORBIDDEN, 'Root access required.', 403);
     }
 
     return next();

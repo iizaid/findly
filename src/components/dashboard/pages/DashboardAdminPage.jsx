@@ -98,6 +98,8 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
 
   useEffect(() => {
     let active = true;
+    let intervalId = null;
+
     const run = async () => {
       try {
         const data = await fetchAdminData();
@@ -109,15 +111,37 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
         });
       }
     };
+
     run();
-    return () => { active = false; };
-  }, [fetchAdminData]);
+
+    // Live polling every 15 seconds, pause when tab hidden
+    const startPolling = () => {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(() => {
+        if (document.visibilityState === 'visible' && active) loadData(true);
+      }, 15000);
+    };
+
+    startPolling();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && active) loadData(true);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchAdminData, loadData]);
 
   // Close detail panel when switching tabs
   useEffect(() => { closeDetail(); }, [activeTab, closeDetail]);
 
   /* ---- guards ---- */
-  if (user?.role !== 'ADMIN' || state.status === 'denied') {
+  const isAdminOrRoot = user?.role === 'ADMIN' || user?.role === 'ROOT';
+  if (!isAdminOrRoot || state.status === 'denied') {
     return (
       <DashboardCard className="p-10">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white">
@@ -182,7 +206,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
       case 'manual':
         return <AdminManualEntryPanel onSuccess={() => loadData(true)} />;
       case 'users':
-        return <AdminUsersPanel users={users} onSelect={(r) => openDetail(r, 'user')} />;
+        return <AdminUsersPanel users={users} currentUser={user} onSelect={(r) => openDetail(r, 'user')} onRefresh={() => loadData(true)} />;
       case 'campaigns':
         return <AdminCampaignsPanel campaigns={campaigns} onSelect={(r) => openDetail(r, 'campaign')} />;
       case 'imports':
@@ -213,14 +237,17 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
               <ShieldCheck size={18} strokeWidth={2.5} />
             </div>
             <div className="flex flex-col mr-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">Admin</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">{user?.role === 'ROOT' ? 'Root' : 'Admin'}</span>
               {user?.email && (
                 <span className="text-[13px] font-bold text-black leading-none">{user.email}</span>
               )}
             </div>
             <div className="w-px h-8 bg-black/[0.06] mx-1" />
             <div className="flex flex-col items-end mr-1">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">Status</span>
+              <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-secondary leading-none mb-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
               {lastRefreshed && (
                 <span className="text-[12px] font-bold text-black leading-none whitespace-nowrap">
                   {relTime(lastRefreshed)}

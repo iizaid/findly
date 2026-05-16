@@ -4,6 +4,8 @@ import { successResponse } from '../../utils/apiResponse.js';
 import { toPagination } from '../../utils/pagination.js';
 import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
 import { getSearchQueueMetrics } from '../jobs/jobQueue.service.js';
+import { canManageRole, formatRole } from '../auth/roles.js';
+import { AppError, errorCodes } from '../../utils/AppError.js';
 
 const securityActions = [
   'FAILED_LOGIN',
@@ -91,15 +93,23 @@ export const getQueueMetrics = asyncHandler(async (_req, res) => {
 
 export const getAdminUsers = asyncHandler(async (req, res) => {
   const pagination = toPagination(req.validated.query);
-  const search = req.validated.query.search;
-  const where = search
-    ? {
+  const { search, role } = req.validated.query;
+  const and = [];
+
+  if (search) {
+    and.push({
       OR: [
         { email: { contains: search, mode: 'insensitive' } },
         { name: { contains: search, mode: 'insensitive' } },
       ],
-    }
-    : {};
+    });
+  }
+
+  if (role) {
+    and.push({ role });
+  }
+
+  const where = and.length ? { AND: and } : {};
 
   const [users, total] = await prisma.$transaction([
     prisma.user.findMany({
@@ -679,4 +689,103 @@ export const getActivityLogs = asyncHandler(async (req, res) => {
     activity: paginated,
     pagination: { page, limit, total }
   }, 'Activity logs loaded.');
+});
+
+/* ================================================================ */
+/*  ROOT-ONLY: Role Management                                      */
+/* ================================================================ */
+
+export const getAdminUserDetail = asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: safeUserSelect,
+  });
+
+  if (!user) {
+    throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
+  }
+
+  const { sessions, ...safeUser } = user;
+  safeUser.lastLoginAt = sessions?.[0]?.createdAt || null;
+
+  return successResponse(res, { user: safeUser }, 'User detail loaded.');
+});
+
+export const changeUserRole = asyncHandler(async (req, res) => {
+  const { role: nextRole, reason, confirmEmail } = req.validated.body;
+  const targetId = req.params.id;
+
+  // 1. Load target user
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) {
+    throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
+  }
+
+  // 2. Confirm email must match
+  if (confirmEmail !== target.email) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Confirm email does not match the target user.', 400);
+  }
+
+  // 3. Check if target is last ROOT
+  let isLastRoot = false;
+  if (target.role === 'ROOT') {
+    const rootCount = await prisma.user.count({ where: { role: 'ROOT' } });
+    isLastRoot = rootCount <= 1;
+  }
+
+  // 4. Validate permission
+  const check = canManageRole({
+    actorRole: req.user.role,
+    targetRole: target.role,
+    nextRole,
+    isLastRoot,
+    sameUser: req.user.id === target.id,
+  });
+
+  if (!check.allowed) {
+    throw new AppError(errorCodes.FORBIDDEN, check.reason, 403);
+  }
+
+  // 5. Apply change
+  const previousRole = target.role;
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id: targetId },
+      data: { role: nextRole },
+      select: safeUserSelect,
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ADMIN_ROLE_CHANGED',
+        entityType: 'User',
+        entityId: targetId,
+        metadata: {
+          actorId: req.user.id,
+          actorEmail: req.user.email,
+          targetUserId: targetId,
+          targetEmail: target.email,
+          previousRole,
+          nextRole,
+          reason,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || null,
+      },
+    });
+
+    return u;
+  });
+
+  const { sessions, ...safeUser } = updated;
+  safeUser.lastLoginAt = sessions?.[0]?.createdAt || null;
+
+  return successResponse(res, {
+    user: safeUser,
+    change: {
+      from: formatRole(previousRole),
+      to: formatRole(nextRole),
+    },
+  }, `Role changed from ${formatRole(previousRole)} to ${formatRole(nextRole)}.`);
 });

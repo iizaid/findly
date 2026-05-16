@@ -9,7 +9,9 @@ datasource db {
 
 enum UserRole {
   USER
+  MODERATOR
   ADMIN
+  ROOT
 }
 
 enum Plan {

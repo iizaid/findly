@@ -28,23 +28,30 @@ const main = async () => {
       process.exit(1);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    const user = await prisma.user.findUnique({ where: { email } });
 
     if (!user) {
       console.error(`Error: User with email ${email} not found.`);
       process.exit(1);
     }
 
+    // Only set plan to PRO if explicitly requested via env flag.
+    const setPlanPro = process.env.ADMIN_TOPUP_SET_PLAN_PRO === 'true';
+
+    const updateData = {
+      creditsBalance: { increment: amount },
+    };
+
+    if (setPlanPro) {
+      updateData.plan = 'PRO';
+    }
+
+    // Never change role from this script.
+
     const updatedUser = await prisma.$transaction(async (tx) => {
       const u = await tx.user.update({
         where: { id: user.id },
-        data: {
-          role: 'ADMIN',
-          plan: 'PRO',
-          creditsBalance: { increment: amount },
-        },
+        data: updateData,
       });
 
       await tx.creditLedger.create({
@@ -62,13 +69,15 @@ const main = async () => {
       return u;
     });
 
-    console.log(`Successfully topped up admin test account.`);
-    console.log(`User: ${email}`);
-    console.log(`Role: ${updatedUser.role}`);
-    console.log(`Plan: ${updatedUser.plan}`);
-    console.log(`Credits Added: ${amount}`);
-    console.log(`New Balance: ${updatedUser.creditsBalance}`);
-    
+    console.log('');
+    console.log('=== Admin Credit Top-Up Complete ===');
+    console.log(`User:            ${email}`);
+    console.log(`Role:            ${updatedUser.role} (unchanged)`);
+    console.log(`Plan:            ${updatedUser.plan}${setPlanPro ? ' (set to PRO)' : ' (unchanged)'}`);
+    console.log(`Credits Added:   ${amount}`);
+    console.log(`New Balance:     ${updatedUser.creditsBalance}`);
+    console.log('');
+
   } catch (error) {
     console.error('Error running admin topup:', error);
   } finally {

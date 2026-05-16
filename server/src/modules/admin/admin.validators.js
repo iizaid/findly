@@ -121,3 +121,18 @@ export const adminActivityQuerySchema = z.object({
     to: z.string().datetime().optional(),
   }),
 });
+
+export const adminUsersQuerySchema = z.object({
+  query: paginationQuerySchema.extend({
+    search: z.string().trim().max(120).optional(),
+    role: z.enum(['USER', 'MODERATOR', 'ADMIN', 'ROOT']).optional(),
+  }),
+});
+
+export const adminChangeRoleSchema = z.object({
+  body: z.object({
+    role: z.enum(['USER', 'MODERATOR', 'ADMIN'], { message: 'Role must be USER, MODERATOR, or ADMIN.' }),
+    reason: z.string().min(8, 'Reason must be at least 8 characters.').max(500),
+    confirmEmail: z.string().email('Must be a valid email address.'),
+  }),
+});
