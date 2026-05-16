@@ -58,6 +58,8 @@ const envSchema = z.object({
   AI_LOG_PROMPTS: createBooleanParser(false),
   AI_LOG_RESPONSES: createBooleanParser(false),
   AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION: createBooleanParser(false),
+  AI_SECRETS_MASTER_KEY: z.string().optional(),
+  AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED: createBooleanParser(false),
   AI_DEFAULT_PROVIDER: z.string().optional(),
   AI_DEFAULT_MODEL: z.string().optional(),
   AI_DEFAULT_TASK_PROVIDER: z.string().default('gemini'),
@@ -69,21 +71,21 @@ const envSchema = z.object({
   AI_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_DEFAULT_MODEL: z.string().optional(),
-  OPENAI_BASE_URL: z.string().url().optional(),
+  OPENAI_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_DEFAULT_MODEL: z.string().optional(),
-  ANTHROPIC_BASE_URL: z.string().url().optional(),
+  ANTHROPIC_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_DEFAULT_MODEL: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_DEFAULT_MODEL: z.string().optional(),
-  DEEPSEEK_BASE_URL: z.string().url().optional(),
+  DEEPSEEK_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   KIMI_API_KEY: z.string().optional(),
   KIMI_DEFAULT_MODEL: z.string().optional(),
-  KIMI_BASE_URL: z.string().url().optional(),
+  KIMI_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   QWEN_API_KEY: z.string().optional(),
   QWEN_DEFAULT_MODEL: z.string().optional(),
-  QWEN_BASE_URL: z.string().url().optional(),
+  QWEN_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   REDDIT_CLIENT_ID: z.string().optional(),
   REDDIT_CLIENT_SECRET: z.string().optional(),
   REDDIT_USER_AGENT: z.string().optional(),
@@ -180,15 +182,22 @@ const envSchema = z.object({
       || value.KIMI_API_KEY
       || value.QWEN_API_KEY,
   );
+  const hasDashboardSecretVault = Boolean(value.AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED && value.AI_SECRETS_MASTER_KEY);
   const analysisChain = (value.AI_ANALYSIS_PROVIDER_CHAIN || '').split(',').map((item) => item.trim().toLowerCase());
-  if (value.NODE_ENV === 'production' && value.AI_ENABLED && !hasAiProviderKey) {
+  if (value.NODE_ENV === 'production' && value.AI_ENABLED && !hasAiProviderKey && !hasDashboardSecretVault) {
     ctx.addIssue({
       code: 'custom',
       path: ['AI_ENABLED'],
       message: 'AI_ENABLED cannot be true in production without at least one configured AI provider key.',
     });
   }
-  if (value.NODE_ENV === 'production' && value.AI_ANALYSIS_ENABLED && !hasAiProviderKey && !analysisChain.includes('rule_based')) {
+  if (
+    value.NODE_ENV === 'production'
+    && value.AI_ANALYSIS_ENABLED
+    && !hasAiProviderKey
+    && !hasDashboardSecretVault
+    && !analysisChain.includes('rule_based')
+  ) {
     ctx.addIssue({
       code: 'custom',
       path: ['AI_ANALYSIS_PROVIDER_CHAIN'],

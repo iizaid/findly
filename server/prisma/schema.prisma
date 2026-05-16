@@ -266,6 +266,26 @@ model BackendErrorLog {
   @@index([createdAt])
 }
 
+model AiProviderSecret {
+  id             String   @id @default(cuid())
+  provider       String   @unique
+  encryptedKey   String
+  keyFingerprint String
+  model          String?
+  baseUrl        String?
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdById    String?
+  updatedById    String?
+  lastTestedAt   DateTime?
+  lastStatus     String?
+  lastErrorType  String?
+
+  @@index([status])
+  @@index([updatedAt])
+}
+
 model CreditLedger {
   id            String           @id @default(cuid())
   userId        String

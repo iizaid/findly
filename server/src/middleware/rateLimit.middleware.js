@@ -32,10 +32,11 @@ const auditRateLimit = (req, limitName) => {
   }).catch(() => {});
 };
 
-const makeRateLimit = ({ windowMs, limit, message, name }) =>
+const makeRateLimit = ({ windowMs, limit, message, name, keyGenerator }) =>
   rateLimit({
     windowMs,
     limit,
+    keyGenerator,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (req, res) => {
@@ -90,4 +91,12 @@ export const analysisRateLimiter = makeRateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   limit: env.ANALYSIS_RATE_LIMIT_MAX,
   message: 'Too many analysis requests. Please try again later.',
+});
+
+export const aiProviderTestRateLimiter = makeRateLimit({
+  name: 'ai-provider-test',
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  message: 'Too many AI provider tests. Please try again later.',
 });

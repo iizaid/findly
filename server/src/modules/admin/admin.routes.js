@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin, requireAuth, requireRoot, requireVerifiedEmail } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
+import { aiProviderTestRateLimiter } from '../../middleware/rateLimit.middleware.js';
 import * as ctrl from './admin.controller.js';
 import * as v from './admin.validators.js';
 
@@ -15,6 +16,10 @@ adminRouter.get('/summary', ctrl.getAdminSummary);
 adminRouter.get('/users', validate(v.adminUsersQuerySchema), ctrl.getAdminUsers);
 adminRouter.get('/users/:id', ctrl.getAdminUserDetail);
 adminRouter.post('/users/:id/credits/grant', requireRoot, validate(v.adminGrantCreditsSchema), ctrl.grantUserCredits);
+adminRouter.get('/ai/providers', requireRoot, ctrl.getAdminAiProviders);
+adminRouter.put('/ai/providers/:provider/secret', requireRoot, validate(v.adminAiProviderSecretUpsertSchema), ctrl.updateAdminAiProviderSecret);
+adminRouter.delete('/ai/providers/:provider/secret', requireRoot, validate(v.adminAiProviderSecretDeleteSchema), ctrl.deleteAdminAiProviderSecret);
+adminRouter.post('/ai/providers/:provider/test', requireRoot, aiProviderTestRateLimiter, validate(v.adminAiProviderTestSchema), ctrl.testAdminAiProviderSecret);
 adminRouter.get('/catalog/stats', ctrl.getCatalogStats);
 adminRouter.get('/catalog/leads', validate(v.adminCatalogLeadsQuerySchema), ctrl.getCatalogLeads);
 adminRouter.post('/catalog/leads', validate(v.adminCreateLeadSchema), ctrl.createCatalogLead);

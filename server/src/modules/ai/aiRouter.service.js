@@ -7,6 +7,7 @@ import { GeminiProvider } from './providers/geminiProvider.js';
 import { DeepseekProvider } from './providers/deepseekProvider.js';
 import { KimiProvider } from './providers/kimiProvider.js';
 import { QwenProvider } from './providers/qwenProvider.js';
+import { getDashboardProviderConfigOverrides, isAiSecretManagementConfigured } from './aiSecretsVault.service.js';
 
 const providerClasses = {
   [AI_PROVIDERS.OPENAI]: OpenAiProvider,
@@ -166,7 +167,10 @@ export const runAiTask = async ({
   providers = null,
   configOverrides = {},
 } = {}) => {
-  const config = getAiRuntimeConfig(configOverrides);
+  const dashboardOverrides = isAiSecretManagementConfigured()
+    ? await getDashboardProviderConfigOverrides()
+    : {};
+  const config = getAiRuntimeConfig({ ...configOverrides, ...dashboardOverrides });
   const route = config.taskRoutes[task];
   const attempts = [];
 

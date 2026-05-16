@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard, Radio, Database, Upload, PenLine, Users, Rocket,
   FolderInput, ShieldAlert, Bug, RefreshCw, ShieldCheck, AlertCircle,
+  KeyRound,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '../../../lib/api';
 import DashboardCard from '../DashboardCard';
@@ -16,6 +17,7 @@ import AdminErrorsPanel from '../admin/panels/AdminErrorsPanel';
 import AdminCatalogPanel from '../admin/panels/AdminCatalogPanel';
 import AdminLiveActivityPanel from '../admin/panels/AdminLiveActivityPanel';
 import AdminManualEntryPanel from '../admin/panels/AdminManualEntryPanel';
+import AdminAiProvidersPanel from '../admin/panels/AdminAiProvidersPanel';
 import AdminDetailPanel from '../admin/AdminDetailPanel';
 import BulkImportCenter from './BulkImportCenter';
 
@@ -35,6 +37,7 @@ const TABS = [
   { id: 'imports',     label: 'Imports',        icon: FolderInput },
   { id: 'security',    label: 'Security',       icon: ShieldAlert },
   { id: 'errors',      label: 'Errors',         icon: Bug },
+  { id: 'ai',          label: 'AI Providers',   icon: KeyRound, rootOnly: true },
 ];
 
 /* ============================================================== */
@@ -213,6 +216,8 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
         return <AdminSecurityPanel events={security} onSelect={(r) => openDetail(r, 'security')} />;
       case 'errors':
         return <AdminErrorsPanel errors={errors} onSelect={(r) => openDetail(r, 'error')} />;
+      case 'ai':
+        return <AdminAiProvidersPanel currentUser={user} />;
       default:
         return null;
     }
@@ -268,7 +273,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
       {/* ============ PILL NAVIGATION ============ */}
       <div className="rounded-[18px] border border-black/[0.04] bg-white px-2 py-1.5 shadow-sm overflow-x-auto scrollbar-none">
         <nav className="flex gap-0.5 min-w-max" role="tablist">
-          {TABS.map((tab) => {
+          {TABS.filter((tab) => !tab.rootOnly || user?.role === 'ROOT').map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             const count = counts[tab.id];

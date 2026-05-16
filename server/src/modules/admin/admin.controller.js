@@ -5,6 +5,13 @@ import { toPagination } from '../../utils/pagination.js';
 import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
 import { getSearchQueueMetrics } from '../jobs/jobQueue.service.js';
 import { getAiProviderStatuses } from '../ai/aiRouter.service.js';
+import {
+  deleteProviderSecret,
+  isAiSecretManagementConfigured,
+  listProviderSecretStatuses,
+  testProviderSecret,
+  upsertProviderSecret,
+} from '../ai/aiSecretsVault.service.js';
 import { canManageRole, formatRole } from '../auth/roles.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
@@ -90,6 +97,147 @@ export const getAdminSummary = asyncHandler(async (_req, res) => {
 export const getQueueMetrics = asyncHandler(async (_req, res) => {
   const metrics = await getSearchQueueMetrics();
   return successResponse(res, { queue: metrics }, 'Queue metrics loaded.');
+});
+
+const buildSafeAiProviderStatuses = async () => {
+  const base = getAiProviderStatuses();
+  const dashboardStatuses = await listProviderSecretStatuses();
+  const dashboardByProvider = new Map(dashboardStatuses.map((status) => [status.provider, status]));
+
+  return {
+    enabled: base.enabled,
+    secretManagementConfigured: isAiSecretManagementConfigured(),
+    defaultProvider: base.defaultProvider,
+    defaultModel: base.defaultModel,
+    leadAnalysis: base.leadAnalysis,
+    providers: base.providers.map((provider) => {
+      const dashboard = dashboardByProvider.get(provider.provider);
+      if (dashboard?.status === 'ACTIVE') {
+        return {
+          ...provider,
+          configured: true,
+          source: 'dashboard',
+          status: provider.status === 'degraded' ? 'degraded' : 'configured',
+          model: dashboard.model || provider.model,
+          baseUrlConfigured: dashboard.baseUrlConfigured || provider.baseUrlConfigured,
+          fingerprint: dashboard.fingerprint,
+          lastTestedAt: dashboard.lastTestedAt,
+          lastStatus: dashboard.lastStatus,
+          lastErrorType: dashboard.lastErrorType,
+        };
+      }
+
+      return {
+        ...provider,
+        source: provider.configured ? 'env' : 'missing',
+        fingerprint: null,
+        lastTestedAt: dashboard?.lastTestedAt || null,
+        lastStatus: dashboard?.lastStatus || null,
+        lastErrorType: dashboard?.lastErrorType || null,
+      };
+    }),
+  };
+};
+
+const assertConfirmProvider = (provider, confirmProvider) => {
+  if (provider !== confirmProvider) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Provider confirmation does not match.', 400);
+  }
+};
+
+export const getAdminAiProviders = asyncHandler(async (_req, res) => {
+  const status = await buildSafeAiProviderStatuses();
+  return successResponse(res, status, 'AI provider statuses loaded.');
+});
+
+export const updateAdminAiProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { apiKey, model, baseUrl, confirmProvider, reason } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+
+  const status = await upsertProviderSecret({
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    actorId: req.user.id,
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'AI_PROVIDER_SECRET_UPDATED',
+      entityType: 'AiProviderSecret',
+      entityId: provider,
+      metadata: {
+        actorId: req.user.id,
+        provider,
+        source: 'dashboard',
+        fingerprint: status.fingerprint,
+        reason,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { provider: status }, 'AI provider secret saved.');
+});
+
+export const deleteAdminAiProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { confirmProvider, reason } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+
+  const status = await deleteProviderSecret({ provider, actorId: req.user.id });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'AI_PROVIDER_SECRET_DELETED',
+      entityType: 'AiProviderSecret',
+      entityId: provider,
+      metadata: {
+        actorId: req.user.id,
+        provider,
+        source: 'dashboard',
+        fingerprint: status?.fingerprint || null,
+        reason,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { provider: status }, 'AI provider dashboard secret removed.');
+});
+
+export const testAdminAiProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { confirmProvider } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+
+  const result = await testProviderSecret({ provider, actorId: req.user.id });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'AI_PROVIDER_SECRET_TESTED',
+      entityType: 'AiProviderSecret',
+      entityId: provider,
+      metadata: {
+        actorId: req.user.id,
+        provider,
+        ok: result.ok,
+        model: result.model,
+        errorType: result.errorType,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { result }, 'AI provider test completed.');
 });
 
 export const getAdminUsers = asyncHandler(async (req, res) => {

@@ -145,3 +145,45 @@ export const adminGrantCreditsSchema = z.object({
     confirmEmail: z.string().email('Must be a valid email address.'),
   }),
 });
+
+const aiProviderSchema = z.enum(['gemini', 'openai', 'anthropic', 'deepseek', 'kimi', 'qwen']);
+
+export const adminAiProviderParamSchema = z.object({
+  params: z.object({
+    provider: aiProviderSchema,
+  }),
+});
+
+export const adminAiProviderSecretUpsertSchema = z.object({
+  params: z.object({
+    provider: aiProviderSchema,
+  }),
+  body: z.object({
+    apiKey: z.string().trim().min(8, 'API key is required.').max(4000),
+    model: z.string().trim().max(120).optional().nullable(),
+    baseUrl: z.union([z.literal(''), z.string().url('Base URL must be valid.')]).optional().nullable(),
+    confirmProvider: aiProviderSchema,
+    reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
+  }).superRefine((data, ctx) => {
+    if (data.confirmProvider !== ctx.path?.provider) return;
+  }),
+});
+
+export const adminAiProviderSecretDeleteSchema = z.object({
+  params: z.object({
+    provider: aiProviderSchema,
+  }),
+  body: z.object({
+    confirmProvider: aiProviderSchema,
+    reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
+  }),
+});
+
+export const adminAiProviderTestSchema = z.object({
+  params: z.object({
+    provider: aiProviderSchema,
+  }),
+  body: z.object({
+    confirmProvider: aiProviderSchema,
+  }),
+});
