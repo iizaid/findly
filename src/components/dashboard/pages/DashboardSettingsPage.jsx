@@ -12,7 +12,13 @@ const TABS = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || '';
+
+const assetUrl = (path) => {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE_URL}${path}`;
+};
 
 const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, onNavigate, onNotice }) => {
   const [activeTab, setActiveTab] = useState('general');
@@ -324,7 +330,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
               <div className="flex items-center gap-5">
                 {user?.avatarUrl ? (
                   <img 
-                    src={`${API_BASE_URL}${user.avatarUrl}`} 
+                    src={assetUrl(user.avatarUrl)} 
                     alt={user.name} 
                     className="flex h-20 w-20 items-center justify-center rounded-[24px] object-cover bg-black/5"
                   />
@@ -336,7 +342,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                 <div>
                   <input 
                     type="file" 
-                    accept="image/png, image/jpeg" 
+                    accept="image/png, image/jpeg, image/webp" 
                     ref={fileInputRef} 
                     onChange={handleAvatarChange} 
                     className="hidden" 
@@ -477,7 +483,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                         <td className="py-4">
                           <div className="flex items-center gap-3">
                             {user?.avatarUrl && member.isYou ? (
-                              <img src={`${API_BASE_URL}${user.avatarUrl}`} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                              <img src={assetUrl(user.avatarUrl)} alt="" className="h-10 w-10 rounded-xl object-cover" />
                             ) : (
                               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent font-black text-black">
                                 {member.name.charAt(0).toUpperCase()}
