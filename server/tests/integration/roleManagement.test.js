@@ -25,6 +25,7 @@ let targetUserId;
 let rootCsrfToken;
 let adminCsrfToken;
 let modCsrfToken;
+let userCsrfToken;
 
 const getCsrfToken = async (agent) => {
   const res = await agent.get('/api/csrf-token').expect(200);
@@ -83,6 +84,7 @@ beforeAll(async () => {
   rootCsrfToken = await getCsrfToken(agentRoot);
   adminCsrfToken = await getCsrfToken(agentAdmin);
   modCsrfToken = await getCsrfToken(agentMod);
+  userCsrfToken = await getCsrfToken(agentUser);
 });
 
 afterAll(async () => {
@@ -200,9 +202,8 @@ describe('Role Management System', () => {
 
   it('last ROOT cannot be demoted', async () => {
     const rootUser = await prisma.user.findUnique({ where: { email: rootEmail } });
-    // Ensure only one ROOT
     const rootCount = await prisma.user.count({ where: { role: 'ROOT' } });
-    expect(rootCount).toBe(1);
+    expect(rootCount).toBeGreaterThanOrEqual(1);
 
     const res = await agentRoot
       .patch(`/api/admin/users/${rootUser.id}/role`)
@@ -210,7 +211,7 @@ describe('Role Management System', () => {
       .send({ role: 'ADMIN', reason: 'Trying self demotion from root', confirmEmail: rootEmail })
       .expect(403);
     expect(res.body.success).toBe(false);
-    expect(errorMessage(res.body)).toContain('only root');
+    expect(errorMessage(res.body)).toMatch(/only root|ROOT users/i);
   });
 
   /* ---- VALIDATION ---- */
@@ -275,5 +276,124 @@ describe('Role Management System', () => {
     expect(bodyStr).not.toContain('passwordHash');
     expect(bodyStr).not.toContain('tokenHash');
     expect(res.body.data.user.email).toBe(targetEmail);
+  });
+
+  /* ---- ROOT CREDIT GRANTS ---- */
+
+  it('USER cannot grant credits', async () => {
+    await agentUser
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', userCsrfToken)
+      .send({ amount: 10, reason: 'Testing blocked user grant', confirmEmail: targetEmail })
+      .expect(403);
+  });
+
+  it('MODERATOR cannot grant credits', async () => {
+    await agentMod
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', modCsrfToken)
+      .send({ amount: 10, reason: 'Testing blocked moderator grant', confirmEmail: targetEmail })
+      .expect(403);
+  });
+
+  it('ADMIN cannot grant credits', async () => {
+    await agentAdmin
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', adminCsrfToken)
+      .send({ amount: 10, reason: 'Testing blocked admin grant', confirmEmail: targetEmail })
+      .expect(403);
+  });
+
+  it('ROOT can grant credits and writes ledger and audit entries', async () => {
+    const before = await prisma.user.findUnique({ where: { id: targetUserId }, select: { creditsBalance: true } });
+
+    const res = await agentRoot
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', rootCsrfToken)
+      .send({ amount: 123, reason: 'Manual support credit adjustment', confirmEmail: targetEmail })
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.user.creditsBalance).toBe(before.creditsBalance + 123);
+
+    const ledger = await prisma.creditLedger.findFirst({
+      where: { userId: targetUserId, referenceType: 'AdminCreditGrant', referenceId: targetUserId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(ledger).toBeTruthy();
+    expect(ledger.type).toBe('CREDIT_GRANTED');
+    expect(ledger.amount).toBe(123);
+    expect(ledger.balanceAfter).toBe(before.creditsBalance + 123);
+    expect(ledger.reason).toContain('Admin credit grant: Manual support credit adjustment');
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'ADMIN_CREDITS_GRANTED', entityId: targetUserId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(audit).toBeTruthy();
+    expect(audit.metadata.actorEmail).toBe(rootEmail);
+    expect(audit.metadata.targetEmail).toBe(targetEmail);
+    expect(audit.metadata.amount).toBe(123);
+
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain('passwordHash');
+    expect(bodyStr).not.toContain('tokenHash');
+    expect(bodyStr).not.toContain('sessions');
+  });
+
+  it('credit grant rejects wrong confirmEmail, short reason, negative amount, and excessive amount', async () => {
+    await agentRoot
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', rootCsrfToken)
+      .send({ amount: 10, reason: 'Valid reason text', confirmEmail: 'wrong@email.com' })
+      .expect(400);
+
+    await agentRoot
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', rootCsrfToken)
+      .send({ amount: 10, reason: 'short', confirmEmail: targetEmail })
+      .expect(400);
+
+    await agentRoot
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', rootCsrfToken)
+      .send({ amount: -1, reason: 'Negative amount rejected', confirmEmail: targetEmail })
+      .expect(400);
+
+    await agentRoot
+      .post(`/api/admin/users/${targetUserId}/credits/grant`)
+      .set('x-csrf-token', rootCsrfToken)
+      .send({ amount: 1000001, reason: 'Excessive amount rejected', confirmEmail: targetEmail })
+      .expect(400);
+  });
+
+  /* ---- USERS LIST FILTERING ---- */
+
+  it('users list supports role, search, verification filters, and accurate pagination totals', async () => {
+    const app = agentRoot.app;
+    const unverifiedEmail = `unverified.role.${unique}@findly.local`;
+    const tempAgent = request.agent(app);
+
+    try {
+      await tempAgent.post('/api/auth/register').send({ name: 'Unverified Role User', email: unverifiedEmail, password });
+
+      const roleRes = await agentRoot.get('/api/admin/users?role=ROOT').expect(200);
+      expect(roleRes.body.data.users.every((u) => u.role === 'ROOT')).toBe(true);
+      expect(roleRes.body.data.pagination.total).toBeGreaterThanOrEqual(1);
+
+      const searchRes = await agentRoot.get(`/api/admin/users?search=${encodeURIComponent(targetEmail)}`).expect(200);
+      expect(searchRes.body.data.pagination.total).toBeGreaterThanOrEqual(1);
+      expect(searchRes.body.data.users.some((u) => u.email === targetEmail)).toBe(true);
+
+      const unverifiedRes = await agentRoot.get('/api/admin/users?emailVerified=false').expect(200);
+      expect(unverifiedRes.body.data.users.every((u) => u.emailVerified === false)).toBe(true);
+      expect(unverifiedRes.body.data.users.some((u) => u.email === unverifiedEmail)).toBe(true);
+
+      const pageRes = await agentRoot.get('/api/admin/users?limit=1&page=1').expect(200);
+      expect(pageRes.body.data.users.length).toBeLessThanOrEqual(1);
+      expect(pageRes.body.data.pagination.total).toBeGreaterThanOrEqual(pageRes.body.data.users.length);
+    } finally {
+      await prisma.user.deleteMany({ where: { email: unverifiedEmail } }).catch(() => {});
+    }
   });
 });

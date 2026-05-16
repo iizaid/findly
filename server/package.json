@@ -14,7 +14,6 @@
     "prisma:migrate": "prisma migrate dev",
     "import:datasets": "node scripts/import-datasets.js",
     "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
-    "admin:promote": "node scripts/promote-admin.js",
     "admin:topup-credits": "node scripts/adminTopupCredits.js",
     "admin:bootstrap-root": "node scripts/bootstrapRootUser.js",
     "load:smoke": "node load-tests/smoke.js",

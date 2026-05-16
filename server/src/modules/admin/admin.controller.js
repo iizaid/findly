@@ -93,7 +93,7 @@ export const getQueueMetrics = asyncHandler(async (_req, res) => {
 
 export const getAdminUsers = asyncHandler(async (req, res) => {
   const pagination = toPagination(req.validated.query);
-  const { search, role } = req.validated.query;
+  const { search, role, emailVerified } = req.validated.query;
   const and = [];
 
   if (search) {
@@ -107,6 +107,12 @@ export const getAdminUsers = asyncHandler(async (req, res) => {
 
   if (role) {
     and.push({ role });
+  }
+
+  if (emailVerified === 'true') {
+    and.push({ emailVerified: true });
+  } else if (emailVerified === 'false') {
+    and.push({ emailVerified: false });
   }
 
   const where = and.length ? { AND: and } : {};
@@ -788,4 +794,91 @@ export const changeUserRole = asyncHandler(async (req, res) => {
       to: formatRole(nextRole),
     },
   }, `Role changed from ${formatRole(previousRole)} to ${formatRole(nextRole)}.`);
+});
+
+export const grantUserCredits = asyncHandler(async (req, res) => {
+  const { amount, reason, confirmEmail } = req.validated.body;
+  const targetId = req.params.id;
+
+  const target = await prisma.user.findUnique({
+    where: { id: targetId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      plan: true,
+      creditsBalance: true,
+      emailVerified: true,
+      emailVerifiedAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!target) {
+    throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
+  }
+
+  if (confirmEmail !== target.email) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Confirm email does not match the target user.', 400);
+  }
+
+  const previousBalance = target.creditsBalance;
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: target.id },
+      data: { creditsBalance: { increment: amount } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        plan: true,
+        creditsBalance: true,
+        emailVerified: true,
+        emailVerifiedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await tx.creditLedger.create({
+      data: {
+        userId: target.id,
+        workspaceId: null,
+        type: 'CREDIT_GRANTED',
+        amount,
+        balanceAfter: updated.creditsBalance,
+        reason: `Admin credit grant: ${reason}`,
+        referenceType: 'AdminCreditGrant',
+        referenceId: target.id,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ADMIN_CREDITS_GRANTED',
+        entityType: 'User',
+        entityId: target.id,
+        metadata: {
+          actorId: req.user.id,
+          actorEmail: req.user.email,
+          targetUserId: target.id,
+          targetEmail: target.email,
+          amount,
+          previousBalance,
+          newBalance: updated.creditsBalance,
+          reason,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || null,
+      },
+    });
+
+    return updated;
+  });
+
+  return successResponse(res, { user: result }, 'Credits granted successfully.');
 });

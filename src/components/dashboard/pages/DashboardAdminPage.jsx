@@ -54,7 +54,6 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const fetchAdminData = useCallback(async () => {
     const results = await Promise.allSettled([
       apiRequest('/api/admin/summary'),
-      apiRequest('/api/admin/users?limit=20'),
       apiRequest('/api/admin/catalog/stats'),
       apiRequest('/api/admin/imports?limit=20'),
       apiRequest('/api/admin/campaigns?limit=20'),
@@ -67,13 +66,12 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
 
     return {
       summary: get(0),
-      users: get(1)?.users || [],
-      catalog: get(2),
-      imports: get(3)?.imports || [],
-      campaigns: get(4)?.campaigns || [],
-      security: get(5)?.events || [],
-      errors: get(6)?.errors || [],
-      systemStatus: get(7),
+      catalog: get(1),
+      imports: get(2)?.imports || [],
+      campaigns: get(3)?.campaigns || [],
+      security: get(4)?.events || [],
+      errors: get(5)?.errors || [],
+      systemStatus: get(6),
     };
   }, []);
 
@@ -177,7 +175,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
     );
   }
 
-  const { summary, users, catalog, imports, campaigns, security, errors, systemStatus } = state.data;
+  const { summary, catalog, imports, campaigns, security, errors, systemStatus } = state.data;
   const totals = summary?.totals || {};
 
   const counts = {
@@ -196,7 +194,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const renderPanel = () => {
     switch (activeTab) {
       case 'overview':
-        return <AdminOverviewPanel totals={totals} systemStatus={systemStatus} security={security} catalog={catalog} imports={imports} errors={errors} campaigns={campaigns} users={users} />;
+        return <AdminOverviewPanel totals={totals} systemStatus={systemStatus} security={security} catalog={catalog} imports={imports} errors={errors} campaigns={campaigns} />;
       case 'live':
         return <AdminLiveActivityPanel onSelect={(r) => openDetail(r, 'activity')} />;
       case 'catalog':
@@ -206,7 +204,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
       case 'manual':
         return <AdminManualEntryPanel onSuccess={() => loadData(true)} />;
       case 'users':
-        return <AdminUsersPanel users={users} currentUser={user} onSelect={(r) => openDetail(r, 'user')} onRefresh={() => loadData(true)} />;
+        return <AdminUsersPanel currentUser={user} onSelect={(r) => openDetail(r, 'user')} />;
       case 'campaigns':
         return <AdminCampaignsPanel campaigns={campaigns} onSelect={(r) => openDetail(r, 'campaign')} />;
       case 'imports':

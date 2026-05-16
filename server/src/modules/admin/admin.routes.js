@@ -14,6 +14,7 @@ adminRouter.get('/activity', validate(v.adminActivityQuerySchema), ctrl.getActiv
 adminRouter.get('/summary', ctrl.getAdminSummary);
 adminRouter.get('/users', validate(v.adminUsersQuerySchema), ctrl.getAdminUsers);
 adminRouter.get('/users/:id', ctrl.getAdminUserDetail);
+adminRouter.post('/users/:id/credits/grant', requireRoot, validate(v.adminGrantCreditsSchema), ctrl.grantUserCredits);
 adminRouter.get('/catalog/stats', ctrl.getCatalogStats);
 adminRouter.get('/catalog/leads', validate(v.adminCatalogLeadsQuerySchema), ctrl.getCatalogLeads);
 adminRouter.post('/catalog/leads', validate(v.adminCreateLeadSchema), ctrl.createCatalogLead);
