@@ -24,6 +24,12 @@ const redact = (value) => {
     'apiKey',
     'SMTP_PASS',
     'GOOGLE_PLACES_API_KEY',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'GEMINI_API_KEY',
+    'DEEPSEEK_API_KEY',
+    'KIMI_API_KEY',
+    'QWEN_API_KEY',
   ]);
 
   return Object.fromEntries(

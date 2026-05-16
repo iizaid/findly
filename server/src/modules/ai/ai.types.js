@@ -1,0 +1,41 @@
+export const AI_TASKS = {
+  LEAD_ANALYSIS: 'lead_analysis',
+  OUTREACH_MESSAGE: 'outreach_message',
+  LEAD_LIST_SUMMARY: 'lead_list_summary',
+  ADMIN_DIAGNOSTICS: 'admin_diagnostics',
+};
+
+export const AI_PROVIDERS = {
+  OPENAI: 'openai',
+  ANTHROPIC: 'anthropic',
+  GEMINI: 'gemini',
+  DEEPSEEK: 'deepseek',
+  KIMI: 'kimi',
+  QWEN: 'qwen',
+  MOCK: 'mock',
+  RULE_BASED: 'rule_based',
+};
+
+export const AI_PROVIDER_NAMES = [
+  AI_PROVIDERS.GEMINI,
+  AI_PROVIDERS.OPENAI,
+  AI_PROVIDERS.ANTHROPIC,
+  AI_PROVIDERS.DEEPSEEK,
+  AI_PROVIDERS.KIMI,
+  AI_PROVIDERS.QWEN,
+];
+
+export const AI_ERROR_TYPES = {
+  NOT_CONFIGURED: 'NOT_CONFIGURED',
+  TIMEOUT: 'TIMEOUT',
+  RATE_LIMIT: 'RATE_LIMIT',
+  INVALID_RESPONSE: 'INVALID_RESPONSE',
+  PROVIDER_ERROR: 'PROVIDER_ERROR',
+  SAFETY_BLOCKED: 'SAFETY_BLOCKED',
+};
+
+export const ANALYSIS_SOURCE = {
+  RULE_BASED: 'RULE_BASED',
+  AI_ASSISTED: 'AI_ASSISTED',
+  AI_FALLBACK: 'AI_FALLBACK',
+};

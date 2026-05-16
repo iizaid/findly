@@ -4,6 +4,7 @@ import { successResponse } from '../../utils/apiResponse.js';
 import { toPagination } from '../../utils/pagination.js';
 import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
 import { getSearchQueueMetrics } from '../jobs/jobQueue.service.js';
+import { getAiProviderStatuses } from '../ai/aiRouter.service.js';
 import { canManageRole, formatRole } from '../auth/roles.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
@@ -547,9 +548,12 @@ export const getSystemStatus = asyncHandler(async (_req, res) => {
       message: 'Admin system is fully operational.'
     },
     aiProviders: {
-      status: 'not_implemented',
+      status: env.AI_ENABLED ? 'configured' : 'disabled',
       label: 'AI Providers',
-      message: 'AI provider foundation is not implemented yet.'
+      message: env.AI_ENABLED
+        ? 'AI provider routing is enabled. Provider keys remain server-side only.'
+        : 'AI provider routing is disabled. Rule-based analysis remains active.',
+      ...getAiProviderStatuses(),
     }
   };
 

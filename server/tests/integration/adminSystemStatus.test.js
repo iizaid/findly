@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 process.env.NODE_ENV = 'test';
 process.env.PORT ??= '4101';
-process.env.SESSION_SECRET ??= 'test-session-secret';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
 
 let createApp;
 let prisma;
@@ -116,7 +116,10 @@ describe('Admin System Status Endpoint', () => {
 
     // AI Providers
     expect(data.aiProviders).toBeDefined();
-    expect(data.aiProviders.status).toBe('not_implemented');
+    expect(['disabled', 'configured']).toContain(data.aiProviders.status);
+    expect(Array.isArray(data.aiProviders.providers)).toBe(true);
+    expect(data.aiProviders.providers.find((provider) => provider.provider === 'gemini')).toBeDefined();
+    expect(data.aiProviders.leadAnalysis.providerChain).toContain('rule_based');
   });
 
   it('does not expose secrets or sensitive info', async () => {
