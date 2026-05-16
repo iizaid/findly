@@ -12,6 +12,11 @@ let buildLeadAnalysisPrompt;
 let runLeadAnalysisAiReview;
 let MockAiProvider;
 let GeminiProvider;
+let OpenAiProvider;
+let AnthropicProvider;
+let DeepseekProvider;
+let OpenAiCompatibleProvider;
+let redactSensitive;
 let AI_TASKS;
 
 const baseConfig = {
@@ -27,6 +32,11 @@ beforeAll(async () => {
   ({ runLeadAnalysisAiReview } = await import('../../src/modules/ai/leadAnalysisAi.service.js'));
   ({ MockAiProvider } = await import('../../src/modules/ai/providers/mockProvider.js'));
   ({ GeminiProvider } = await import('../../src/modules/ai/providers/geminiProvider.js'));
+  ({ OpenAiProvider } = await import('../../src/modules/ai/providers/openaiProvider.js'));
+  ({ AnthropicProvider } = await import('../../src/modules/ai/providers/anthropicProvider.js'));
+  ({ DeepseekProvider } = await import('../../src/modules/ai/providers/deepseekProvider.js'));
+  ({ OpenAiCompatibleProvider } = await import('../../src/modules/ai/providers/openAiCompatibleProvider.js'));
+  ({ redactSensitive } = await import('../../src/modules/ai/aiSecurity.service.js'));
   ({ AI_TASKS } = await import('../../src/modules/ai/ai.types.js'));
 });
 
@@ -311,5 +321,175 @@ describe('AI router foundation', () => {
     expect(result.model).toBe('gemini-test');
     expect(result.usage.totalTokens).toBe(30);
     expect(text).not.toContain('test-key');
+  });
+
+  it('real provider adapters return NOT_CONFIGURED when API keys are missing', async () => {
+    const openai = await new OpenAiProvider({ apiKey: '' }).generateJson({ userPrompt: 'Return JSON.' });
+    const anthropic = await new AnthropicProvider({ apiKey: '' }).generateJson({ userPrompt: 'Return JSON.' });
+
+    expect(openai.ok).toBe(false);
+    expect(openai.errorType).toBe('NOT_CONFIGURED');
+    expect(anthropic.ok).toBe(false);
+    expect(anthropic.errorType).toBe('NOT_CONFIGURED');
+  });
+
+  it('OpenAI-compatible providers report misconfiguration when required base URL or model is missing', async () => {
+    const missingBase = new DeepseekProvider({ apiKey: 'test-key', defaultModel: 'deepseek-test' });
+    expect(missingBase.getStatus().status).toBe('misconfigured');
+
+    const missingModel = new DeepseekProvider({ apiKey: 'test-key', baseUrl: 'https://api.example.test/v1' });
+    expect(missingModel.getStatus().status).toBe('misconfigured');
+  });
+
+  it('OpenAI-compatible provider blocks unsafe production base URLs', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const provider = new OpenAiCompatibleProvider({
+        name: 'unsafe',
+        apiKey: 'test-key',
+        defaultModel: 'test-model',
+        baseUrl: 'http://localhost:11434/v1',
+      });
+      expect(provider.getStatus().status).toBe('misconfigured');
+      expect(provider.getStatus().safeMessage).toContain('HTTPS');
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it('OpenAI provider normalizes valid JSON, rate limits, and invalid JSON without exposing keys', async () => {
+    const validProvider = new OpenAiProvider({
+      apiKey: 'openai-secret',
+      defaultModel: 'gpt-test',
+      fetchImpl: async (_url, options) => {
+        expect(options.headers.Authorization).toBe('Bearer openai-secret');
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: JSON.stringify({
+              aiFitScore: 70,
+              aiOpportunityScore: 75,
+              scoreLevel: 'HIGH',
+              shouldContact: true,
+              contactPriority: 'HIGH',
+              confidence: 'medium',
+              bestServiceToOffer: 'Website Development',
+              whyThisLeadFits: ['Good fit'],
+              whyThisLeadMayNotFit: [],
+              detectedDigitalGaps: [],
+              recommendedFirstOffer: 'Audit',
+              personalizedOutreachAngle: 'Lead with gaps',
+              messageDraft: 'Hello',
+              nextBestAction: 'Send message',
+              riskNotes: [],
+              dataQualityNotes: [],
+            }) } }],
+            usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          }),
+        };
+      },
+    });
+    const valid = await validProvider.generateJson({ userPrompt: 'Return JSON.' });
+    expect(valid.ok).toBe(true);
+    expect(valid.usage.totalTokens).toBe(3);
+    expect(JSON.stringify(valid)).not.toContain('openai-secret');
+
+    const rateLimited = new OpenAiProvider({
+      apiKey: 'openai-secret',
+      fetchImpl: async () => ({ ok: false, status: 429 }),
+    });
+    const rateLimitResult = await rateLimited.generateJson({ userPrompt: 'Return JSON.' });
+    expect(rateLimitResult.errorType).toBe('RATE_LIMIT');
+
+    const invalidProvider = new OpenAiProvider({
+      apiKey: 'openai-secret',
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'not json' } }] }),
+      }),
+    });
+    const invalid = await invalidProvider.generateJson({ userPrompt: 'Return JSON.' });
+    expect(invalid.errorType).toBe('INVALID_RESPONSE');
+  });
+
+  it('Anthropic provider normalizes valid JSON and safe errors without exposing keys', async () => {
+    const provider = new AnthropicProvider({
+      apiKey: 'anthropic-secret',
+      defaultModel: 'claude-test',
+      fetchImpl: async (_url, options) => {
+        expect(options.headers['x-api-key']).toBe('anthropic-secret');
+        return {
+          ok: true,
+          json: async () => ({
+            content: [{ type: 'text', text: JSON.stringify({
+              aiFitScore: 70,
+              aiOpportunityScore: 75,
+              scoreLevel: 'HIGH',
+              shouldContact: true,
+              contactPriority: 'HIGH',
+              confidence: 'medium',
+              bestServiceToOffer: 'Website Development',
+              whyThisLeadFits: ['Good fit'],
+              whyThisLeadMayNotFit: [],
+              detectedDigitalGaps: [],
+              recommendedFirstOffer: 'Audit',
+              personalizedOutreachAngle: 'Lead with gaps',
+              messageDraft: 'Hello',
+              nextBestAction: 'Send message',
+              riskNotes: [],
+              dataQualityNotes: [],
+            }) }],
+            usage: { input_tokens: 4, output_tokens: 5 },
+          }),
+        };
+      },
+    });
+
+    const result = await provider.generateJson({ userPrompt: 'Return JSON.' });
+    expect(result.ok).toBe(true);
+    expect(result.usage.totalTokens).toBe(9);
+    expect(JSON.stringify(result)).not.toContain('anthropic-secret');
+  });
+
+  it('circuit breaker temporarily degrades repeatedly failing providers', async () => {
+    const provider = new MockAiProvider({ name: 'cb_mock', mode: 'rate_limit' });
+    for (let index = 0; index < 3; index += 1) {
+      await runAiTask({
+        task: AI_TASKS.LEAD_ANALYSIS,
+        providerChain: ['cb_mock', 'rule_based'],
+        providers: { cb_mock: provider },
+        configOverrides: baseConfig,
+      });
+    }
+
+    const before = provider.callCount;
+    const degraded = await runAiTask({
+      task: AI_TASKS.LEAD_ANALYSIS,
+      providerChain: ['cb_mock', 'rule_based'],
+      providers: { cb_mock: provider },
+      configOverrides: baseConfig,
+    });
+
+    expect(degraded.ok).toBe(false);
+    expect(degraded.attempts[0].degraded).toBe(true);
+    expect(provider.callCount).toBe(before);
+  });
+
+  it('recursively redacts AI and auth secrets', () => {
+    const redacted = redactSensitive({
+      nested: {
+        OPENAI_API_KEY: 'sk-real-secret',
+        authorization: 'Bearer token',
+        headers: { cookie: 'session=value' },
+      },
+      safe: 'visible',
+    });
+
+    const text = JSON.stringify(redacted);
+    expect(text).not.toContain('sk-real-secret');
+    expect(text).not.toContain('Bearer token');
+    expect(text).not.toContain('session=value');
+    expect(text).toContain('visible');
   });
 });

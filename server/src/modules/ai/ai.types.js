@@ -2,6 +2,7 @@ export const AI_TASKS = {
   LEAD_ANALYSIS: 'lead_analysis',
   OUTREACH_MESSAGE: 'outreach_message',
   LEAD_LIST_SUMMARY: 'lead_list_summary',
+  BUSINESS_GAP_ANALYSIS: 'business_gap_analysis',
   ADMIN_DIAGNOSTICS: 'admin_diagnostics',
 };
 
@@ -30,6 +31,7 @@ export const AI_ERROR_TYPES = {
   TIMEOUT: 'TIMEOUT',
   RATE_LIMIT: 'RATE_LIMIT',
   INVALID_RESPONSE: 'INVALID_RESPONSE',
+  MISCONFIGURED: 'MISCONFIGURED',
   PROVIDER_ERROR: 'PROVIDER_ERROR',
   SAFETY_BLOCKED: 'SAFETY_BLOCKED',
 };

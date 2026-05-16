@@ -181,7 +181,23 @@ const buildAnalysisResponseMetadata = ({ analysisData, aiResult }) => ({
   aiProvider: aiResult?.ok ? aiResult.provider : null,
   aiModel: aiResult?.ok ? aiResult.model : null,
   aiFallbackUsed: Boolean(aiResult && !aiResult.ok && analysisData.analysisSource === 'AI_FALLBACK'),
+  aiErrorType: aiResult && !aiResult.ok ? aiResult.errorType || null : null,
 });
+
+const inferAnalysisMetadata = (analysis = {}) => {
+  const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
+  const sourceSignal = signals.find((signal) => signal.startsWith('ANALYSIS_SOURCE_'));
+  const providerSignal = signals.find((signal) => signal.startsWith('AI_PROVIDER_'));
+  const analysisSource = sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
+  const aiProvider = providerSignal ? providerSignal.replace('AI_PROVIDER_', '').toLowerCase() : null;
+  return {
+    analysisSource,
+    aiProvider,
+    aiModel: null,
+    aiFallbackUsed: analysisSource === 'AI_FALLBACK',
+    aiErrorType: null,
+  };
+};
 
 // ═══════════════════════════════════════
 // SOURCE STATUS
@@ -1084,14 +1100,12 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
   }
 
   if (item.analyses.length > 0) {
+    const metadata = inferAnalysisMetadata(item.analyses[0]);
     return successResponse(res, {
-      analysis: item.analyses[0],
+      analysis: { ...item.analyses[0], ...metadata },
       reused: true,
       creditsUsed: 0,
-      analysisSource: 'UNKNOWN',
-      aiProvider: null,
-      aiModel: null,
-      aiFallbackUsed: false,
+      ...metadata,
     }, 'Existing item analysis loaded.');
   }
 
@@ -1147,14 +1161,12 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
       });
 
       if (existing?.analyses?.[0]) {
+        const metadata = inferAnalysisMetadata(existing.analyses[0]);
         return {
-          analysis: existing.analyses[0],
+          analysis: { ...existing.analyses[0], ...metadata },
           reused: true,
           creditsUsed: 0,
-          analysisSource: 'UNKNOWN',
-          aiProvider: null,
-          aiModel: null,
-          aiFallbackUsed: false,
+          ...metadata,
         };
       }
 

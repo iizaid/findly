@@ -2,10 +2,11 @@ import { AI_ERROR_TYPES } from '../ai.types.js';
 import { normalizeAiError } from '../ai.errors.js';
 
 export class BaseAiProvider {
-  constructor({ name, apiKey = null, defaultModel = null } = {}) {
+  constructor({ name, apiKey = null, defaultModel = null, baseUrl = null } = {}) {
     this.name = name;
     this.apiKey = apiKey;
     this.defaultModel = defaultModel;
+    this.baseUrl = baseUrl;
   }
 
   isConfigured() {
@@ -19,6 +20,7 @@ export class BaseAiProvider {
       configured,
       status: configured ? 'not_implemented' : 'missing_key',
       model: this.defaultModel || null,
+      baseUrlConfigured: Boolean(this.baseUrl),
     };
   }
 

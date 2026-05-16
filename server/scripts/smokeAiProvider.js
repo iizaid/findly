@@ -2,6 +2,11 @@ import dotenv from 'dotenv';
 import { AI_TASKS } from '../src/modules/ai/ai.types.js';
 import { validateAiTaskJson } from '../src/modules/ai/aiResponseValidator.js';
 import { GeminiProvider } from '../src/modules/ai/providers/geminiProvider.js';
+import { OpenAiProvider } from '../src/modules/ai/providers/openaiProvider.js';
+import { AnthropicProvider } from '../src/modules/ai/providers/anthropicProvider.js';
+import { DeepseekProvider } from '../src/modules/ai/providers/deepseekProvider.js';
+import { KimiProvider } from '../src/modules/ai/providers/kimiProvider.js';
+import { QwenProvider } from '../src/modules/ai/providers/qwenProvider.js';
 
 dotenv.config({ quiet: true });
 
@@ -12,10 +17,46 @@ if (!isEnabled) {
   process.exit(1);
 }
 
-const provider = new GeminiProvider({
-  apiKey: process.env.GEMINI_API_KEY,
-  defaultModel: process.env.GEMINI_DEFAULT_MODEL || 'gemini-2.5-flash',
-});
+const providerName = (process.env.AI_SMOKE_PROVIDER || 'gemini').toLowerCase();
+const providers = {
+  gemini: () => new GeminiProvider({
+    apiKey: process.env.GEMINI_API_KEY,
+    defaultModel: process.env.GEMINI_DEFAULT_MODEL || 'gemini-2.5-flash',
+  }),
+  openai: () => new OpenAiProvider({
+    apiKey: process.env.OPENAI_API_KEY,
+    defaultModel: process.env.OPENAI_DEFAULT_MODEL || 'gpt-4.1-mini',
+    baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  }),
+  anthropic: () => new AnthropicProvider({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    defaultModel: process.env.ANTHROPIC_DEFAULT_MODEL || 'claude-3-5-sonnet-latest',
+    baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1',
+  }),
+  deepseek: () => new DeepseekProvider({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    defaultModel: process.env.DEEPSEEK_DEFAULT_MODEL,
+    baseUrl: process.env.DEEPSEEK_BASE_URL,
+  }),
+  kimi: () => new KimiProvider({
+    apiKey: process.env.KIMI_API_KEY,
+    defaultModel: process.env.KIMI_DEFAULT_MODEL,
+    baseUrl: process.env.KIMI_BASE_URL,
+  }),
+  qwen: () => new QwenProvider({
+    apiKey: process.env.QWEN_API_KEY,
+    defaultModel: process.env.QWEN_DEFAULT_MODEL,
+    baseUrl: process.env.QWEN_BASE_URL,
+  }),
+};
+
+const providerFactory = providers[providerName];
+if (!providerFactory) {
+  console.error(JSON.stringify({ ok: false, provider: providerName, message: 'Unknown AI_SMOKE_PROVIDER.' }));
+  process.exit(1);
+}
+
+const provider = providerFactory();
 
 const status = provider.getStatus();
 if (!provider.isConfigured()) {
@@ -24,7 +65,7 @@ if (!provider.isConfigured()) {
     provider: status.provider,
     model: status.model,
     status: status.status,
-    message: 'GEMINI_API_KEY is not configured.',
+    message: 'Provider is not configured or is misconfigured.',
   }));
   process.exit(1);
 }

@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { redactSensitive } from '../modules/ai/aiSecurity.service.js';
 
 const levels = {
   silent: 0,
@@ -10,36 +11,6 @@ const levels = {
 
 const activeLevel = levels[env.LOG_LEVEL] ?? levels.info;
 
-const redact = (value) => {
-  if (!value || typeof value !== 'object') return value;
-
-  const blocked = new Set([
-    'password',
-    'passwordHash',
-    'token',
-    'session',
-    'cookie',
-    'authorization',
-    'csrf',
-    'apiKey',
-    'SMTP_PASS',
-    'GOOGLE_PLACES_API_KEY',
-    'OPENAI_API_KEY',
-    'ANTHROPIC_API_KEY',
-    'GEMINI_API_KEY',
-    'DEEPSEEK_API_KEY',
-    'KIMI_API_KEY',
-    'QWEN_API_KEY',
-  ]);
-
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      blocked.has(key) || blocked.has(key.toLowerCase()) ? '[REDACTED]' : item,
-    ]),
-  );
-};
-
 const write = (level, message, meta = {}) => {
   if ((levels[level] ?? levels.info) > activeLevel || activeLevel === levels.silent) return;
 
@@ -48,7 +19,7 @@ const write = (level, message, meta = {}) => {
     message,
     service: 'findly-api',
     timestamp: new Date().toISOString(),
-    ...redact(meta),
+    ...redactSensitive(meta),
   };
 
   const line = JSON.stringify(payload);

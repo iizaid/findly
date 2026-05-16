@@ -1,6 +1,6 @@
 import { BaseAiProvider } from './baseProvider.js';
 import { parseJsonMaybe } from '../aiResponseValidator.js';
-import { AI_ERROR_TYPES, AI_PROVIDERS } from '../ai.types.js';
+import { AI_ERROR_TYPES } from '../ai.types.js';
 import { validateProviderBaseUrl } from '../aiSecurity.service.js';
 
 const defaultFetch = (...args) => fetch(...args);
@@ -11,15 +11,17 @@ const createTimeoutSignal = (timeoutMs) => {
   return { signal: controller.signal, clear: () => clearTimeout(timeoutId) };
 };
 
-export class AnthropicProvider extends BaseAiProvider {
+export class OpenAiCompatibleProvider extends BaseAiProvider {
   constructor(config = {}) {
-    super({
-      name: AI_PROVIDERS.ANTHROPIC,
-      baseUrl: config.baseUrl || 'https://api.anthropic.com/v1',
-      defaultModel: config.defaultModel || 'claude-3-5-sonnet-latest',
-      ...config,
-    });
+    super(config);
     this.fetchImpl = config.fetchImpl || defaultFetch;
+    this.requiresBaseUrl = Boolean(config.requiresBaseUrl);
+    this.extraHeaders = config.extraHeaders || {};
+  }
+
+  getBaseUrlValidation() {
+    const baseUrl = this.baseUrl || (!this.requiresBaseUrl ? 'https://api.openai.com/v1' : null);
+    return validateProviderBaseUrl(baseUrl, { provider: this.name });
   }
 
   getStatus() {
@@ -32,6 +34,7 @@ export class AnthropicProvider extends BaseAiProvider {
         baseUrlConfigured: Boolean(this.baseUrl),
       };
     }
+
     if (!this.defaultModel) {
       return {
         provider: this.name,
@@ -39,11 +42,11 @@ export class AnthropicProvider extends BaseAiProvider {
         status: 'misconfigured',
         model: null,
         baseUrlConfigured: Boolean(this.baseUrl),
-        safeMessage: 'Anthropic model is missing.',
+        safeMessage: `${this.name} model is missing.`,
       };
     }
 
-    const baseUrlValidation = validateProviderBaseUrl(this.baseUrl, { provider: this.name });
+    const baseUrlValidation = this.getBaseUrlValidation();
     if (!baseUrlValidation.ok) {
       return {
         provider: this.name,
@@ -68,13 +71,13 @@ export class AnthropicProvider extends BaseAiProvider {
     return this.getStatus().status === 'configured';
   }
 
-  normalizeProviderError(error, startedAt) {
+  normalizeError(error, startedAt, model = this.defaultModel) {
     const latencyMs = Date.now() - startedAt;
     if (error?.name === 'AbortError') {
       return {
         ok: false,
         provider: this.name,
-        model: this.defaultModel || null,
+        model,
         errorType: AI_ERROR_TYPES.TIMEOUT,
         safeMessage: 'AI provider request timed out.',
         retryable: true,
@@ -87,7 +90,7 @@ export class AnthropicProvider extends BaseAiProvider {
       return {
         ok: false,
         provider: this.name,
-        model: this.defaultModel || null,
+        model,
         errorType: AI_ERROR_TYPES.RATE_LIMIT,
         safeMessage: 'AI provider is temporarily rate limited.',
         retryable: true,
@@ -100,7 +103,7 @@ export class AnthropicProvider extends BaseAiProvider {
       return {
         ok: false,
         provider: this.name,
-        model: this.defaultModel || null,
+        model,
         errorType: AI_ERROR_TYPES.SAFETY_BLOCKED,
         safeMessage: 'AI provider blocked the request for safety reasons.',
         retryable: false,
@@ -111,7 +114,7 @@ export class AnthropicProvider extends BaseAiProvider {
     return {
       ok: false,
       provider: this.name,
-      model: this.defaultModel || null,
+      model,
       errorType: AI_ERROR_TYPES.PROVIDER_ERROR,
       safeMessage: 'AI provider request failed.',
       retryable: status >= 500,
@@ -119,10 +122,10 @@ export class AnthropicProvider extends BaseAiProvider {
     };
   }
 
-  async generateJson({ systemPrompt = '', userPrompt = '', timeoutMs = 20000 } = {}) {
+  async postChatCompletions({ systemPrompt = '', userPrompt = '', timeoutMs = 20000, requireJson = true } = {}) {
+    const status = this.getStatus();
     const startedAt = Date.now();
     const model = this.defaultModel;
-    const status = this.getStatus();
 
     if (status.status === 'missing_key') {
       return {
@@ -130,42 +133,46 @@ export class AnthropicProvider extends BaseAiProvider {
         provider: this.name,
         model,
         errorType: AI_ERROR_TYPES.NOT_CONFIGURED,
-        safeMessage: 'Anthropic is not configured.',
+        safeMessage: `${this.name} is not configured.`,
         retryable: false,
         latencyMs: Date.now() - startedAt,
       };
     }
+
     if (status.status !== 'configured') {
       return {
         ok: false,
         provider: this.name,
         model,
         errorType: AI_ERROR_TYPES.MISCONFIGURED,
-        safeMessage: status.safeMessage || 'Anthropic provider is misconfigured.',
+        safeMessage: status.safeMessage || `${this.name} provider is misconfigured.`,
         retryable: false,
         latencyMs: Date.now() - startedAt,
       };
     }
 
+    const baseUrl = this.getBaseUrlValidation().url;
+    const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
     const timeout = createTimeoutSignal(timeoutMs);
-    const baseUrl = validateProviderBaseUrl(this.baseUrl, { provider: this.name }).url;
 
     try {
-      const response = await this.fetchImpl(`${baseUrl.replace(/\/+$/, '')}/messages`, {
+      const response = await this.fetchImpl(endpoint, {
         method: 'POST',
         redirect: 'error',
         signal: timeout.signal,
         headers: {
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          ...this.extraHeaders,
         },
         body: JSON.stringify({
           model,
-          system: systemPrompt,
-          max_tokens: 2000,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
           temperature: 0.2,
-          messages: [{ role: 'user', content: userPrompt }],
+          ...(requireJson ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
 
@@ -176,13 +183,22 @@ export class AnthropicProvider extends BaseAiProvider {
       }
 
       const body = await response.json();
-      const rawText = (body?.content || [])
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text || '')
-        .join('')
-        .trim();
-      const json = parseJsonMaybe(rawText);
-      if (!json) {
+      const message = body?.choices?.[0]?.message || {};
+      if (message.refusal) {
+        return {
+          ok: false,
+          provider: this.name,
+          model,
+          errorType: AI_ERROR_TYPES.SAFETY_BLOCKED,
+          safeMessage: 'AI provider blocked the request for safety reasons.',
+          retryable: false,
+          latencyMs: Date.now() - startedAt,
+        };
+      }
+
+      const rawText = message.content || '';
+      const json = requireJson ? parseJsonMaybe(rawText) : null;
+      if (requireJson && !json) {
         return {
           ok: false,
           provider: this.name,
@@ -202,17 +218,24 @@ export class AnthropicProvider extends BaseAiProvider {
         rawText,
         json,
         usage: {
-          inputTokens: body?.usage?.input_tokens ?? null,
-          outputTokens: body?.usage?.output_tokens ?? null,
-          totalTokens: body?.usage?.input_tokens && body?.usage?.output_tokens
-            ? body.usage.input_tokens + body.usage.output_tokens
-            : null,
+          inputTokens: body?.usage?.prompt_tokens ?? null,
+          outputTokens: body?.usage?.completion_tokens ?? null,
+          totalTokens: body?.usage?.total_tokens ?? null,
         },
       };
     } catch (error) {
-      return this.normalizeProviderError(error, startedAt);
+      return this.normalizeError(error, startedAt, model);
     } finally {
       timeout.clear();
     }
   }
+
+  async generateJson(args = {}) {
+    return this.postChatCompletions({ ...args, requireJson: true });
+  }
+
+  async generateText(args = {}) {
+    return this.postChatCompletions({ ...args, requireJson: false });
+  }
 }
+

@@ -1,8 +1,8 @@
-import { BaseAiProvider } from './baseProvider.js';
+import { OpenAiCompatibleProvider } from './openAiCompatibleProvider.js';
 import { AI_PROVIDERS } from '../ai.types.js';
 
-export class KimiProvider extends BaseAiProvider {
+export class KimiProvider extends OpenAiCompatibleProvider {
   constructor(config = {}) {
-    super({ name: AI_PROVIDERS.KIMI, ...config });
+    super({ name: AI_PROVIDERS.KIMI, requiresBaseUrl: true, ...config });
   }
 }

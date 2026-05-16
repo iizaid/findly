@@ -18,6 +18,12 @@ const providerClasses = {
 };
 
 let testProviderOverrides = null;
+const circuitState = new Map();
+const taskLimiters = new Map();
+
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_WINDOW_MS = 60_000;
+const CIRCUIT_COOLDOWN_MS = 60_000;
 
 export const setAiProviderOverridesForTests = (providers = null) => {
   if (process.env.NODE_ENV !== 'test') {
@@ -41,6 +47,68 @@ const normalizeProviders = (providers, config) => {
     name,
     new Provider(config.providers[name]),
   ]));
+};
+
+const getCircuit = (providerName) => circuitState.get(providerName) || {
+  failures: 0,
+  windowStartedAt: 0,
+  degradedUntil: 0,
+  lastErrorType: null,
+};
+
+const isCircuitOpen = (providerName) => {
+  const state = getCircuit(providerName);
+  return state.degradedUntil && state.degradedUntil > Date.now();
+};
+
+const recordProviderResult = (providerName, result) => {
+  const now = Date.now();
+  if (result.ok) {
+    circuitState.delete(providerName);
+    return;
+  }
+
+  if (!result.retryable) return;
+
+  const current = getCircuit(providerName);
+  const withinWindow = current.windowStartedAt && now - current.windowStartedAt <= CIRCUIT_WINDOW_MS;
+  const failures = withinWindow ? current.failures + 1 : 1;
+  const next = {
+    failures,
+    windowStartedAt: withinWindow ? current.windowStartedAt : now,
+    degradedUntil: failures >= CIRCUIT_FAILURE_THRESHOLD ? now + CIRCUIT_COOLDOWN_MS : 0,
+    lastErrorType: result.errorType || current.lastErrorType,
+  };
+  circuitState.set(providerName, next);
+};
+
+const createLimiter = (limit) => {
+  let active = 0;
+  const queue = [];
+
+  const next = () => {
+    if (active >= limit || queue.length === 0) return;
+    const { fn, resolve, reject } = queue.shift();
+    active += 1;
+    Promise.resolve()
+      .then(fn)
+      .then(resolve, reject)
+      .finally(() => {
+        active -= 1;
+        next();
+      });
+  };
+
+  return (fn) => new Promise((resolve, reject) => {
+    queue.push({ fn, resolve, reject });
+    next();
+  });
+};
+
+const withTaskLimit = (task, concurrency, fn) => {
+  const key = `${task}:${concurrency}`;
+  if (!taskLimiters.has(key)) taskLimiters.set(key, createLimiter(Math.max(1, Number(concurrency) || 1)));
+  return taskLimiters.get(key)(fn);
 };
 
 const fallbackResult = ({ task, attempts, reason = 'AI unavailable; use rule-based analysis.' }) => ({
@@ -111,64 +179,96 @@ export const runAiTask = async ({
   const maxRetries = Number.isInteger(retries) ? retries : route.retries;
   const requestTimeoutMs = timeoutMs || route.timeoutMs;
 
-  for (const providerName of chain) {
-    if (providerName === AI_PROVIDERS.RULE_BASED) break;
+  const runProviderChain = async () => {
+    for (const providerName of chain) {
+      if (providerName === AI_PROVIDERS.RULE_BASED) break;
 
-    const provider = providerMap.get(providerName);
-    if (!provider) {
-      attempts.push({
-        provider: providerName,
-        ok: false,
-        errorType: AI_ERROR_TYPES.NOT_CONFIGURED,
-        safeMessage: `${providerName} provider is not registered.`,
-      });
-      continue;
-    }
-
-    if (!provider.isConfigured()) {
-      attempts.push({
-        provider: providerName,
-        ok: false,
-        errorType: AI_ERROR_TYPES.NOT_CONFIGURED,
-        safeMessage: `${providerName} is not configured.`,
-      });
-      continue;
-    }
-
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const result = await attemptProvider({
-        provider,
-        task,
-        schema,
-        systemPrompt,
-        userPrompt,
-        input,
-        timeoutMs: requestTimeoutMs,
-        requireJson,
-      });
-
-      attempts.push({
-        provider: providerName,
-        model: result.model,
-        ok: result.ok,
-        errorType: result.errorType,
-        retryable: result.retryable,
-        latencyMs: result.latencyMs,
-      });
-
-      if (result.ok) {
-        return {
-          ...result,
-          task,
-          attempts,
-        };
+      const provider = providerMap.get(providerName);
+      if (!provider) {
+        attempts.push({
+          provider: providerName,
+          ok: false,
+          errorType: AI_ERROR_TYPES.NOT_CONFIGURED,
+          safeMessage: `${providerName} provider is not registered.`,
+        });
+        continue;
       }
 
-      if (!result.retryable || attempt === maxRetries) break;
-    }
-  }
+      const status = provider.getStatus?.() || {};
+      if (status.status === 'not_implemented' || status.status === 'misconfigured') {
+        attempts.push({
+          provider: providerName,
+          model: status.model,
+          ok: false,
+          errorType: status.status === 'misconfigured' ? AI_ERROR_TYPES.MISCONFIGURED : AI_ERROR_TYPES.PROVIDER_ERROR,
+          safeMessage: status.safeMessage || `${providerName} provider is ${status.status}.`,
+          retryable: false,
+        });
+        continue;
+      }
 
-  return fallbackResult({ task, attempts });
+      if (!provider.isConfigured()) {
+        attempts.push({
+          provider: providerName,
+          ok: false,
+          errorType: AI_ERROR_TYPES.NOT_CONFIGURED,
+          safeMessage: `${providerName} is not configured.`,
+        });
+        continue;
+      }
+
+      if (isCircuitOpen(providerName)) {
+        const state = getCircuit(providerName);
+        attempts.push({
+          provider: providerName,
+          model: status.model,
+          ok: false,
+          errorType: state.lastErrorType || AI_ERROR_TYPES.PROVIDER_ERROR,
+          safeMessage: `${providerName} is temporarily degraded.`,
+          retryable: true,
+          degraded: true,
+        });
+        continue;
+      }
+
+      for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        const result = await attemptProvider({
+          provider,
+          task,
+          schema,
+          systemPrompt,
+          userPrompt,
+          input,
+          timeoutMs: requestTimeoutMs,
+          requireJson,
+        });
+        recordProviderResult(providerName, result);
+
+        attempts.push({
+          provider: providerName,
+          model: result.model,
+          ok: result.ok,
+          errorType: result.errorType,
+          retryable: result.retryable,
+          latencyMs: result.latencyMs,
+        });
+
+        if (result.ok) {
+          return {
+            ...result,
+            task,
+            attempts,
+          };
+        }
+
+        if (!result.retryable || attempt === maxRetries) break;
+      }
+    }
+
+    return fallbackResult({ task, attempts });
+  };
+
+  return withTaskLimit(task, route.concurrency, runProviderChain);
 };
 
 export const getAiProviderStatuses = ({ configOverrides = {}, providers = null } = {}) => {
@@ -186,11 +286,24 @@ export const getAiProviderStatuses = ({ configOverrides = {}, providers = null }
       maxRetries: config.taskRoutes[AI_TASKS.LEAD_ANALYSIS]?.retries || 0,
       concurrency: config.taskRoutes[AI_TASKS.LEAD_ANALYSIS]?.concurrency || 1,
     },
-    providers: AI_PROVIDER_NAMES.map((name) => providerMap.get(name)?.getStatus() || {
-      provider: name,
-      configured: false,
-      status: 'missing_key',
-      model: null,
+    security: config.security,
+    providers: AI_PROVIDER_NAMES.map((name) => {
+      const status = providerMap.get(name)?.getStatus() || {
+        provider: name,
+        configured: false,
+        status: 'missing_key',
+        model: null,
+      };
+      const circuit = getCircuit(name);
+      if (circuit.degradedUntil && circuit.degradedUntil > Date.now()) {
+        return {
+          ...status,
+          status: 'degraded',
+          degradedUntil: new Date(circuit.degradedUntil).toISOString(),
+          lastErrorType: circuit.lastErrorType,
+        };
+      }
+      return status;
     }),
   };
 };

@@ -44,10 +44,12 @@ export const getAiProviderConfigs = (overrides = {}) => ({
   [AI_PROVIDERS.OPENAI]: {
     apiKey: overrides.OPENAI_API_KEY ?? env.OPENAI_API_KEY,
     defaultModel: overrides.OPENAI_DEFAULT_MODEL ?? env.OPENAI_DEFAULT_MODEL ?? 'gpt-4.1-mini',
+    baseUrl: overrides.OPENAI_BASE_URL ?? env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
   },
   [AI_PROVIDERS.ANTHROPIC]: {
     apiKey: overrides.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY,
     defaultModel: overrides.ANTHROPIC_DEFAULT_MODEL ?? env.ANTHROPIC_DEFAULT_MODEL ?? 'claude-3-5-sonnet-latest',
+    baseUrl: overrides.ANTHROPIC_BASE_URL ?? env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com/v1',
   },
   [AI_PROVIDERS.GEMINI]: {
     apiKey: overrides.GEMINI_API_KEY ?? env.GEMINI_API_KEY,
@@ -55,15 +57,21 @@ export const getAiProviderConfigs = (overrides = {}) => ({
   },
   [AI_PROVIDERS.DEEPSEEK]: {
     apiKey: overrides.DEEPSEEK_API_KEY ?? env.DEEPSEEK_API_KEY,
-    defaultModel: overrides.DEEPSEEK_DEFAULT_MODEL ?? env.DEEPSEEK_DEFAULT_MODEL ?? 'deepseek-chat',
+    defaultModel: overrides.DEEPSEEK_DEFAULT_MODEL ?? env.DEEPSEEK_DEFAULT_MODEL,
+    baseUrl: overrides.DEEPSEEK_BASE_URL ?? env.DEEPSEEK_BASE_URL,
+    requiresBaseUrl: true,
   },
   [AI_PROVIDERS.KIMI]: {
     apiKey: overrides.KIMI_API_KEY ?? env.KIMI_API_KEY,
-    defaultModel: overrides.KIMI_DEFAULT_MODEL ?? env.KIMI_DEFAULT_MODEL ?? 'kimi-k2',
+    defaultModel: overrides.KIMI_DEFAULT_MODEL ?? env.KIMI_DEFAULT_MODEL,
+    baseUrl: overrides.KIMI_BASE_URL ?? env.KIMI_BASE_URL,
+    requiresBaseUrl: true,
   },
   [AI_PROVIDERS.QWEN]: {
     apiKey: overrides.QWEN_API_KEY ?? env.QWEN_API_KEY,
-    defaultModel: overrides.QWEN_DEFAULT_MODEL ?? env.QWEN_DEFAULT_MODEL ?? 'qwen-plus',
+    defaultModel: overrides.QWEN_DEFAULT_MODEL ?? env.QWEN_DEFAULT_MODEL,
+    baseUrl: overrides.QWEN_BASE_URL ?? env.QWEN_BASE_URL,
+    requiresBaseUrl: true,
   },
 });
 
@@ -89,8 +97,22 @@ export const getAiRuntimeConfig = (overrides = {}) => {
 
   return {
     enabled: Boolean(enabled),
-    defaultProvider: overrides.AI_DEFAULT_TASK_PROVIDER ?? env.AI_DEFAULT_TASK_PROVIDER ?? AI_PROVIDERS.GEMINI,
-    defaultModel: overrides.AI_DEFAULT_TASK_MODEL ?? env.AI_DEFAULT_TASK_MODEL ?? 'gemini-2.5-flash',
+    security: {
+      strict: Boolean(overrides.AI_STRICT_SECURITY_MODE ?? env.AI_STRICT_SECURITY_MODE),
+      storeRawPayloads: Boolean(overrides.AI_STORE_RAW_PAYLOADS ?? env.AI_STORE_RAW_PAYLOADS),
+      logPrompts: Boolean(overrides.AI_LOG_PROMPTS ?? env.AI_LOG_PROMPTS),
+      logResponses: Boolean(overrides.AI_LOG_RESPONSES ?? env.AI_LOG_RESPONSES),
+    },
+    defaultProvider: overrides.AI_DEFAULT_PROVIDER
+      ?? env.AI_DEFAULT_PROVIDER
+      ?? overrides.AI_DEFAULT_TASK_PROVIDER
+      ?? env.AI_DEFAULT_TASK_PROVIDER
+      ?? AI_PROVIDERS.GEMINI,
+    defaultModel: overrides.AI_DEFAULT_MODEL
+      ?? env.AI_DEFAULT_MODEL
+      ?? overrides.AI_DEFAULT_TASK_MODEL
+      ?? env.AI_DEFAULT_TASK_MODEL
+      ?? 'gemini-2.5-flash',
     taskRoutes,
     providers: getAiProviderConfigs(overrides),
   };

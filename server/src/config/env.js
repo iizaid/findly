@@ -53,25 +53,37 @@ const envSchema = z.object({
   YELP_API_KEY: z.string().optional(),
   SERPAPI_API_KEY: z.string().optional(),
   AI_ENABLED: createBooleanParser(false),
+  AI_STRICT_SECURITY_MODE: createBooleanParser(true),
+  AI_STORE_RAW_PAYLOADS: createBooleanParser(false),
+  AI_LOG_PROMPTS: createBooleanParser(false),
+  AI_LOG_RESPONSES: createBooleanParser(false),
+  AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION: createBooleanParser(false),
+  AI_DEFAULT_PROVIDER: z.string().optional(),
+  AI_DEFAULT_MODEL: z.string().optional(),
   AI_DEFAULT_TASK_PROVIDER: z.string().default('gemini'),
   AI_DEFAULT_TASK_MODEL: z.string().default('gemini-2.5-flash'),
   AI_ANALYSIS_ENABLED: createBooleanParser(false),
-  AI_ANALYSIS_PROVIDER_CHAIN: z.string().default('gemini,rule_based'),
+  AI_ANALYSIS_PROVIDER_CHAIN: z.string().default('gemini,openai,anthropic,deepseek,kimi,qwen,rule_based'),
   AI_ANALYSIS_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
   AI_ANALYSIS_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
   AI_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_DEFAULT_MODEL: z.string().optional(),
+  OPENAI_BASE_URL: z.string().url().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_DEFAULT_MODEL: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().url().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_DEFAULT_MODEL: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_DEFAULT_MODEL: z.string().optional(),
+  DEEPSEEK_BASE_URL: z.string().url().optional(),
   KIMI_API_KEY: z.string().optional(),
   KIMI_DEFAULT_MODEL: z.string().optional(),
+  KIMI_BASE_URL: z.string().url().optional(),
   QWEN_API_KEY: z.string().optional(),
   QWEN_DEFAULT_MODEL: z.string().optional(),
+  QWEN_BASE_URL: z.string().url().optional(),
   REDDIT_CLIENT_ID: z.string().optional(),
   REDDIT_CLIENT_SECRET: z.string().optional(),
   REDDIT_USER_AGENT: z.string().optional(),
@@ -142,6 +154,46 @@ const envSchema = z.object({
     if (value.COOKIE_SAME_SITE === 'none' && !value.COOKIE_DOMAIN.startsWith('.')) {
       console.warn(`[WARNING] COOKIE_DOMAIN "${value.COOKIE_DOMAIN}" is set with SameSite=None. Ensure it matches the frontend domain or use no domain for completely separate hosting.`);
     }
+  }
+
+  if (value.NODE_ENV === 'production' && value.AI_LOG_PROMPTS && !value.AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_LOG_PROMPTS'],
+      message: 'AI_LOG_PROMPTS cannot be true in production unless AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION is true.',
+    });
+  }
+
+  if (value.NODE_ENV === 'production' && value.AI_LOG_RESPONSES && !value.AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_LOG_RESPONSES'],
+      message: 'AI_LOG_RESPONSES cannot be true in production unless AI_ALLOW_PROMPT_LOGGING_IN_PRODUCTION is true.',
+    });
+  }
+
+  const hasAiProviderKey = Boolean(
+    value.GEMINI_API_KEY
+      || value.OPENAI_API_KEY
+      || value.ANTHROPIC_API_KEY
+      || value.DEEPSEEK_API_KEY
+      || value.KIMI_API_KEY
+      || value.QWEN_API_KEY,
+  );
+  const analysisChain = (value.AI_ANALYSIS_PROVIDER_CHAIN || '').split(',').map((item) => item.trim().toLowerCase());
+  if (value.NODE_ENV === 'production' && value.AI_ENABLED && !hasAiProviderKey) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_ENABLED'],
+      message: 'AI_ENABLED cannot be true in production without at least one configured AI provider key.',
+    });
+  }
+  if (value.NODE_ENV === 'production' && value.AI_ANALYSIS_ENABLED && !hasAiProviderKey && !analysisChain.includes('rule_based')) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_ANALYSIS_PROVIDER_CHAIN'],
+      message: 'AI analysis requires a configured provider or rule_based fallback in production.',
+    });
   }
 });
 
