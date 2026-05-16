@@ -35,3 +35,5 @@ server/uploads/
 *.njsproj
 *.sln
 *.sw?
+
+findly_backup_before_recovery*.sql
