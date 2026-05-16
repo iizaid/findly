@@ -14,16 +14,26 @@ const DashboardCreditsPage = ({ credits, onUpdate }) => {
     const loadData = async () => {
       onUpdate?.(); // Ensure topbar balance is fresh when entering page
       try {
-        const [historyRes, summaryRes] = await Promise.all([
-          apiRequest('/api/credits/history?page=1&limit=15'),
-          apiRequest('/api/credits/summary').catch(() => ({ data: { summary: { totalUsed: 0, totalReceived: 0 } } }))
-        ]);
+        const historyRes = await apiRequest('/api/credits/history?page=1&limit=15');
         
         if (active) {
-          setHistory({ status: 'ready', items: historyRes.data.ledger?.items || [] });
+          const items = historyRes.data.ledger?.items || [];
+          
+          let recentUsed = 0;
+          let recentReceived = 0;
+          
+          items.forEach(item => {
+            if (item.amount < 0) {
+              recentUsed += Math.abs(item.amount);
+            } else if (item.amount > 0) {
+              recentReceived += item.amount;
+            }
+          });
+
+          setHistory({ status: 'ready', items });
           setSummary({ 
-            used: summaryRes.data.summary?.totalUsed || 0,
-            received: summaryRes.data.summary?.totalReceived || 0
+            used: recentUsed,
+            received: recentReceived
           });
         }
       } catch (error) {
@@ -44,7 +54,7 @@ const DashboardCreditsPage = ({ credits, onUpdate }) => {
     };
   }, [onUpdate]);
 
-  const planName = credits?.planId === 'PRO' ? 'Pro Plan' : 'Free Plan';
+  const planName = credits?.plan === 'PRO' ? 'Pro Plan' : 'Free Plan';
 
   return (
     <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[1fr_minmax(400px,0.75fr)]">
@@ -69,14 +79,14 @@ const DashboardCreditsPage = ({ credits, onUpdate }) => {
               <div className="rounded-[18px] bg-white/5 p-4 border border-white/10">
                 <div className="flex items-center gap-2 text-white/60">
                   <TrendingDown size={14} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Used</span>
+                  <span className="text-xs font-bold uppercase tracking-wider">Recent used</span>
                 </div>
                 <p className="mt-1 text-xl font-bold text-white">{summary.used}</p>
               </div>
               <div className="rounded-[18px] bg-white/5 p-4 border border-white/10">
                 <div className="flex items-center gap-2 text-white/60">
                   <TrendingUp size={14} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Received</span>
+                  <span className="text-xs font-bold uppercase tracking-wider">Recent received</span>
                 </div>
                 <p className="mt-1 text-xl font-bold text-white">{summary.received}</p>
               </div>
