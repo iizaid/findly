@@ -22,6 +22,19 @@ const targetEmail = `target.role.${unique}@findly.local`;
 const password = 'SecurePass123!@#';
 
 let targetUserId;
+let rootCsrfToken;
+let adminCsrfToken;
+let modCsrfToken;
+
+const getCsrfToken = async (agent) => {
+  const res = await agent.get('/api/csrf-token').expect(200);
+  const token = res.body?.data?.csrfToken;
+  expect(token).toBeTypeOf('string');
+  expect(token.length).toBeGreaterThan(0);
+  return token;
+};
+
+const errorMessage = (body) => body?.error?.message || body?.message || '';
 
 beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
@@ -66,6 +79,10 @@ beforeAll(async () => {
   await agentAdmin.post('/api/auth/login').send({ email: adminEmail, password });
   await agentMod.post('/api/auth/login').send({ email: modEmail, password });
   await agentUser.post('/api/auth/login').send({ email: userEmail, password });
+
+  rootCsrfToken = await getCsrfToken(agentRoot);
+  adminCsrfToken = await getCsrfToken(agentAdmin);
+  modCsrfToken = await getCsrfToken(agentMod);
 });
 
 afterAll(async () => {
@@ -99,6 +116,7 @@ describe('Role Management System', () => {
   it('ADMIN cannot access ROOT-only role endpoint', async () => {
     const res = await agentAdmin
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', adminCsrfToken)
       .send({ role: 'MODERATOR', reason: 'Testing admin blocked', confirmEmail: targetEmail })
       .expect(403);
     expect(res.body.success).toBe(false);
@@ -107,6 +125,7 @@ describe('Role Management System', () => {
   it('MODERATOR cannot access ROOT-only role endpoint', async () => {
     const res = await agentMod
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', modCsrfToken)
       .send({ role: 'MODERATOR', reason: 'Testing mod blocked', confirmEmail: targetEmail })
       .expect(403);
     expect(res.body.success).toBe(false);
@@ -117,6 +136,7 @@ describe('Role Management System', () => {
   it('ROOT can promote USER to MODERATOR', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'MODERATOR', reason: 'Promoting for support access', confirmEmail: targetEmail })
       .expect(200);
     expect(res.body.data.user.role).toBe('MODERATOR');
@@ -127,6 +147,7 @@ describe('Role Management System', () => {
   it('ROOT can promote MODERATOR to ADMIN', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'ADMIN', reason: 'Upgrading to full admin access', confirmEmail: targetEmail })
       .expect(200);
     expect(res.body.data.user.role).toBe('ADMIN');
@@ -135,6 +156,7 @@ describe('Role Management System', () => {
   it('ROOT can demote ADMIN to USER', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'USER', reason: 'Revoking admin privileges entirely', confirmEmail: targetEmail })
       .expect(200);
     expect(res.body.data.user.role).toBe('USER');
@@ -143,6 +165,7 @@ describe('Role Management System', () => {
   it('ROOT cannot assign ROOT from dashboard endpoint', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'ROOT', reason: 'Trying to assign root', confirmEmail: targetEmail })
       .expect(400);
     expect(res.body.success).toBe(false);
@@ -153,22 +176,26 @@ describe('Role Management System', () => {
     const secondRootEmail = `root2.role.${unique}@findly.local`;
     const app = agentRoot.app;
     const tempAgent = request.agent(app);
-    await tempAgent.post('/api/auth/register').send({ name: 'Root 2', email: secondRootEmail, password });
-    await prisma.user.updateMany({
-      where: { email: secondRootEmail },
-      data: { emailVerified: true, role: 'ROOT' },
-    });
-    const secondRoot = await prisma.user.findUnique({ where: { email: secondRootEmail } });
+    
+    try {
+      await tempAgent.post('/api/auth/register').send({ name: 'Root 2', email: secondRootEmail, password });
+      await prisma.user.updateMany({
+        where: { email: secondRootEmail },
+        data: { emailVerified: true, role: 'ROOT' },
+      });
+      const secondRoot = await prisma.user.findUnique({ where: { email: secondRootEmail } });
 
-    const res = await agentRoot
-      .patch(`/api/admin/users/${secondRoot.id}/role`)
-      .send({ role: 'ADMIN', reason: 'Demoting second root user', confirmEmail: secondRootEmail })
-      .expect(403);
-    expect(res.body.success).toBe(false);
-    expect(res.body.message).toContain('ROOT');
-
-    // Cleanup
-    await prisma.user.deleteMany({ where: { email: secondRootEmail } }).catch(() => {});
+      const res = await agentRoot
+        .patch(`/api/admin/users/${secondRoot.id}/role`)
+        .set('x-csrf-token', rootCsrfToken)
+        .send({ role: 'ADMIN', reason: 'Demoting second root user', confirmEmail: secondRootEmail })
+        .expect(403);
+      expect(res.body.success).toBe(false);
+      expect(errorMessage(res.body)).toContain('ROOT');
+    } finally {
+      // Cleanup
+      await prisma.user.deleteMany({ where: { email: secondRootEmail } }).catch(() => {});
+    }
   });
 
   it('last ROOT cannot be demoted', async () => {
@@ -179,10 +206,11 @@ describe('Role Management System', () => {
 
     const res = await agentRoot
       .patch(`/api/admin/users/${rootUser.id}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'ADMIN', reason: 'Trying self demotion from root', confirmEmail: rootEmail })
       .expect(403);
     expect(res.body.success).toBe(false);
-    expect(res.body.message).toContain('only root');
+    expect(errorMessage(res.body)).toContain('only root');
   });
 
   /* ---- VALIDATION ---- */
@@ -190,6 +218,7 @@ describe('Role Management System', () => {
   it('role change requires reason (min 8 chars)', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'MODERATOR', reason: 'short', confirmEmail: targetEmail })
       .expect(400);
     expect(res.body.success).toBe(false);
@@ -198,6 +227,7 @@ describe('Role Management System', () => {
   it('role change requires confirmEmail', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'MODERATOR', reason: 'This is a valid long reason' })
       .expect(400);
     expect(res.body.success).toBe(false);
@@ -206,6 +236,7 @@ describe('Role Management System', () => {
   it('role change rejects wrong confirmEmail', async () => {
     const res = await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'MODERATOR', reason: 'This is a valid long reason', confirmEmail: 'wrong@email.com' })
       .expect(400);
     expect(res.body.success).toBe(false);
@@ -215,6 +246,7 @@ describe('Role Management System', () => {
     // First promote to have a fresh change
     await agentRoot
       .patch(`/api/admin/users/${targetUserId}/role`)
+      .set('x-csrf-token', rootCsrfToken)
       .send({ role: 'MODERATOR', reason: 'Promoting for audit log verification', confirmEmail: targetEmail })
       .expect(200);
 

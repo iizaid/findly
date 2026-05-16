@@ -80,11 +80,6 @@ export const canManageRole = ({ actorRole, targetRole, nextRole, isLastRoot = fa
     return { allowed: false, reason: 'ROOT cannot be assigned through the dashboard. Use the bootstrap script.' };
   }
 
-  // Cannot modify another ROOT from the dashboard.
-  if (targetRole === 'ROOT') {
-    return { allowed: false, reason: 'ROOT users cannot be modified from the dashboard.' };
-  }
-
   // The next role must be a valid dashboard-assignable role.
   if (!DASHBOARD_ASSIGNABLE_ROLES.includes(nextRole)) {
     return { allowed: false, reason: `Invalid target role: ${nextRole}.` };
@@ -93,6 +88,11 @@ export const canManageRole = ({ actorRole, targetRole, nextRole, isLastRoot = fa
   // Cannot demote yourself if you are the last ROOT.
   if (sameUser && isLastRoot) {
     return { allowed: false, reason: 'Cannot demote yourself — you are the only root owner.' };
+  }
+
+  // Cannot modify another ROOT from the dashboard.
+  if (targetRole === 'ROOT') {
+    return { allowed: false, reason: 'ROOT users cannot be modified from the dashboard.' };
   }
 
   // No-op change.
