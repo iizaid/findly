@@ -11,7 +11,7 @@ let agentRoot;
 let agentAdmin;
 let agentMod;
 let agentUser;
-let agentGuest;
+let _agentGuest;
 
 const unique = Date.now().toString(36);
 const rootEmail = `root.role.${unique}@findly.local`;
@@ -32,7 +32,7 @@ beforeAll(async () => {
   agentAdmin = request.agent(app);
   agentMod = request.agent(app);
   agentUser = request.agent(app);
-  agentGuest = request.agent(app);
+  _agentGuest = request.agent(app);
 
   const emails = [rootEmail, adminEmail, modEmail, userEmail, targetEmail];
   await prisma.user.deleteMany({ where: { email: { in: emails } } }).catch(() => {});
