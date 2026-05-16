@@ -164,8 +164,6 @@ export const adminAiProviderSecretUpsertSchema = z.object({
     baseUrl: z.union([z.literal(''), z.string().url('Base URL must be valid.')]).optional().nullable(),
     confirmProvider: aiProviderSchema,
     reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
-  }).superRefine((data, ctx) => {
-    if (data.confirmProvider !== ctx.path?.provider) return;
   }),
 });
 

@@ -14,6 +14,8 @@ let createApp;
 let prisma;
 let env;
 let getDashboardProviderConfigOverrides;
+let runAiTask;
+let AI_TASKS;
 let rootAgent;
 let adminAgent;
 let userAgent;
@@ -42,6 +44,8 @@ beforeAll(async () => {
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ env } = await import('../../src/config/env.js'));
   ({ getDashboardProviderConfigOverrides } = await import('../../src/modules/ai/aiSecretsVault.service.js'));
+  ({ runAiTask } = await import('../../src/modules/ai/aiRouter.service.js'));
+  ({ AI_TASKS } = await import('../../src/modules/ai/ai.types.js'));
 
   const app = createApp();
   rootAgent = request.agent(app);
@@ -65,6 +69,11 @@ afterAll(async () => {
 });
 
 describe('Admin AI provider secret management', () => {
+  it('Prisma Client exposes aiProviderSecret model', () => {
+    expect(prisma.aiProviderSecret).toBeDefined();
+    expect(typeof prisma.aiProviderSecret.findMany).toBe('function');
+  });
+
   it('rejects unauthenticated, USER, and ADMIN access to ROOT-only AI provider secrets', async () => {
     await guestAgent.get('/api/admin/ai/providers').expect(401);
     await userAgent.get('/api/admin/ai/providers').expect(403);
@@ -177,6 +186,54 @@ describe('Admin AI provider secret management', () => {
     const overrides = await getDashboardProviderConfigOverrides();
     expect(overrides.OPENAI_API_KEY).toBe(plaintextKey);
     expect(overrides.OPENAI_DEFAULT_MODEL).toBe('gpt-test');
+
+    const originalFetch = global.fetch;
+    global.fetch = async (_url, options) => {
+      expect(options.headers.Authorization).toBe(`Bearer ${plaintextKey}`);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
+            aiFitScore: 70,
+            aiOpportunityScore: 75,
+            scoreLevel: 'HIGH',
+            shouldContact: true,
+            contactPriority: 'HIGH',
+            confidence: 'medium',
+            bestServiceToOffer: 'Website Development',
+            whyThisLeadFits: ['Good fit'],
+            whyThisLeadMayNotFit: [],
+            detectedDigitalGaps: [],
+            recommendedFirstOffer: 'Audit',
+            personalizedOutreachAngle: 'Lead with gaps',
+            messageDraft: 'Hello',
+            nextBestAction: 'Send message',
+            riskNotes: [],
+            dataQualityNotes: [],
+          }) } }],
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        }),
+      };
+    };
+    try {
+      const result = await runAiTask({
+        task: AI_TASKS.LEAD_ANALYSIS,
+        providerChain: ['openai', 'rule_based'],
+        systemPrompt: 'Return JSON only.',
+        userPrompt: 'Return valid JSON.',
+        configOverrides: {
+          AI_ENABLED: true,
+          AI_ANALYSIS_ENABLED: true,
+          OPENAI_API_KEY: 'env-key-that-must-not-be-used',
+          OPENAI_DEFAULT_MODEL: 'env-model-that-must-not-be-used',
+          OPENAI_BASE_URL: 'https://api.openai.com/v1',
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(result.model).toBe('gpt-test');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   it('unsafe production base URL is rejected', async () => {
