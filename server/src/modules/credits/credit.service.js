@@ -38,6 +38,189 @@ export const deductCredits = async ({ tx = prisma, userId, workspaceId = null, a
 export const reserveCredits = (args) => deductCredits({ ...args, type: 'CREDIT_USED', reason: `Reserved credits: ${args.reason}` });
 export const refundCredits = (args) => addCredits({ ...args, type: 'CREDIT_REFUNDED' });
 
+export const reserveSearchCredits = async ({
+  tx = prisma,
+  userId,
+  workspaceId = null,
+  campaignId,
+  jobId = null,
+  amount,
+  reason = 'Search credit reservation',
+}) => {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Reservation amount must be a positive integer.', 400);
+  }
+
+  const existing = await tx.creditReservation.findFirst({
+    where: { campaignId, status: 'ACTIVE' },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Campaign already has an active credit reservation.', 409);
+  }
+
+  const updated = await tx.user.updateMany({
+    where: { id: userId, creditsBalance: { gte: amount } },
+    data: { creditsBalance: { decrement: amount } },
+  });
+  if (updated.count !== 1) {
+    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, 'Insufficient credits.', 402);
+  }
+
+  const reservation = await tx.creditReservation.create({
+    data: {
+      userId,
+      workspaceId,
+      campaignId,
+      jobId,
+      amount,
+      reason,
+    },
+  });
+
+  await tx.searchCampaign.updateMany({
+    where: { id: campaignId, userId },
+    data: { creditsReserved: amount },
+  });
+
+  return reservation;
+};
+
+export const attachReservationJob = ({ tx = prisma, reservationId, jobId }) => tx.creditReservation.update({
+  where: { id: reservationId },
+  data: { jobId },
+});
+
+export const captureSearchCreditReservation = async ({
+  tx = prisma,
+  userId,
+  workspaceId = null,
+  campaignId,
+  amountUsed,
+  reason,
+  referenceType = 'SearchCampaign',
+  referenceId = campaignId,
+}) => {
+  if (!Number.isInteger(amountUsed) || amountUsed < 0) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Captured credit amount must be a non-negative integer.', 400);
+  }
+
+  const reservation = await tx.creditReservation.findFirst({
+    where: { campaignId, userId, status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!reservation) {
+    if (amountUsed === 0) return { capturedAmount: 0, releasedAmount: 0, balanceAfter: null, reservation: null };
+    const creditResult = await deductCredits({
+      tx,
+      userId,
+      workspaceId,
+      amount: amountUsed,
+      type: 'CREDIT_USED',
+      reason,
+      referenceType,
+      referenceId,
+    });
+    return {
+      capturedAmount: amountUsed,
+      releasedAmount: 0,
+      balanceAfter: creditResult.balanceAfter,
+      ledger: creditResult.ledger,
+      reservation: null,
+    };
+  }
+
+  if (amountUsed > reservation.amount) {
+    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, 'Search used more credits than were reserved.', 402);
+  }
+
+  const releasedAmount = reservation.amount - amountUsed;
+  if (releasedAmount > 0) {
+    await tx.user.update({
+      where: { id: userId },
+      data: { creditsBalance: { increment: releasedAmount } },
+    });
+  }
+
+  const user = await tx.user.findUnique({ where: { id: userId }, select: { creditsBalance: true } });
+
+  let ledger = null;
+  if (amountUsed > 0) {
+    ledger = await tx.creditLedger.create({
+      data: {
+        userId,
+        workspaceId,
+        type: 'CREDIT_USED',
+        amount: -amountUsed,
+        balanceAfter: user.creditsBalance,
+        reason,
+        referenceType,
+        referenceId,
+      },
+    });
+  }
+
+  const updatedReservation = await tx.creditReservation.update({
+    where: { id: reservation.id },
+    data: {
+      status: 'CAPTURED',
+      capturedAmount: amountUsed,
+      releasedAmount,
+      capturedAt: new Date(),
+      releasedAt: releasedAmount > 0 ? new Date() : null,
+    },
+  });
+
+  await tx.searchCampaign.updateMany({
+    where: { id: campaignId, userId },
+    data: { creditsReserved: 0 },
+  });
+
+  return {
+    capturedAmount: amountUsed,
+    releasedAmount,
+    balanceAfter: user.creditsBalance,
+    ledger,
+    reservation: updatedReservation,
+  };
+};
+
+export const releaseSearchCreditReservation = async ({
+  tx = prisma,
+  userId,
+  campaignId,
+  status = 'RELEASED',
+}) => {
+  const reservation = await tx.creditReservation.findFirst({
+    where: { campaignId, userId, status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!reservation) return { releasedAmount: 0, reservation: null };
+
+  await tx.user.update({
+    where: { id: userId },
+    data: { creditsBalance: { increment: reservation.amount } },
+  });
+
+  const updatedReservation = await tx.creditReservation.update({
+    where: { id: reservation.id },
+    data: {
+      status,
+      releasedAmount: reservation.amount,
+      releasedAt: new Date(),
+    },
+  });
+
+  await tx.searchCampaign.updateMany({
+    where: { id: campaignId, userId },
+    data: { creditsReserved: 0 },
+  });
+
+  return { releasedAmount: reservation.amount, reservation: updatedReservation };
+};
+
 export const grantInitialCreditsIfEligible = async ({ tx = prisma, userId, workspaceId, context }) => {
   const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, emailVerified: true, initialCreditsGrantedAt: true } });
   if (!user) throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);

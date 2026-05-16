@@ -9,6 +9,7 @@ export const adminRouter = Router();
 adminRouter.use(requireAuth, requireVerifiedEmail, requireAdmin);
 
 adminRouter.get('/system/status', ctrl.getSystemStatus);
+adminRouter.get('/system/queue', ctrl.getQueueMetrics);
 adminRouter.get('/activity', validate(v.adminActivityQuerySchema), ctrl.getActivityLogs);
 adminRouter.get('/summary', ctrl.getAdminSummary);
 adminRouter.get('/users', validate(v.adminListQuerySchema), ctrl.getAdminUsers);

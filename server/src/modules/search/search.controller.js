@@ -8,9 +8,14 @@ import { getSourceStatusesWithRuntime } from './source.service.js';
 import { getDashboardSummary, getCampaignAnalytics } from './dashboard.service.js';
 import { enrichWebsiteUrl, mergeSignals } from './websiteEnrichment.service.js';
 import { enqueueJobWithTx, getSearchJobBackpressureState } from '../jobs/jobQueue.service.js';
-import { deductCredits } from '../credits/credit.service.js';
+import {
+  attachReservationJob,
+  deductCredits,
+  releaseSearchCreditReservation,
+  reserveSearchCredits,
+} from '../credits/credit.service.js';
 import { runRuleBasedAnalysis } from './analysis.service.js';
-import { markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
+import { markCampaignCancelled, markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
 import { env } from '../../config/env.js';
 import {
   getSupportedJordanGovernorates,
@@ -333,22 +338,23 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
     throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'You already have active searches. Wait for one to finish before starting another.', 409);
   }
 
-  const maxCreditsRequired = estimateSearchCreditsRequired(campaign.requestedLimit || 20);
-  const creditUser = await prisma.user.findUnique({
-    where: { id: req.user.id },
-    select: { creditsBalance: true },
-  });
-  if (!creditUser || creditUser.creditsBalance < maxCreditsRequired) {
-    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
-  }
-
   const job = await prisma.$transaction(async (tx) => {
+    const maxCreditsRequired = estimateSearchCreditsRequired(campaign.requestedLimit || 20);
     await markCampaignQueued({
       tx,
       campaignId: campaign.id,
       userId: req.user.id,
       requestedLimit: campaign.requestedLimit || 20,
       lockedBy: 'api-queue',
+    });
+
+    const reservation = await reserveSearchCredits({
+      tx,
+      userId: req.user.id,
+      workspaceId: campaign.workspaceId,
+      campaignId: campaign.id,
+      amount: maxCreditsRequired,
+      reason: `Reserved search credits: ${campaign.id}`,
     });
 
     const createdJob = await enqueueJobWithTx(tx, {
@@ -359,6 +365,8 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
       payload: { campaignId: campaign.id },
     });
 
+    await attachReservationJob({ tx, reservationId: reservation.id, jobId: createdJob.id });
+
     await tx.auditLog.create({
       data: {
         userId: req.user.id,
@@ -368,6 +376,7 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
         metadata: {
           workspaceId: campaign.workspaceId,
           jobId: createdJob.id,
+          creditsReserved: maxCreditsRequired,
         },
       },
     });
@@ -381,6 +390,84 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
     status: 'QUEUED',
     nextAction: 'POLL_STATUS',
   }, 'Campaign queued. Poll the campaign status endpoint.', 202);
+});
+
+export const cancelCampaignRun = asyncHandler(async (req, res) => {
+  const campaign = await prisma.searchCampaign.findFirst({
+    where: { id: req.validated.params.id, userId: req.user.id },
+    select: { id: true, userId: true, workspaceId: true, status: true },
+  });
+  if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
+
+  if (!['QUEUED', 'RUNNING'].includes(campaign.status)) {
+    throw new AppError(errorCodes.CAMPAIGN_NOT_RUNNABLE, 'Only queued or running campaigns can be cancelled.', 409);
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const latestJob = await tx.job.findFirst({
+      where: { campaignId: campaign.id, type: 'SEARCH_CAMPAIGN_RUN', status: { in: ['QUEUED', 'RUNNING'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true },
+    });
+
+    if (latestJob?.status === 'QUEUED') {
+      await tx.job.update({
+        where: { id: latestJob.id },
+        data: {
+          status: 'CANCELLED',
+          cancelRequestedAt: new Date(),
+          failedAt: new Date(),
+          errorCode: 'JOB_CANCELLED',
+          errorMessage: 'Campaign was cancelled before it started.',
+        },
+      });
+    } else if (latestJob?.status === 'RUNNING') {
+      await tx.job.update({
+        where: { id: latestJob.id },
+        data: {
+          cancelRequestedAt: new Date(),
+          errorCode: 'JOB_CANCELLED',
+          errorMessage: 'Campaign cancellation was requested.',
+        },
+      });
+    }
+
+    await releaseSearchCreditReservation({
+      tx,
+      userId: req.user.id,
+      campaignId: campaign.id,
+      status: 'CANCELLED',
+    });
+
+    await markCampaignCancelled({
+      tx,
+      campaignId: campaign.id,
+      userId: req.user.id,
+      errorMessage: latestJob?.status === 'RUNNING'
+        ? 'Campaign cancellation requested. Any in-progress work will stop at the next safe checkpoint.'
+        : 'Campaign was cancelled.',
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'SEARCH_CAMPAIGN_CANCELLED',
+        entityType: 'SearchCampaign',
+        entityId: campaign.id,
+        metadata: { workspaceId: campaign.workspaceId, jobId: latestJob?.id || null },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') || null,
+      },
+    });
+
+    return latestJob;
+  });
+
+  return successResponse(res, {
+    campaignId: campaign.id,
+    jobId: result?.id || null,
+    status: 'CANCELLED',
+  }, 'Campaign cancelled.');
 });
 
 export const getCampaignStatus = asyncHandler(async (req, res) => {
@@ -410,6 +497,8 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
           startedAt: true,
           completedAt: true,
           failedAt: true,
+          lastHeartbeatAt: true,
+          cancelRequestedAt: true,
           errorCode: true,
           errorMessage: true,
           createdAt: true,

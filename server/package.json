@@ -16,7 +16,8 @@
     "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
     "admin:promote": "node scripts/promote-admin.js",
     "load:smoke": "node load-tests/smoke.js",
-    "load:search": "node load-tests/search-queue.js"
+    "load:search": "node load-tests/search-queue.js",
+    "load:read-path": "node load-tests/queue-metrics.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

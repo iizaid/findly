@@ -331,6 +331,12 @@ describe('LeadList Workflow Architecture', () => {
 
     expect(runData.status).toBe('QUEUED');
     expect(runData.jobId).toBeDefined();
+    const reservedCampaign = await prisma.searchCampaign.findUnique({ where: { id: newCampaignId } });
+    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: newCampaignId } });
+    expect(reservedCampaign.creditsReserved).toBe(10);
+    expect(reservation.status).toBe('ACTIVE');
+    const afterQueueCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterQueueCredits).toBe(beforeCredits - 10);
     await agent1.post(`/api/search/campaigns/${newCampaignId}/run`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
@@ -350,6 +356,57 @@ describe('LeadList Workflow Architecture', () => {
 
     const campaign = await prisma.searchCampaign.findUnique({ where: { id: newCampaignId } });
     expect(campaign.creditsUsed).toBe(completed.creditsUsed);
+    expect(campaign.creditsReserved).toBe(0);
+    const capturedReservation = await prisma.creditReservation.findFirst({ where: { campaignId: newCampaignId } });
+    expect(capturedReservation.status).toBe('CAPTURED');
+    expect(capturedReservation.capturedAmount).toBe(completed.creditsUsed);
+    expect(capturedReservation.releasedAmount).toBe(10 - completed.creditsUsed);
+  });
+
+  it('releases reserved search credits when a queued campaign is cancelled', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const csrfToken = await getCsrfToken(agent1);
+    const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Cancel queued search',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 5,
+      })
+      .expect(201);
+
+    const campaignToCancel = campaignRes.body.data.campaign.id;
+    await agent1.post(`/api/search/campaigns/${campaignToCancel}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(202);
+
+    const afterQueueCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterQueueCredits).toBe(beforeCredits - 10);
+
+    const cancelResponse = await agent1.post(`/api/search/campaigns/${campaignToCancel}/cancel`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(200);
+
+    expect(cancelResponse.body.data.status).toBe('CANCELLED');
+    const afterCancelCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterCancelCredits).toBe(beforeCredits);
+
+    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: campaignToCancel } });
+    expect(reservation.status).toBe('CANCELLED');
+    expect(reservation.releasedAmount).toBe(10);
+
+    const campaign = await prisma.searchCampaign.findUnique({ where: { id: campaignToCancel } });
+    expect(campaign.status).toBe('CANCELLED');
+    expect(campaign.creditsReserved).toBe(0);
   });
 
   it('does not expose internal source metadata from user-facing search endpoints', async () => {
@@ -474,8 +531,10 @@ describe('LeadList Workflow Architecture', () => {
     const {
       claimNextJob,
       cleanupStaleJobs,
+      heartbeatJob,
       retryJobIfAllowed,
     } = await import('../../src/modules/jobs/jobQueue.service.js');
+    const { cleanupStaleQueuedCampaigns } = await import('../../src/modules/search/campaignJob.service.js');
 
     const queuedJob = await prisma.job.create({
       data: {
@@ -524,8 +583,50 @@ describe('LeadList Workflow Architecture', () => {
     const cleaned = await prisma.job.findUnique({ where: { id: staleJob.id } });
     expect(cleaned.status).toBe('FAILED');
 
+    const heartbeatJobRow = await prisma.job.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'RUNNING',
+        attempts: 1,
+        lockedAt: new Date(),
+        lockedBy: 'heartbeat-worker',
+      },
+    });
+    await heartbeatJob({ jobId: heartbeatJobRow.id, workerId: 'heartbeat-worker' });
+    const heartbeated = await prisma.job.findUnique({ where: { id: heartbeatJobRow.id } });
+    expect(heartbeated.lastHeartbeatAt).toBeTruthy();
+
+    const stuckCampaign = await prisma.searchCampaign.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        name: `Stuck queued campaign ${unique}`,
+        query: 'cafes',
+        sources: ['INSTAGRAM'],
+        status: 'QUEUED',
+        requestedLimit: 5,
+      },
+    });
+    await prisma.job.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        campaignId: stuckCampaign.id,
+        type: 'SEARCH_CAMPAIGN_RUN',
+        status: 'FAILED',
+        errorCode: 'TEST_FAILURE',
+        errorMessage: 'Queued job failed before running.',
+      },
+    });
+    const queuedCleanup = await cleanupStaleQueuedCampaigns();
+    expect(queuedCleanup.count).toBeGreaterThanOrEqual(1);
+    const cleanedCampaign = await prisma.searchCampaign.findUnique({ where: { id: stuckCampaign.id } });
+    expect(cleanedCampaign.status).toBe('FAILED');
+
     await prisma.job.updateMany({
-      where: { id: { in: [queuedJob.id, failedJob.id] } },
+      where: { id: { in: [queuedJob.id, failedJob.id, heartbeatJobRow.id] } },
       data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
     });
   });

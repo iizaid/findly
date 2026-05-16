@@ -33,6 +33,8 @@ jobRouter.get('/:id', validate(jobIdSchema), asyncHandler(async (req, res) => {
       startedAt: true,
       completedAt: true,
       failedAt: true,
+      lastHeartbeatAt: true,
+      cancelRequestedAt: true,
       errorCode: true,
       errorMessage: true,
       createdAt: true,

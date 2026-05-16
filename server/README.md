@@ -51,7 +51,7 @@ npm run load:search
 
 ## Search Worker
 
-Campaign runs are queued instead of executing heavy search work inside the HTTP request. `POST /api/search/campaigns/:id/run` returns `202` with a `jobId`, and clients should poll `GET /api/search/campaigns/:id/status`.
+Campaign runs are queued instead of executing heavy search work inside the HTTP request. `POST /api/search/campaigns/:id/run` reserves the maximum estimated Opportunity Credits, returns `202` with a `jobId`, and clients should poll `GET /api/search/campaigns/:id/status`. Completion captures only the actual credits used and releases unused reservation.
 
 For simple local deployment you can run the worker in the API process:
 
@@ -66,6 +66,8 @@ npm run worker
 ```
 
 See `docs/SCALING.md` for queue limits, worker env vars, and Render deployment guidance.
+
+Admin operators can inspect queue health at `GET /api/admin/system/queue`.
 
 ## Health Check
 

@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
 import { toPagination } from '../../utils/pagination.js';
 import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
+import { getSearchQueueMetrics } from '../jobs/jobQueue.service.js';
 
 const securityActions = [
   'FAILED_LOGIN',
@@ -81,6 +82,11 @@ export const getAdminSummary = asyncHandler(async (_req, res) => {
     recentErrors,
     recentSecurityEvents,
   }, 'Admin summary loaded.');
+});
+
+export const getQueueMetrics = asyncHandler(async (_req, res) => {
+  const metrics = await getSearchQueueMetrics();
+  return successResponse(res, { queue: metrics }, 'Queue metrics loaded.');
 });
 
 export const getAdminUsers = asyncHandler(async (req, res) => {

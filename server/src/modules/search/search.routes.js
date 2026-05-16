@@ -27,6 +27,7 @@ searchRouter.post('/campaigns', validate(v.createCampaignSchema), ctrl.createNew
 searchRouter.get('/campaigns/:id', validate(v.idParamSchema), ctrl.getCampaignById);
 searchRouter.get('/campaigns/:id/status', validate(v.idParamSchema), ctrl.getCampaignStatus);
 searchRouter.post('/campaigns/:id/run', searchRateLimiter, validate(v.idParamSchema), billDatasetBackedSearch, ctrl.runExistingCampaign);
+searchRouter.post('/campaigns/:id/cancel', searchRateLimiter, validate(v.idParamSchema), ctrl.cancelCampaignRun);
 searchRouter.post('/campaigns/:id/analyze', analysisRateLimiter, validate(v.idParamSchema), ctrl.analyzeExistingCampaign);
 searchRouter.get('/campaigns/:id/leads', validate(v.idParamSchema), ctrl.getCampaignLeads);
 searchRouter.get('/campaigns/:id/analytics', validate(v.idParamSchema), ctrl.getCampaignAnalyticsData);

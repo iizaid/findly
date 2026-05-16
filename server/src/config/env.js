@@ -74,7 +74,12 @@ const envSchema = z.object({
   SOURCE_MAX_RESULTS_HARD_LIMIT: z.coerce.number().int().min(1).max(200).default(100),
   JOB_STALE_TIMEOUT_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
   ENABLE_WORKER: createBooleanParser(false),
+  QUEUE_DRIVER: z.enum(['postgres', 'redis']).default('postgres'),
+  REDIS_URL: z.string().optional(),
   MAX_SEARCH_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
+  SEARCH_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50).optional(),
+  SEARCH_QUEUE_RATE_LIMIT_MAX: z.coerce.number().int().min(1).optional(),
+  SEARCH_QUEUE_RATE_LIMIT_DURATION_MS: z.coerce.number().int().min(1000).optional(),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60000).default(1000),
   WORKER_ID: z.string().optional(),
   MAX_QUEUED_SEARCH_JOBS: z.coerce.number().int().min(1).max(10000).default(100),
@@ -133,6 +138,7 @@ export const env = {
   ...parsed.data,
   SEARCH_RATE_LIMIT_MAX: parsed.data.SEARCH_RUN_RATE_LIMIT_MAX ?? parsed.data.SEARCH_RATE_LIMIT_MAX,
   ANALYSIS_RATE_LIMIT_MAX: parsed.data.ANALYSIS_RUN_RATE_LIMIT_MAX ?? parsed.data.ANALYSIS_RATE_LIMIT_MAX,
+  SEARCH_QUEUE_CONCURRENCY: parsed.data.SEARCH_QUEUE_CONCURRENCY ?? parsed.data.MAX_SEARCH_WORKER_CONCURRENCY,
   IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
   CLIENT_ORIGINS: parsed.data.CLIENT_ORIGIN.split(',')
     .map((origin) => origin.trim())

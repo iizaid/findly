@@ -2,8 +2,10 @@ import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import {
   calculateSearchCreditCost,
+  captureSearchCreditReservation,
   deductCredits,
   estimateSearchCreditReservation,
+  releaseSearchCreditReservation,
   SEARCH_BASE_CREDITS,
   SEARCH_PER_RETURNED_LEAD_CREDITS,
 } from '../credits/credit.service.js';
@@ -11,7 +13,13 @@ import { runRuleBasedAnalysis } from './analysis.service.js';
 import { estimateSourceCost, getRunnableAdapter } from './source.registry.js';
 import { logger } from '../../utils/logger.js';
 import { findDuplicateLead } from './leadDeduplication.js';
-import { markCampaignCompleted, markCampaignFailed, markCampaignRunning, RUNNABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
+import {
+  markCampaignCompleted,
+  markCampaignFailed,
+  markCampaignRunning,
+  RUNNABLE_CAMPAIGN_STATUSES,
+  updateCampaignProgress,
+} from './campaignJob.service.js';
 import { markJobCompleted, markJobFailed, markJobRunning } from '../jobs/jobQueue.service.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 
@@ -37,6 +45,34 @@ const assertSearchCreditsAvailable = async ({ userId, requestedLimit }) => {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { creditsBalance: true } });
   if (!user || user.creditsBalance < maxCreditsRequired) {
     throw new AppError(errorCodes.INSUFFICIENT_FUNDS, `Not enough Opportunity Credits. Requires at least ${maxCreditsRequired} credits to run.`, 402);
+  }
+};
+
+const hasActiveSearchReservation = async ({ userId, campaignId }) => {
+  const reservation = await prisma.creditReservation.findFirst({
+    where: { userId, campaignId, status: 'ACTIVE' },
+    select: { id: true },
+  });
+  return Boolean(reservation);
+};
+
+const assertNotCancelled = async ({ jobId, campaignId }) => {
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { status: true, cancelRequestedAt: true },
+    });
+    if (job?.status === 'CANCELLED' || job?.cancelRequestedAt) {
+      throw new AppError('JOB_CANCELLED', 'Search campaign was cancelled.', 409);
+    }
+  }
+
+  const campaign = await prisma.searchCampaign.findUnique({
+    where: { id: campaignId },
+    select: { status: true },
+  });
+  if (campaign?.status === 'CANCELLED') {
+    throw new AppError('JOB_CANCELLED', 'Search campaign was cancelled.', 409);
   }
 };
 export const createCampaign = async ({ userId, workspaceId, data }) => {
@@ -112,7 +148,9 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     || (fallbackSourcesRequested && runnableExternalSources.length === 0 && allUnavailableSourcesCanFallback);
 
   if (shouldUseLocalDataset) {
-    await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
+    if (!await hasActiveSearchReservation({ userId, campaignId: campaign.id })) {
+      await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
+    }
     return runLocalDatasetCampaign({
       campaign,
       userId,
@@ -132,7 +170,9 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'No selected search source is currently available.', 400);
   }
 
-  await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
+  if (!await hasActiveSearchReservation({ userId, campaignId: campaign.id })) {
+    await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
+  }
 
   await markCampaignRunning({
     campaignId: campaign.id,
@@ -147,6 +187,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   logger.info('campaign.run.started', { userId, campaignId: campaign.id, workspaceId: campaign.workspaceId });
 
   try {
+    await assertNotCancelled({ jobId, campaignId: campaign.id });
     const normalizedLeadGroups = [];
     for (const source of runnableExternalSources) {
       await prisma.searchCampaign.update({
@@ -155,9 +196,16 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       });
       const adapter = new source.Adapter(campaign);
       normalizedLeadGroups.push(...await adapter.run());
+      await assertNotCancelled({ jobId, campaignId: campaign.id });
     }
 
     const normalizedLeads = normalizedLeadGroups.slice(0, campaign.requestedLimit || 20);
+    await updateCampaignProgress({
+      campaignId: campaign.id,
+      progressCurrent: 0,
+      progressTotal: normalizedLeads.length,
+      lastStep: 'Scoring and preparing leads',
+    });
 
     let savedLeadsCount = 0;
     let totalCreditsUsed = 0;
@@ -171,6 +219,13 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
           workspaceId: campaign.workspaceId,
           campaignId: campaign.id,
         },
+      });
+      await updateCampaignProgress({
+        tx,
+        campaignId: campaign.id,
+        progressCurrent: 0,
+        progressTotal: normalizedLeads.length,
+        lastStep: 'Saving lead list',
       });
 
       for (const [index, lead] of normalizedLeads.entries()) {
@@ -213,19 +268,24 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       }
 
       totalCreditsUsed = calculateSearchCreditsUsed(savedLeadsCount);
+      await updateCampaignProgress({
+        tx,
+        campaignId: campaign.id,
+        progressCurrent: normalizedLeads.length,
+        progressTotal: normalizedLeads.length,
+        lastStep: 'Charging credits',
+      });
 
-      if (totalCreditsUsed > 0) {
-        await deductCredits({
+      await captureSearchCreditReservation({
           tx,
           userId,
           workspaceId: campaign.workspaceId,
-          amount: totalCreditsUsed,
-          type: 'CREDIT_USED',
+          campaignId: campaign.id,
+          amountUsed: totalCreditsUsed,
           reason: `Ran search campaign: ${campaign.name}`,
           referenceType: 'SearchCampaign',
           referenceId: campaign.id,
-        });
-      }
+      });
 
       await markCampaignCompleted({
         tx,
@@ -259,9 +319,14 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
     const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while running the source adapter.';
 
-    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage });
-    if (jobId) {
-      await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+    await prisma.$transaction(async (tx) => {
+      await releaseSearchCreditReservation({ tx, userId, campaignId: campaign.id });
+    }).catch(() => {});
+    if (errorCode !== 'JOB_CANCELLED') {
+      await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage });
+      if (jobId) {
+        await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+      }
     }
 
     await prisma.auditLog.create({
@@ -304,8 +369,22 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
   const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
 
   try {
+    await assertNotCancelled({ jobId, campaignId: campaign.id });
+    await updateCampaignProgress({
+      campaignId: campaign.id,
+      progressCurrent: 0,
+      progressTotal: campaign.requestedLimit || 20,
+      lastStep: 'Searching selected platforms',
+    });
     const matchedLeads = await adapter.run();
+    await assertNotCancelled({ jobId, campaignId: campaign.id });
     const leadsReturned = matchedLeads.length;
+    await updateCampaignProgress({
+      campaignId: campaign.id,
+      progressCurrent: Math.min(leadsReturned, campaign.requestedLimit || 20),
+      progressTotal: campaign.requestedLimit || 20,
+      lastStep: 'Scoring leads',
+    });
     const creditsUsed = calculateSearchCreditsUsed(leadsReturned);
     const message = leadsReturned > 0
       ? 'Search completed across selected platforms.'
@@ -340,6 +419,13 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
           resultCount: leadsReturned,
         },
       });
+      await updateCampaignProgress({
+        tx,
+        campaignId: campaign.id,
+        progressCurrent: leadsReturned,
+        progressTotal: leadsReturned,
+        lastStep: 'Saving lead list',
+      });
 
       if (matchedLeads.length > 0) {
         await tx.leadListLead.createMany({
@@ -359,18 +445,23 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         });
       }
 
-      if (creditsUsed > 0) {
-        await deductCredits({
+      await captureSearchCreditReservation({
           tx,
           userId,
           workspaceId: campaign.workspaceId,
-          amount: creditsUsed,
-          type: 'CREDIT_USED',
+          campaignId: campaign.id,
+          amountUsed: creditsUsed,
           reason: `Ran search campaign: ${campaign.name}`,
           referenceType: 'SearchCampaign',
           referenceId: campaign.id,
-        });
-      }
+      });
+      await updateCampaignProgress({
+        tx,
+        campaignId: campaign.id,
+        progressCurrent: leadsReturned,
+        progressTotal: leadsReturned,
+        lastStep: 'Charging credits',
+      });
 
       await markCampaignCompleted({
         tx,
@@ -438,9 +529,19 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
     const safeMessage = error instanceof AppError ? error.message : 'Campaign failed while searching available sources.';
 
-    await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
-    if (jobId) {
-      await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+    await prisma.$transaction(async (tx) => {
+      await releaseSearchCreditReservation({
+        tx,
+        userId,
+        campaignId: campaign.id,
+        status: errorCode === 'JOB_CANCELLED' ? 'CANCELLED' : 'RELEASED',
+      });
+    }).catch(() => {});
+    if (errorCode !== 'JOB_CANCELLED') {
+      await markCampaignFailed({ campaignId: campaign.id, errorCode, errorMessage: safeMessage }).catch(() => {});
+      if (jobId) {
+        await markJobFailed({ jobId, errorCode, errorMessage: safeMessage }).catch(() => {});
+      }
     }
 
     await prisma.auditLog.create({

@@ -30,6 +30,13 @@ enum CreditLedgerType {
   PLAN_RESET
 }
 
+enum CreditReservationStatus {
+  ACTIVE
+  CAPTURED
+  RELEASED
+  CANCELLED
+}
+
 enum SearchSource {
   INSTAGRAM
   FACEBOOK
@@ -129,6 +136,7 @@ model User {
   workspaceMembers        WorkspaceMember[]
   auditLogs               AuditLog[]
   creditLedger            CreditLedger[]
+  creditReservations      CreditReservation[]
   serviceProfiles         ServiceProfile[]
   searchCampaigns         SearchCampaign[]
   leadLists               LeadList[]
@@ -190,6 +198,7 @@ model Workspace {
   owner              User                @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members            WorkspaceMember[]
   creditLedger       CreditLedger[]
+  creditReservations CreditReservation[]
   serviceProfiles    ServiceProfile[]
   searchCampaigns    SearchCampaign[]
   leadLists          LeadList[]
@@ -275,6 +284,34 @@ model CreditLedger {
   @@index([createdAt])
 }
 
+model CreditReservation {
+  id             String                  @id @default(cuid())
+  userId         String
+  workspaceId    String?
+  campaignId     String?
+  jobId          String?
+  amount         Int
+  capturedAmount Int                     @default(0)
+  releasedAmount Int                     @default(0)
+  status         CreditReservationStatus @default(ACTIVE)
+  reason         String
+  createdAt      DateTime                @default(now())
+  capturedAt     DateTime?
+  releasedAt     DateTime?
+  updatedAt      DateTime                @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  job       Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([jobId])
+  @@index([createdAt])
+}
+
 model ServiceProfile {
   id                  String   @id @default(cuid())
   userId              String
@@ -334,6 +371,7 @@ model SearchCampaign {
   leadAnalyses       LeadAnalysis[]
   opportunitySignals OpportunitySignal[]
   jobs               Job[]
+  creditReservations CreditReservation[]
 
   @@index([userId])
   @@index([workspaceId])
@@ -357,6 +395,8 @@ model Job {
   startedAt    DateTime?
   completedAt  DateTime?
   failedAt     DateTime?
+  lastHeartbeatAt DateTime?
+  cancelRequestedAt DateTime?
   errorCode    String?
   errorMessage String?
   createdAt    DateTime  @default(now())
@@ -365,12 +405,15 @@ model Job {
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  creditReservations CreditReservation[]
 
   @@index([userId])
   @@index([workspaceId])
   @@index([campaignId])
   @@index([type, status, createdAt])
   @@index([status, lockedAt])
+  @@index([status, lastHeartbeatAt])
+  @@index([cancelRequestedAt])
 }
 
 model LeadList {

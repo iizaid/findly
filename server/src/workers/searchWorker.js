@@ -2,8 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { AppError, errorCodes } from '../utils/AppError.js';
-import { claimNextJob, cleanupStaleJobs, markJobFailed } from '../modules/jobs/jobQueue.service.js';
-import { cleanupStaleRunningCampaigns, markCampaignFailed } from '../modules/search/campaignJob.service.js';
+import {
+  claimNextJob,
+  cleanupStaleJobs,
+  heartbeatJob,
+  markJobCancelled,
+  markJobFailed,
+} from '../modules/jobs/jobQueue.service.js';
+import {
+  cleanupStaleQueuedCampaigns,
+  cleanupStaleRunningCampaigns,
+  markCampaignFailed,
+} from '../modules/search/campaignJob.service.js';
 import { runCampaign } from '../modules/search/search.service.js';
 
 const sleep = (ms) => new Promise((resolve) => {
@@ -26,8 +36,23 @@ export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search
     return { jobId: job.id, status: 'FAILED' };
   }
 
+  let heartbeat = null;
   try {
+    if (job.cancelRequestedAt) {
+      await markJobCancelled({ jobId: job.id });
+      return { jobId: job.id, status: 'CANCELLED' };
+    }
+    heartbeat = setInterval(() => {
+      heartbeatJob({ jobId: job.id, workerId }).catch((error) => logger.warn('search_worker.heartbeat_failed', {
+        workerId,
+        jobId: job.id,
+        errorCode: error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR,
+      }));
+    }, Math.max(1000, Math.min(env.WORKER_POLL_INTERVAL_MS * 2, 10000)));
+
     const result = await runCampaign(campaignId, job.userId, { jobId: job.id });
+    clearInterval(heartbeat);
+    heartbeat = null;
     logger.info('search_worker.job.completed', {
       workerId,
       jobId: job.id,
@@ -38,8 +63,13 @@ export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search
     });
     return { jobId: job.id, status: 'COMPLETED', result };
   } catch (error) {
+    if (heartbeat) clearInterval(heartbeat);
     const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
     const errorMessage = error instanceof AppError ? error.message : 'Search job failed.';
+    if (errorCode === 'JOB_CANCELLED') {
+      await markJobCancelled({ jobId: job.id, errorMessage }).catch(() => {});
+      return { jobId: job.id, status: 'CANCELLED', errorCode };
+    }
     if (campaignId) {
       await markCampaignFailed({ campaignId, errorCode, errorMessage }).catch(() => {});
     }
@@ -64,15 +94,17 @@ export const createSearchWorker = ({
   const active = new Set();
 
   const cleanupStaleWork = async () => {
-    const [jobs, campaigns] = await Promise.all([
+    const [jobs, runningCampaigns, queuedCampaigns] = await Promise.all([
       cleanupStaleJobs(),
       cleanupStaleRunningCampaigns(),
+      cleanupStaleQueuedCampaigns(),
     ]);
-    if (jobs.count || campaigns.count) {
+    if (jobs.count || runningCampaigns.count || queuedCampaigns.count) {
       logger.warn('search_worker.stale_cleanup', {
         workerId,
         staleJobs: jobs.count,
-        staleCampaigns: campaigns.count,
+        staleRunningCampaigns: runningCampaigns.count,
+        staleQueuedCampaigns: queuedCampaigns.count,
       });
     }
   };

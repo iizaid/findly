@@ -1087,6 +1087,12 @@ describe('Findly auth, verification, and foundation API', () => {
     const errorsResponse = await adminAgent.get('/api/admin/errors?limit=10').expect(200);
     expect(errorsResponse.body.data.errors.some((error) => error.errorCode === 'FORBIDDEN')).toBe(true);
     expect(JSON.stringify(errorsResponse.body.data.errors)).not.toContain('SESSION_SECRET');
+
+    const queueResponse = await adminAgent.get('/api/admin/system/queue').expect(200);
+    expect(queueResponse.body.data.queue).toHaveProperty('queuedJobs');
+    expect(queueResponse.body.data.queue).toHaveProperty('runningJobs');
+    expect(queueResponse.body.data.queue.queueDriver).toBeTruthy();
+    expect(JSON.stringify(queueResponse.body.data.queue)).not.toContain(process.env.SESSION_SECRET);
   });
 
   it('analyzes a real lead once, reuses analysis without double charging, and rejects unsafe website enrichment URLs', async () => {
