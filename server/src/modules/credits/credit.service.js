@@ -100,6 +100,7 @@ export const captureSearchCreditReservation = async ({
   reason,
   referenceType = 'SearchCampaign',
   referenceId = campaignId,
+  requireActiveReservation = false,
 }) => {
   if (!Number.isInteger(amountUsed) || amountUsed < 0) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Captured credit amount must be a non-negative integer.', 400);
@@ -111,6 +112,13 @@ export const captureSearchCreditReservation = async ({
   });
 
   if (!reservation) {
+    if (requireActiveReservation) {
+      throw new AppError(
+        errorCodes.CAMPAIGN_NOT_RUNNABLE,
+        'An active credit reservation is required to complete this search campaign.',
+        409,
+      );
+    }
     if (amountUsed === 0) return { capturedAmount: 0, releasedAmount: 0, balanceAfter: null, reservation: null };
     const creditResult = await deductCredits({
       tx,

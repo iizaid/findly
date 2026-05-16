@@ -361,6 +361,16 @@ describe('LeadList Workflow Architecture', () => {
     expect(capturedReservation.status).toBe('CAPTURED');
     expect(capturedReservation.capturedAmount).toBe(completed.creditsUsed);
     expect(capturedReservation.releasedAmount).toBe(10 - completed.creditsUsed);
+
+    const usedLedgerRows = await prisma.creditLedger.count({
+      where: {
+        userId: user1Id,
+        type: 'CREDIT_USED',
+        referenceType: 'SearchCampaign',
+        referenceId: newCampaignId,
+      },
+    });
+    expect(usedLedgerRows).toBe(1);
   });
 
   it('releases reserved search credits when a queued campaign is cancelled', async () => {
@@ -407,6 +417,230 @@ describe('LeadList Workflow Architecture', () => {
     const campaign = await prisma.searchCampaign.findUnique({ where: { id: campaignToCancel } });
     expect(campaign.status).toBe('CANCELLED');
     expect(campaign.creditsReserved).toBe(0);
+  });
+
+  it('does not charge a cancelled running campaign after its reservation is released', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const csrfToken = await getCsrfToken(agent1);
+    const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Cancel running search race',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 5,
+      })
+      .expect(201);
+
+    const campaignToCancel = campaignRes.body.data.campaign.id;
+    const runRes = await agent1.post(`/api/search/campaigns/${campaignToCancel}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(202);
+    const jobId = runRes.body.data.jobId;
+
+    await prisma.searchCampaign.update({
+      where: { id: campaignToCancel },
+      data: { status: 'RUNNING', startedAt: new Date() },
+    });
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { status: 'RUNNING', startedAt: new Date(), lockedAt: new Date(), lockedBy: 'test-worker' },
+    });
+
+    await agent1.post(`/api/search/campaigns/${campaignToCancel}/cancel`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(200);
+
+    const afterCancelCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterCancelCredits).toBe(beforeCredits);
+
+    const { captureSearchCreditReservation } = await import('../../src/modules/credits/credit.service.js');
+    await expect(prisma.$transaction((tx) => captureSearchCreditReservation({
+      tx,
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaignToCancel,
+      amountUsed: 6,
+      reason: 'Test capture after cancellation',
+      referenceType: 'SearchCampaign',
+      referenceId: campaignToCancel,
+      requireActiveReservation: true,
+    }))).rejects.toMatchObject({ code: 'CAMPAIGN_NOT_RUNNABLE' });
+
+    const afterCaptureAttemptCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterCaptureAttemptCredits).toBe(beforeCredits);
+    const usedLedgerRows = await prisma.creditLedger.count({
+      where: {
+        userId: user1Id,
+        type: 'CREDIT_USED',
+        referenceType: 'SearchCampaign',
+        referenceId: campaignToCancel,
+      },
+    });
+    expect(usedLedgerRows).toBe(0);
+
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { status: 'CANCELLED', lockedAt: null, lockedBy: null },
+    });
+  });
+
+  it('releases a search reservation when a queued campaign fails before provider execution', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const csrfToken = await getCsrfToken(agent1);
+    const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Unavailable provider search',
+        query: 'reddit opportunity search',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['REDDIT'],
+        requestedLimit: 5,
+      })
+      .expect(201);
+
+    const failedCampaignId = campaignRes.body.data.campaign.id;
+    await agent1.post(`/api/search/campaigns/${failedCampaignId}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(202);
+
+    const afterQueueCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterQueueCredits).toBe(beforeCredits - 10);
+
+    const result = await processNextSearchJob({ workerId: `test-worker-failure-${unique}` });
+    expect(result?.status).toBe('FAILED');
+
+    const afterFailureCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterFailureCredits).toBe(beforeCredits);
+    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: failedCampaignId } });
+    expect(reservation.status).toBe('RELEASED');
+    expect(reservation.releasedAmount).toBe(10);
+    const campaign = await prisma.searchCampaign.findUnique({ where: { id: failedCampaignId } });
+    expect(campaign.status).toBe('FAILED');
+    expect(campaign.creditsReserved).toBe(0);
+  });
+
+  it('captures zero credits and releases the full reservation for zero-result completion', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const { reserveSearchCredits, captureSearchCreditReservation } = await import('../../src/modules/credits/credit.service.js');
+
+    const campaign = await prisma.searchCampaign.create({
+      data: {
+        userId: user1Id,
+        workspaceId: workspace1Id,
+        name: 'Zero result reservation capture',
+        query: 'no matches',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 5,
+        status: 'RUNNING',
+      },
+    });
+
+    await reserveSearchCredits({
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      amount: 10,
+      reason: 'Test zero-result reservation',
+    });
+    const afterReserveCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterReserveCredits).toBe(40);
+
+    const captureResult = await prisma.$transaction((tx) => captureSearchCreditReservation({
+      tx,
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      amountUsed: 0,
+      reason: 'Test zero-result capture',
+      referenceType: 'SearchCampaign',
+      referenceId: campaign.id,
+      requireActiveReservation: true,
+    }));
+
+    expect(captureResult.capturedAmount).toBe(0);
+    expect(captureResult.releasedAmount).toBe(10);
+    const afterCaptureCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterCaptureCredits).toBe(50);
+    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: campaign.id } });
+    expect(reservation.status).toBe('CAPTURED');
+    expect(reservation.capturedAmount).toBe(0);
+    expect(reservation.releasedAmount).toBe(10);
+    const usedLedgerRows = await prisma.creditLedger.count({
+      where: {
+        userId: user1Id,
+        type: 'CREDIT_USED',
+        referenceType: 'SearchCampaign',
+        referenceId: campaign.id,
+      },
+    });
+    expect(usedLedgerRows).toBe(0);
+
+    await prisma.searchCampaign.update({
+      where: { id: campaign.id },
+      data: { status: 'COMPLETED', creditsUsed: 0, resultCount: 0, completedAt: new Date() },
+    });
+  });
+
+  it('does not silently deduct credits when campaign completion is missing an active reservation', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const csrfToken = await getCsrfToken(agent1);
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: 'Missing reservation completion',
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafe'],
+        sources: ['INSTAGRAM'],
+        requestedLimit: 5,
+      })
+      .expect(201);
+
+    const missingReservationCampaignId = campaignRes.body.data.campaign.id;
+    const { captureSearchCreditReservation } = await import('../../src/modules/credits/credit.service.js');
+    await expect(prisma.$transaction((tx) => captureSearchCreditReservation({
+      tx,
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: missingReservationCampaignId,
+      amountUsed: 6,
+      reason: 'Test missing reservation capture',
+      referenceType: 'SearchCampaign',
+      referenceId: missingReservationCampaignId,
+      requireActiveReservation: true,
+    }))).rejects.toMatchObject({ code: 'CAMPAIGN_NOT_RUNNABLE' });
+
+    const afterAttemptCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterAttemptCredits).toBe(50);
+    const usedLedgerRows = await prisma.creditLedger.count({
+      where: {
+        userId: user1Id,
+        type: 'CREDIT_USED',
+        referenceType: 'SearchCampaign',
+        referenceId: missingReservationCampaignId,
+      },
+    });
+    expect(usedLedgerRows).toBe(0);
   });
 
   it('does not expose internal source metadata from user-facing search endpoints', async () => {

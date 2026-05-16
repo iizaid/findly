@@ -56,6 +56,12 @@ const hasActiveSearchReservation = async ({ userId, campaignId }) => {
   return Boolean(reservation);
 };
 
+const releaseReservedCreditsForFailedStart = async ({ userId, campaignId }) => {
+  await prisma.$transaction(async (tx) => {
+    await releaseSearchCreditReservation({ tx, userId, campaignId });
+  }).catch(() => {});
+};
+
 const assertNotCancelled = async ({ jobId, campaignId }) => {
   if (jobId) {
     const job = await prisma.job.findUnique({
@@ -73,6 +79,29 @@ const assertNotCancelled = async ({ jobId, campaignId }) => {
   });
   if (campaign?.status === 'CANCELLED') {
     throw new AppError('JOB_CANCELLED', 'Search campaign was cancelled.', 409);
+  }
+};
+
+const assertCampaignCanComplete = async ({ tx, jobId, campaignId, userId }) => {
+  if (jobId) {
+    const job = await tx.job.findUnique({
+      where: { id: jobId },
+      select: { status: true, cancelRequestedAt: true },
+    });
+    if (!job || job.status === 'CANCELLED' || job.cancelRequestedAt) {
+      throw new AppError('JOB_CANCELLED', 'Search campaign was cancelled.', 409);
+    }
+  }
+
+  const campaign = await tx.searchCampaign.findFirst({
+    where: { id: campaignId, userId },
+    select: { status: true },
+  });
+  if (!campaign || campaign.status === 'CANCELLED') {
+    throw new AppError('JOB_CANCELLED', 'Search campaign was cancelled.', 409);
+  }
+  if (campaign.status !== 'RUNNING') {
+    throw new AppError(errorCodes.CAMPAIGN_NOT_RUNNABLE, 'Campaign is no longer running.', 409);
   }
 };
 export const createCampaign = async ({ userId, workspaceId, data }) => {
@@ -163,10 +192,12 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   if (unavailable && runnableExternalSources.length === 0) {
     const message = unavailable.status?.reason || `${unavailable.source} is not available.`;
     const code = unavailable.status?.status === 'not_configured' ? errorCodes.SOURCE_NOT_CONFIGURED : errorCodes.SOURCE_UNAVAILABLE;
+    if (jobId) await releaseReservedCreditsForFailedStart({ userId, campaignId: campaign.id });
     throw new AppError(code, message, 400);
   }
 
   if (runnableExternalSources.length === 0) {
+    if (jobId) await releaseReservedCreditsForFailedStart({ userId, campaignId: campaign.id });
     throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'No selected search source is currently available.', 400);
   }
 
@@ -212,6 +243,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     
     // Deduplication & Saving inside transaction
     await prisma.$transaction(async (tx) => {
+      await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
       const leadList = await tx.leadList.create({
         data: {
           name: `${campaign.name} - Results`,
@@ -276,6 +308,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         lastStep: 'Charging credits',
       });
 
+      await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
       await captureSearchCreditReservation({
           tx,
           userId,
@@ -285,6 +318,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
           reason: `Ran search campaign: ${campaign.name}`,
           referenceType: 'SearchCampaign',
           referenceId: campaign.id,
+          requireActiveReservation: Boolean(jobId),
       });
 
       await markCampaignCompleted({
@@ -397,6 +431,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     ].filter(Boolean);
 
     const leadList = await prisma.$transaction(async (tx) => {
+      await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
       const createdList = await tx.leadList.create({
         data: {
           userId,
@@ -445,6 +480,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         });
       }
 
+      await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
       await captureSearchCreditReservation({
           tx,
           userId,
@@ -454,6 +490,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
           reason: `Ran search campaign: ${campaign.name}`,
           referenceType: 'SearchCampaign',
           referenceId: campaign.id,
+          requireActiveReservation: Boolean(jobId),
       });
       await updateCampaignProgress({
         tx,
