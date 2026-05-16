@@ -48,6 +48,23 @@ const scoreBorder = (level) => {
   return 'border-gray-200';
 };
 
+const buildMessageDraft = (detail, analysis) => {
+  if (!detail || !analysis) return '';
+  const intro = !detail.websiteUrl
+    ? `I noticed you don't have a website yet — but your ${detail.rating ? `${detail.rating}-star rating` : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more nearby searches and convert more visitors into customers.`
+    : `I came across your business on Google${detail.rating ? ` and noticed your impressive ${detail.rating}-star rating` : ''}. ${analysis.outreachAngle || ''}`.trim();
+
+  return [
+    `Hi ${detail.businessName},`,
+    '',
+    intro,
+    '',
+    `I specialize in ${analysis.suggestedService?.toLowerCase() || 'digital services'} for businesses like yours. Would you be open to a quick chat this week?`,
+    '',
+    'Best regards',
+  ].join('\n');
+};
+
 const DashboardAnalysisPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -55,6 +72,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState(null);
+  const [copyState, setCopyState] = useState('idle');
 
   useEffect(() => {
     const fetchLeads = async () => {
@@ -74,6 +92,10 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
     fetchLeads();
   }, []);
 
+  useEffect(() => {
+    setCopyState('idle');
+  }, [selectedLead]);
+
   const loadDetail = useCallback(async (leadId) => {
     setIsLoadingDetail(true);
     setSelectedLead(leadId);
@@ -88,6 +110,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
   }, []);
 
   const analysis = detail?.analyses?.[0];
+  const messageDraft = buildMessageDraft(detail, analysis);
 
   // List view (no lead selected or mobile)
   if (!selectedLead) {
@@ -118,7 +141,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
             <div className="mt-7">
               <DashboardEmptyState
                 title="No analyzed leads yet"
-                description="Run a search campaign first. Analysis is automatically generated for every collected lead."
+                description="Analyze leads from Lead Lists first, then they will appear here."
                 actionLabel="Create Search Campaign"
                 onAction={() => onNavigate('/dashboard/find-leads')}
               />
@@ -332,28 +355,23 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                   </span>
                   <p className="text-sm font-bold">Message Draft</p>
                 </div>
-                <div className="mt-4 rounded-2xl bg-white/[0.06] p-5 text-sm font-semibold leading-7 text-white/80">
-                  <p>Hi {detail.businessName},</p>
-                  <p className="mt-3">
-                    {!detail.websiteUrl
-                      ? `I noticed you don't have a website yet — but your ${detail.rating ? detail.rating + '-star rating' : 'Google presence'} shows you're clearly doing great work. A simple, professional website could help you show up in more nearby searches and convert more visitors into customers.`
-                      : `I came across your business on Google${detail.rating ? ` and noticed your impressive ${detail.rating}-star rating` : ''}. ${analysis.outreachAngle}`
-                    }
-                  </p>
-                  <p className="mt-3">
-                    I specialize in {analysis.suggestedService?.toLowerCase() || 'digital services'} for businesses like yours. Would you be open to a quick chat this week?
-                  </p>
-                  <p className="mt-3">Best regards</p>
+                <div className="mt-4 whitespace-pre-line rounded-2xl bg-white/[0.06] p-5 text-sm font-semibold leading-7 text-white/80">
+                  {messageDraft}
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    const msg = document.querySelector('[data-message-draft]')?.textContent || '';
-                    navigator.clipboard.writeText(msg);
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(messageDraft);
+                      setCopyState('copied');
+                      window.setTimeout(() => setCopyState('idle'), 1600);
+                    } catch {
+                      setError('Could not copy the message. Please copy it manually.');
+                    }
                   }}
                   className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white px-5 text-xs font-bold text-black transition-colors hover:bg-accent"
                 >
-                  Copy message
+                  {copyState === 'copied' ? 'Copied' : 'Copy message'}
                 </button>
               </DashboardCard>
             )}

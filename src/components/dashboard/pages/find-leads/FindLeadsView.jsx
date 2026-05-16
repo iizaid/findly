@@ -13,6 +13,7 @@ const FindLeadsView = ({ workspace, onNavigate }) => {
   const locationOptions = search.searchOptions.governorates?.length
     ? search.searchOptions.governorates
     : search.searchOptions.cities;
+  const submitDisabled = search.sourcesLoading;
 
   const submit = (event) => {
     event.preventDefault();
@@ -46,9 +47,38 @@ const FindLeadsView = ({ workspace, onNavigate }) => {
           </div>
 
           {search.error && (
-            <div className="mt-6 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
+            <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
+              <div className="flex items-start gap-3">
               <AlertCircle size={18} className="mt-0.5 shrink-0" />
               <p className="text-sm font-bold">{search.error}</p>
+              </div>
+              {search.pendingSearch && (
+                <div className="mt-4 flex flex-wrap gap-2 pl-8">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/dashboard/lead-lists')}
+                    className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black transition-colors hover:bg-accent"
+                  >
+                    View Lead Lists
+                  </button>
+                  <button
+                    type="button"
+                    onClick={search.checkPendingSearchStatus}
+                    disabled={search.isSubmitting}
+                    className="inline-flex h-9 items-center rounded-full bg-black px-4 text-xs font-bold text-white transition-colors hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Check Status Again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={search.cancelPendingSearch}
+                    disabled={search.isSubmitting}
+                    className="inline-flex h-9 items-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel Search
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -103,9 +133,13 @@ const FindLeadsView = ({ workspace, onNavigate }) => {
 
             <div className="md:col-span-2 mt-4">
               {!search.isSubmitting && !search.resultSummary && (
-                <button type="submit" className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-black px-6 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent sm:w-auto">
-                  Start Search
-                  <ArrowRight size={16} />
+                <button
+                  type="submit"
+                  disabled={submitDisabled}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-black px-6 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  {search.sourcesLoading ? 'Loading sources...' : 'Start Search'}
+                  {!search.sourcesLoading && <ArrowRight size={16} />}
                 </button>
               )}
               {search.resultSummary && (

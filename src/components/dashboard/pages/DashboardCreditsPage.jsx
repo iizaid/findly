@@ -70,7 +70,9 @@ const DashboardCreditsPage = ({ credits }) => {
                   <p className="mt-1 text-xs font-semibold text-secondary">{new Date(item.createdAt).toLocaleString()}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-black">+{item.amount}</p>
+                  <p className={`text-sm font-bold ${item.amount < 0 ? 'text-red-700' : 'text-black'}`}>
+                    {item.amount > 0 ? `+${item.amount}` : item.amount}
+                  </p>
                   <p className="mt-1 text-xs font-semibold text-secondary">{item.balanceAfter} balance</p>
                 </div>
               </div>

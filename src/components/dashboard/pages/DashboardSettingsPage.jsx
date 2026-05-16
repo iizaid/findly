@@ -96,8 +96,8 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     if (!file) return;
 
     // Validate size before cropping
-    if (file.size > 5 * 1024 * 1024) {
-      setProfileMessage({ type: 'error', text: 'Image is too large. Please select an image under 5MB.' });
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileMessage({ type: 'error', text: 'Image is too large. Please select an image under 2MB.' });
       return;
     }
 
@@ -361,7 +361,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                     </button>
                   )}
                 </div>
-                <p className="mt-2 text-xs font-semibold text-secondary">JPG or PNG. Max size 2MB.</p>
+                <p className="mt-2 text-xs font-semibold text-secondary">JPG, PNG, or WebP. Max size 2MB.</p>
                 </div>
               </div>
 

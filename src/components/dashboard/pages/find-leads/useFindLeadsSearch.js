@@ -41,7 +41,7 @@ const normalizeSourceOptions = (sources = []) => [...sources]
     canRun: Boolean(source.searchable || source.available),
   }));
 
-const pollCampaignStatus = async (campaignId) => {
+const pollCampaignStatus = async (campaignId, jobId = null) => {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await delay(1000);
     const response = await apiRequest(`/api/search/campaigns/${campaignId}/status`);
@@ -53,7 +53,10 @@ const pollCampaignStatus = async (campaignId) => {
     }
   }
 
-  throw new ApiError('SEARCH_STILL_RUNNING', 'Search is still running. Check the lead lists page shortly.', 202);
+  const error = new ApiError('SEARCH_STILL_RUNNING', 'Search is still running. You can check the status again, open Lead Lists, or cancel the search.', 202);
+  error.campaignId = campaignId;
+  error.jobId = jobId;
+  throw error;
 };
 
 export const useFindLeadsSearch = ({ workspace }) => {
@@ -74,6 +77,7 @@ export const useFindLeadsSearch = ({ workspace }) => {
   const [error, setError] = useState(null);
   const [searchStep, setSearchStep] = useState(null);
   const [resultSummary, setResultSummary] = useState(null);
+  const [pendingSearch, setPendingSearch] = useState(null);
 
   const selectedPlatformNames = useMemo(
     () => selectedSources.map((source) => PLATFORM_LABELS[source] || source).join(', '),
@@ -128,7 +132,10 @@ export const useFindLeadsSearch = ({ workspace }) => {
     };
   }, []);
 
-  const clearResultSummary = () => setResultSummary(null);
+  const clearResultSummary = () => {
+    setResultSummary(null);
+    setPendingSearch(null);
+  };
 
   const updateField = (field, value) => {
     clearResultSummary();
@@ -162,9 +169,79 @@ export const useFindLeadsSearch = ({ workspace }) => {
     clearResultSummary();
   };
 
+  const applyCompletedCampaign = (campaign, runData = {}) => {
+    const leadsReturned = campaign.resultCount ?? campaign.leadsReturned ?? campaign.savedLeadsCount ?? 0;
+
+    if (leadsReturned === 0) {
+      setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
+      setPendingSearch(null);
+      return;
+    }
+
+    sessionStorage.removeItem(STORAGE_KEY);
+    setFormState({ ...EMPTY_FORM_STATE, goal: searchOptions.searchGoals[0] || DEFAULT_GOALS[0] });
+    setPendingSearch(null);
+    setResultSummary({
+      leadListId: campaign.leadListId || runData.leadListId,
+      count: leadsReturned,
+      platformsRequested: runData.platformsRequested || selectedSources,
+    });
+  };
+
+  const checkPendingSearchStatus = async () => {
+    if (!pendingSearch?.campaignId) return;
+    setError(null);
+    setIsSubmitting(true);
+    setSearchStep(3);
+
+    try {
+      const response = await apiRequest(`/api/search/campaigns/${pendingSearch.campaignId}/status`);
+      const campaign = response.data.campaign;
+
+      if (campaign.status === 'COMPLETED') {
+        applyCompletedCampaign(campaign, { jobId: pendingSearch.jobId });
+      } else if (campaign.status === 'FAILED') {
+        setPendingSearch(null);
+        setError(campaign.errorMessage || 'Search could not be completed.');
+      } else if (campaign.status === 'CANCELLED') {
+        setPendingSearch(null);
+        setError('Search was cancelled. Any reserved credits were released.');
+      } else {
+        setError('Search is still running. You can check again shortly or open Lead Lists.');
+      }
+    } catch (err) {
+      setError(friendlyErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+      setSearchStep(null);
+    }
+  };
+
+  const cancelPendingSearch = async () => {
+    if (!pendingSearch?.campaignId) return;
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await apiRequest(`/api/search/campaigns/${pendingSearch.campaignId}/cancel`, { method: 'POST' });
+      setPendingSearch(null);
+      setError('Search was cancelled. Any reserved credits were released.');
+    } catch (err) {
+      setError(friendlyErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+      setSearchStep(null);
+    }
+  };
+
   const runSearch = async () => {
     setError(null);
     clearResultSummary();
+
+    if (sourcesLoading) {
+      setError('Search sources are still loading. Please wait a moment and try again.');
+      return;
+    }
 
     if (selectedSources.length < 1) {
       setError('Please select at least one platform to proceed.');
@@ -226,26 +303,19 @@ export const useFindLeadsSearch = ({ workspace }) => {
 
       setSearchStep(3);
       const completedCampaign = runData.status === 'QUEUED'
-        ? await pollCampaignStatus(campaignRes.data.campaign.id)
+        ? await pollCampaignStatus(campaignRes.data.campaign.id, runData.jobId)
         : runData;
-      const leadsReturned = completedCampaign.resultCount ?? completedCampaign.leadsReturned ?? completedCampaign.savedLeadsCount ?? 0;
-
-      if (leadsReturned === 0) {
-        setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
-        return;
-      }
 
       setSearchStep(4);
       await delay(250);
-
-      sessionStorage.removeItem(STORAGE_KEY);
-      setFormState({ ...EMPTY_FORM_STATE, goal: searchOptions.searchGoals[0] || DEFAULT_GOALS[0] });
-      setResultSummary({
-        leadListId: completedCampaign.leadListId || runData.leadListId,
-        count: leadsReturned,
-        platformsRequested: runData.platformsRequested || selectedSources,
-      });
+      applyCompletedCampaign(completedCampaign, runData);
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'SEARCH_STILL_RUNNING') {
+        setPendingSearch({
+          campaignId: err.campaignId,
+          jobId: err.jobId,
+        });
+      }
       setError(friendlyErrorMessage(err));
     } finally {
       setIsSubmitting(false);
@@ -263,10 +333,13 @@ export const useFindLeadsSearch = ({ workspace }) => {
     error,
     searchStep,
     resultSummary,
+    pendingSearch,
     selectedPlatformNames,
     updateField,
     toggleSource,
     resetForNewSearch,
+    checkPendingSearchStatus,
+    cancelPendingSearch,
     runSearch,
   };
 };

@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = configuredApiBaseUrl || (import.meta.env.PROD ? '' : 'http://localhost:4000');
 const CSRF_EXEMPT = new Set([
   'POST /api/auth/register',
   'POST /api/auth/login',
@@ -15,6 +16,18 @@ class ApiError extends Error {
     this.status = status;
   }
 }
+
+const getApiBaseUrl = () => {
+  if (!API_BASE_URL) {
+    throw new ApiError(
+      'CONFIGURATION_ERROR',
+      'Findly is not configured correctly. Please contact support.',
+      500,
+    );
+  }
+
+  return API_BASE_URL;
+};
 
 const parseJson = async (response) => {
   const text = await response.text();
@@ -44,7 +57,7 @@ const apiRequestInternal = async (path, options = {}, retryState = { csrfRetried
     headers['X-CSRF-Token'] = await getCsrfToken();
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     credentials: 'include',
     ...options,
     method,
@@ -79,7 +92,7 @@ const apiRequestInternal = async (path, options = {}, retryState = { csrfRetried
 export const apiRequest = (path, options = {}) => apiRequestInternal(path, options);
 
 export const getCsrfToken = async () => {
-  csrfTokenPromise ??= fetch(`${API_BASE_URL}/api/csrf-token`, {
+  csrfTokenPromise ??= fetch(`${getApiBaseUrl()}/api/csrf-token`, {
     credentials: 'include',
   })
     .then(parseJson)
