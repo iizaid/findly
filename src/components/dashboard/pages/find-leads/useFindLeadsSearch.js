@@ -42,7 +42,7 @@ const normalizeSourceOptions = (sources = []) => [...sources]
   }));
 
 const pollCampaignStatus = async (campaignId, jobId = null) => {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 15; attempt += 1) {
     await delay(1000);
     const response = await apiRequest(`/api/search/campaigns/${campaignId}/status`);
     const campaign = response.data.campaign;
@@ -210,7 +210,8 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
         setError('Search was cancelled. Any reserved credits were released.');
         onUpdate?.();
       } else {
-        setError('Search is still running. You can check again shortly or open Lead Lists.');
+        setError(null);
+        // keep pendingSearch set so the recovery card continues to show
       }
     } catch (err) {
       setError(friendlyErrorMessage(err));
@@ -306,6 +307,10 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       const runData = runRes.data || {};
 
       setSearchStep(3);
+      if (runData.status === 'QUEUED') {
+        setPendingSearch({ campaignId: campaignRes.data.campaign.id, jobId: runData.jobId });
+      }
+
       const completedCampaign = runData.status === 'QUEUED'
         ? await pollCampaignStatus(campaignRes.data.campaign.id, runData.jobId)
         : runData;
@@ -315,12 +320,11 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       applyCompletedCampaign(completedCampaign, runData);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SEARCH_STILL_RUNNING') {
-        setPendingSearch({
-          campaignId: err.campaignId,
-          jobId: err.jobId,
-        });
+        // pendingSearch is already set above, just stop the spinner
+        setError(null);
+      } else {
+        setError(friendlyErrorMessage(err));
       }
-      setError(friendlyErrorMessage(err));
       onUpdate?.();
     } finally {
       setIsSubmitting(false);

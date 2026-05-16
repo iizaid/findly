@@ -34,7 +34,7 @@ const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames }) => (
         Search runs across ready sources and saves matching opportunities into a lead list.
       </p>
       <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-medium text-white/80">
-        Credits are charged only by server-side billing rules.
+        Credits are reserved when a search starts. Unused or cancelled search credits are returned automatically.
       </p>
     </DashboardCard>
   </div>

@@ -14,7 +14,7 @@ const platformLabel = {
   X: 'X',
 };
 
-const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selectedPlatforms = [], criteria = {} }) => {
+const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selectedPlatforms = [], criteria = {}, pendingSearch = null, onCancel, onCheckStatus, onViewLeadLists }) => {
   if (!isVisible) return null;
 
   const labels = selectedPlatforms.map((item) => platformLabel[item] || item).filter(Boolean);
@@ -33,6 +33,9 @@ const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selected
             <h3 className="mt-2 text-2xl font-bold tracking-tight text-black">Building your lead list</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-secondary">
               {activeStep}. {context ? `Matching ${context}.` : 'Matching businesses against your setup.'}
+            </p>
+            <p className="mt-1 text-xs font-medium text-secondary/80">
+              Your search is running. Credits are reserved, not permanently charged yet.
             </p>
           </div>
         </div>
@@ -64,6 +67,32 @@ const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selected
             );
           })}
         </div>
+
+        {pendingSearch && (
+          <div className="mt-6 flex flex-wrap gap-2 border-t border-black/[0.06] pt-5">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex h-9 items-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
+            >
+              Cancel search
+            </button>
+            <button
+              type="button"
+              onClick={onCheckStatus}
+              className="inline-flex h-9 items-center rounded-full bg-black px-4 text-xs font-bold text-white transition-colors hover:bg-black/80"
+            >
+              Check status
+            </button>
+            <button
+              type="button"
+              onClick={onViewLeadLists}
+              className="inline-flex h-9 items-center rounded-full border border-black/10 bg-white px-4 text-xs font-bold text-black transition-colors hover:bg-black/5"
+            >
+              View Lead Lists
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

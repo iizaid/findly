@@ -28,6 +28,13 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
         steps={SEARCH_STEPS}
         selectedPlatforms={search.selectedSources}
         criteria={search.formState}
+        pendingSearch={search.pendingSearch}
+        onCancel={() => {
+          search.cancelPendingSearch();
+          // Reset submitting so modal closes
+        }}
+        onCheckStatus={search.checkPendingSearchStatus}
+        onViewLeadLists={() => onNavigate('/dashboard/lead-lists')}
       />
 
       <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
@@ -46,39 +53,51 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
             </span>
           </div>
 
-          {search.error && (
+          {search.error && !search.pendingSearch && (
             <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
               <div className="flex items-start gap-3">
               <AlertCircle size={18} className="mt-0.5 shrink-0" />
               <p className="text-sm font-bold">{search.error}</p>
               </div>
-              {search.pendingSearch && (
-                <div className="mt-4 flex flex-wrap gap-2 pl-8">
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('/dashboard/lead-lists')}
-                    className="inline-flex h-9 items-center rounded-full bg-white px-4 text-xs font-bold text-black transition-colors hover:bg-accent"
-                  >
-                    View Lead Lists
-                  </button>
-                  <button
-                    type="button"
-                    onClick={search.checkPendingSearchStatus}
-                    disabled={search.isSubmitting}
-                    className="inline-flex h-9 items-center rounded-full bg-black px-4 text-xs font-bold text-white transition-colors hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Check Status Again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={search.cancelPendingSearch}
-                    disabled={search.isSubmitting}
-                    className="inline-flex h-9 items-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Cancel Search
-                  </button>
+            </div>
+          )}
+
+          {!search.error && search.pendingSearch && !search.isSubmitting && (
+            <div className="mt-6 rounded-2xl border border-yellow-200 bg-yellow-50 p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yellow-200 text-yellow-800">
+                  <AlertCircle size={14} />
+                </span>
+                <div>
+                  <h3 className="text-[15px] font-bold text-yellow-900">Search is still running</h3>
+                  <p className="mt-1 text-[13px] font-medium leading-5 text-yellow-800/80">
+                    Your search is taking longer than expected. It is safely running in the background. You can check the status again or cancel it if you prefer.
+                  </p>
                 </div>
-              )}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2 pl-9">
+                <button
+                  type="button"
+                  onClick={search.checkPendingSearchStatus}
+                  className="inline-flex h-9 items-center rounded-full bg-black px-4 text-xs font-bold text-white transition-colors hover:bg-black/80"
+                >
+                  Check Status Again
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/dashboard/lead-lists')}
+                  className="inline-flex h-9 items-center rounded-full border border-black/10 bg-white px-4 text-xs font-bold text-black transition-colors hover:bg-black/5"
+                >
+                  View Lead Lists
+                </button>
+                <button
+                  type="button"
+                  onClick={search.cancelPendingSearch}
+                  className="inline-flex h-9 items-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
+                >
+                  Cancel Search
+                </button>
+              </div>
             </div>
           )}
 
