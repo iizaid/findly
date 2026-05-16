@@ -17,7 +17,18 @@ const providerClasses = {
   [AI_PROVIDERS.QWEN]: QwenProvider,
 };
 
+let testProviderOverrides = null;
+
+export const setAiProviderOverridesForTests = (providers = null) => {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('AI provider overrides are only allowed in test.');
+  }
+  testProviderOverrides = providers;
+};
+
 const normalizeProviders = (providers, config) => {
+  const effectiveProviders = providers ?? testProviderOverrides;
+  if (effectiveProviders) providers = effectiveProviders;
   if (providers instanceof Map) return providers;
   if (Array.isArray(providers)) {
     return new Map(providers.map((provider) => [provider.name, provider]));

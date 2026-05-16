@@ -85,10 +85,13 @@ export const runLeadAnalysisAiReview = async ({
   });
 
   if (!result.ok) {
+    const analysisSource = result.safeMessage?.toLowerCase().includes('disabled')
+      ? ANALYSIS_SOURCE.RULE_BASED
+      : ANALYSIS_SOURCE.AI_FALLBACK;
     return {
       analysis: {
         ...ruleBasedAnalysis,
-        analysisSource: ANALYSIS_SOURCE.AI_FALLBACK,
+        analysisSource,
       },
       aiResult: result,
     };

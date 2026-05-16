@@ -13,10 +13,11 @@ export class BaseAiProvider {
   }
 
   getStatus() {
+    const configured = this.isConfigured();
     return {
       provider: this.name,
-      configured: this.isConfigured(),
-      status: this.isConfigured() ? 'configured' : 'missing_key',
+      configured,
+      status: configured ? 'not_implemented' : 'missing_key',
       model: this.defaultModel || null,
     };
   }

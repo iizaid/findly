@@ -10,6 +10,9 @@ let createApp;
 let prisma;
 let getTestOutbox;
 let processNextSearchJob;
+let setAiProviderOverridesForTests;
+let MockAiProvider;
+let env;
 let agent1;
 let agent2;
 let user1Id;
@@ -64,6 +67,9 @@ beforeAll(async () => {
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ getTestOutbox } = await import('../../src/modules/mail/mail.service.js'));
   ({ processNextSearchJob } = await import('../../src/workers/searchWorker.js'));
+  ({ setAiProviderOverridesForTests } = await import('../../src/modules/ai/aiRouter.service.js'));
+  ({ MockAiProvider } = await import('../../src/modules/ai/providers/mockProvider.js'));
+  ({ env } = await import('../../src/config/env.js'));
 
   await prisma.job.updateMany({
     where: { status: { in: ['QUEUED', 'RUNNING'] } },
@@ -218,6 +224,73 @@ const processCampaignJob = async (campaignId) => {
   return statusResponse.body.data.campaign;
 };
 
+const createAnalysisFixture = async (suffix) => {
+  const campaign = await prisma.searchCampaign.create({
+    data: {
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      name: `AI Analysis ${suffix} ${unique}`,
+      query: 'cafes',
+      country: 'Jordan',
+      city: 'Amman',
+      sources: ['INSTAGRAM'],
+      status: 'COMPLETED',
+    },
+  });
+
+  const leadList = await prisma.leadList.create({
+    data: {
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      name: `AI Analysis List ${suffix} ${unique}`,
+      resultCount: 1,
+    },
+  });
+
+  const catalogLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `AI Cafe ${suffix} ${unique}`,
+      category: 'Cafe',
+      country: 'Jordan',
+      city: 'Amman',
+      source: 'LOCAL_DATASET',
+      sourceId: `ai-cafe-${suffix}-${unique}`,
+      normalizedFingerprint: `ai-cafe-fingerprint-${suffix}-${unique}`,
+      detectedSignals: ['NO_WEBSITE', 'HAS_PHONE'],
+    },
+  });
+
+  const item = await prisma.leadListLead.create({
+    data: {
+      leadListId: leadList.id,
+      catalogLeadId: catalogLead.id,
+      rank: 1,
+      status: 'NEW',
+    },
+  });
+
+  return { campaign, leadList, catalogLead, item };
+};
+
+const withAiConfig = async (overrides, callback) => {
+  const previous = {
+    AI_ENABLED: env.AI_ENABLED,
+    AI_ANALYSIS_ENABLED: env.AI_ANALYSIS_ENABLED,
+    AI_ANALYSIS_PROVIDER_CHAIN: env.AI_ANALYSIS_PROVIDER_CHAIN,
+    AI_ANALYSIS_MAX_RETRIES: env.AI_ANALYSIS_MAX_RETRIES,
+  };
+
+  Object.assign(env, overrides.env);
+  setAiProviderOverridesForTests(overrides.providers || null);
+  try {
+    return await callback();
+  } finally {
+    Object.assign(env, previous);
+    setAiProviderOverridesForTests(null);
+  }
+};
+
 describe('LeadList Workflow Architecture', () => {
   it('verifies status and notes can be updated via the new item endpoints', async () => {
     const csrfToken = await getCsrfToken(agent1);
@@ -279,6 +352,156 @@ describe('LeadList Workflow Architecture', () => {
 
     const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
     expect(afterCredits).toBe(midCredits); // No additional charge
+  });
+
+  it('single list item analysis uses mock AI when enabled and charges once', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const { leadList, item } = await createAnalysisFixture('assisted');
+    const csrfToken = await getCsrfToken(agent1);
+    const mock = new MockAiProvider();
+
+    await withAiConfig({
+      env: {
+        AI_ENABLED: true,
+        AI_ANALYSIS_ENABLED: true,
+        AI_ANALYSIS_PROVIDER_CHAIN: 'mock,rule_based',
+        AI_ANALYSIS_MAX_RETRIES: 0,
+      },
+      providers: { mock },
+    }, async () => {
+      const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      const response = await agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+        .set('X-CSRF-Token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(response.body.data.reused).toBe(false);
+      expect(response.body.data.creditsUsed).toBe(1);
+      expect(response.body.data.analysisSource).toBe('AI_ASSISTED');
+      expect(response.body.data.aiProvider).toBe('mock');
+      expect(response.body.data.aiFallbackUsed).toBe(false);
+      expect(response.body.data.analysis.analysisSource).toBe('AI_ASSISTED');
+      expect(JSON.stringify(response.body)).not.toContain('test-key');
+
+      const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      expect(afterCredits).toBe(beforeCredits - 1);
+      expect(mock.callCount).toBe(1);
+    });
+  });
+
+  it('single list item analysis falls back when AI returns invalid JSON and still charges once', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const { leadList, item } = await createAnalysisFixture('invalidai');
+    const csrfToken = await getCsrfToken(agent1);
+    const mock = new MockAiProvider({ mode: 'invalid' });
+
+    await withAiConfig({
+      env: {
+        AI_ENABLED: true,
+        AI_ANALYSIS_ENABLED: true,
+        AI_ANALYSIS_PROVIDER_CHAIN: 'mock,rule_based',
+        AI_ANALYSIS_MAX_RETRIES: 0,
+      },
+      providers: { mock },
+    }, async () => {
+      const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      const response = await agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+        .set('X-CSRF-Token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(response.body.data.reused).toBe(false);
+      expect(response.body.data.creditsUsed).toBe(1);
+      expect(response.body.data.analysisSource).toBe('AI_FALLBACK');
+      expect(response.body.data.aiProvider).toBe(null);
+      expect(response.body.data.aiFallbackUsed).toBe(true);
+
+      const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      expect(afterCredits).toBe(beforeCredits - 1);
+    });
+  });
+
+  it('existing analyzed list item returns reused and does not call AI', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const { leadList, item } = await createAnalysisFixture('reuse');
+    const csrfToken = await getCsrfToken(agent1);
+
+    await agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(200);
+
+    const mock = new MockAiProvider();
+    await withAiConfig({
+      env: {
+        AI_ENABLED: true,
+        AI_ANALYSIS_ENABLED: true,
+        AI_ANALYSIS_PROVIDER_CHAIN: 'mock,rule_based',
+        AI_ANALYSIS_MAX_RETRIES: 0,
+      },
+      providers: { mock },
+    }, async () => {
+      const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      const response = await agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+        .set('X-CSRF-Token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(response.body.data.reused).toBe(true);
+      expect(response.body.data.creditsUsed).toBe(0);
+      expect(mock.callCount).toBe(0);
+      const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      expect(afterCredits).toBe(beforeCredits);
+    });
+  });
+
+  it('concurrent single item analysis does not double charge', async () => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const { leadList, item } = await createAnalysisFixture('concurrent');
+    const csrfToken = await getCsrfToken(agent1);
+    const mock = new MockAiProvider();
+    const originalGenerate = mock.generateJson.bind(mock);
+    mock.generateJson = async (args) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return originalGenerate(args);
+    };
+
+    await withAiConfig({
+      env: {
+        AI_ENABLED: true,
+        AI_ANALYSIS_ENABLED: true,
+        AI_ANALYSIS_PROVIDER_CHAIN: 'mock,rule_based',
+        AI_ANALYSIS_MAX_RETRIES: 0,
+      },
+      providers: { mock },
+    }, async () => {
+      const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      const [first, second] = await Promise.all([
+        agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+          .set('X-CSRF-Token', csrfToken)
+          .send({}),
+        agent1.post(`/api/search/lists/${leadList.id}/items/${item.id}/analyze`)
+          .set('X-CSRF-Token', csrfToken)
+          .send({}),
+      ]);
+
+      expect([200, 409]).toContain(first.status);
+      expect([200, 409]).toContain(second.status);
+
+      const analysisCount = await prisma.leadAnalysis.count({ where: { leadListLeadId: item.id } });
+      expect(analysisCount).toBe(1);
+      const ledgerCount = await prisma.creditLedger.count({
+        where: {
+          userId: user1Id,
+          type: 'CREDIT_USED',
+          referenceType: 'LeadListLead',
+          referenceId: item.id,
+        },
+      });
+      expect(ledgerCount).toBe(1);
+      const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+      expect(afterCredits).toBe(beforeCredits - 1);
+    });
   });
 
   it('verifies batch list analysis works and charges credits accurately', async () => {

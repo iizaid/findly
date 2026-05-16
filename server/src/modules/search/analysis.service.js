@@ -45,7 +45,7 @@ export const normalizeLeadForAnalysis = (input) => {
   };
 };
 
-export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspaceId, campaignId, leadListLeadId }) => {
+export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   let opportunityScore = 0;
   let fitScore = 0;
   const detectedSignals = [];
@@ -227,27 +227,61 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
     nextBestAction = 'Research business further';
   }
 
+  return {
+    fitScore,
+    opportunityScore,
+    scoreLevel,
+    detectedSignals,
+    reasons,
+    suggestedService,
+    outreachAngle,
+    messageDraft,
+    confidence,
+    nextBestAction,
+  };
+};
+
+export const toLeadAnalysisCreateData = ({
+  lead,
+  analysisData,
+  userId,
+  workspaceId,
+  campaignId,
+  leadListLeadId,
+}) => {
   if (!leadListLeadId && !lead.id) {
     throw new Error('Analysis requires either a leadId or a leadListLeadId');
   }
 
+  return {
+    userId,
+    workspaceId,
+    leadId: leadListLeadId ? null : lead.id,
+    leadListLeadId: leadListLeadId || null,
+    campaignId,
+    fitScore: analysisData.fitScore,
+    opportunityScore: analysisData.opportunityScore,
+    scoreLevel: analysisData.scoreLevel,
+    detectedSignals: analysisData.detectedSignals || [],
+    reasons: analysisData.reasons || [],
+    suggestedService: analysisData.suggestedService,
+    outreachAngle: analysisData.outreachAngle,
+    messageDraft: analysisData.messageDraft,
+    confidence: analysisData.confidence,
+    nextBestAction: analysisData.nextBestAction,
+  };
+};
+
+export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspaceId, campaignId, leadListLeadId }) => {
+  const analysisData = buildRuleBasedAnalysisData({ lead, profile });
   return tx.leadAnalysis.create({
-    data: {
+    data: toLeadAnalysisCreateData({
+      lead,
+      analysisData,
       userId,
       workspaceId,
-      leadId: leadListLeadId ? null : lead.id,
-      leadListLeadId: leadListLeadId || null,
       campaignId,
-      fitScore,
-      opportunityScore,
-      scoreLevel,
-      detectedSignals,
-      reasons,
-      suggestedService,
-      outreachAngle,
-      messageDraft,
-      confidence,
-      nextBestAction,
-    },
+      leadListLeadId,
+    }),
   });
 };

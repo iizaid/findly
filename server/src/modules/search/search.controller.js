@@ -9,12 +9,14 @@ import { getDashboardSummary, getCampaignAnalytics } from './dashboard.service.j
 import { enrichWebsiteUrl, mergeSignals } from './websiteEnrichment.service.js';
 import { enqueueJobWithTx, getSearchJobBackpressureState } from '../jobs/jobQueue.service.js';
 import {
+  ANALYSIS_CREDITS,
   attachReservationJob,
   deductCredits,
   releaseSearchCreditReservation,
   reserveSearchCredits,
 } from '../credits/credit.service.js';
-import { runRuleBasedAnalysis } from './analysis.service.js';
+import { buildRuleBasedAnalysisData, runRuleBasedAnalysis, toLeadAnalysisCreateData } from './analysis.service.js';
+import { runLeadAnalysisAiReview } from '../ai/leadAnalysisAi.service.js';
 import { markCampaignCancelled, markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
 import { env } from '../../config/env.js';
 import {
@@ -149,6 +151,37 @@ const leadMatchesFilters = (lead, { source, city, status, missingWebsite, scoreL
   if (scoreLevel && lead.analyses?.[0]?.scoreLevel !== scoreLevel) return false;
   return true;
 };
+
+const enrichAnalysisDataForPersistence = ({ analysisData, aiResult }) => {
+  const analysisSource = analysisData.analysisSource || 'RULE_BASED';
+  const persistedAnalysisSource = analysisSource === 'AI_FALLBACK' ? 'RULE_BASED' : analysisSource;
+  const detectedSignals = [
+    ...(analysisData.detectedSignals || []),
+    `ANALYSIS_SOURCE_${persistedAnalysisSource}`,
+  ];
+  if (aiResult?.ok && aiResult.provider) detectedSignals.push(`AI_PROVIDER_${aiResult.provider.toUpperCase()}`);
+
+  const reasons = [...(analysisData.reasons || [])];
+  if (analysisData.aiDataQualityNotes?.length) {
+    reasons.push(...analysisData.aiDataQualityNotes.map((note) => `Data quality: ${note}`));
+  }
+  if (analysisData.aiRiskNotes?.length) {
+    reasons.push(...analysisData.aiRiskNotes.map((note) => `Risk note: ${note}`));
+  }
+
+  return {
+    ...analysisData,
+    detectedSignals: [...new Set(detectedSignals)].slice(0, 24),
+    reasons: reasons.slice(0, 16),
+  };
+};
+
+const buildAnalysisResponseMetadata = ({ analysisData, aiResult }) => ({
+  analysisSource: analysisData.analysisSource || 'RULE_BASED',
+  aiProvider: aiResult?.ok ? aiResult.provider : null,
+  aiModel: aiResult?.ok ? aiResult.model : null,
+  aiFallbackUsed: Boolean(aiResult && !aiResult.ok && analysisData.analysisSource === 'AI_FALLBACK'),
+});
 
 // ═══════════════════════════════════════
 // SOURCE STATUS
@@ -1051,7 +1084,15 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
   }
 
   if (item.analyses.length > 0) {
-    return successResponse(res, { analysis: item.analyses[0], reused: true, creditsUsed: 0 }, 'Existing item analysis loaded.');
+    return successResponse(res, {
+      analysis: item.analyses[0],
+      reused: true,
+      creditsUsed: 0,
+      analysisSource: 'UNKNOWN',
+      aiProvider: null,
+      aiModel: null,
+      aiFallbackUsed: false,
+    }, 'Existing item analysis loaded.');
   }
 
   const sourceLead = item.lead || item.catalogLead;
@@ -1060,27 +1101,86 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
   }
 
   const profile = item.leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
+  const userCredits = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { creditsBalance: true },
+  });
+  if (!userCredits || userCredits.creditsBalance < ANALYSIS_CREDITS) {
+    throw new AppError(errorCodes.INSUFFICIENT_FUNDS, 'Insufficient credits.', 402);
+  }
+
+  const ruleBasedAnalysis = buildRuleBasedAnalysisData({ lead: sourceLead, profile });
+  const aiReview = await runLeadAnalysisAiReview({
+    lead: sourceLead,
+    profile,
+    campaign: item.leadList.campaign,
+    ruleBasedAnalysis,
+  });
+  const finalAnalysisData = enrichAnalysisDataForPersistence({
+    analysisData: aiReview.analysis,
+    aiResult: aiReview.aiResult,
+  });
+  const responseMetadata = buildAnalysisResponseMetadata({
+    analysisData: finalAnalysisData,
+    aiResult: aiReview.aiResult,
+  });
 
   const result = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.leadListLead.updateMany({
+      where: {
+        id: item.id,
+        leadListId: listId,
+        leadList: { userId: req.user.id },
+        analyses: { none: {} },
+        OR: [
+          { analysisStatus: null },
+          { analysisStatus: { notIn: ['PROCESSING', 'COMPLETED'] } },
+        ],
+      },
+      data: { analysisStatus: 'PROCESSING' },
+    });
+
+    if (claimed.count !== 1) {
+      const existing = await tx.leadListLead.findFirst({
+        where: { id: item.id, leadListId: listId, leadList: { userId: req.user.id } },
+        include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+
+      if (existing?.analyses?.[0]) {
+        return {
+          analysis: existing.analyses[0],
+          reused: true,
+          creditsUsed: 0,
+          analysisSource: 'UNKNOWN',
+          aiProvider: null,
+          aiModel: null,
+          aiFallbackUsed: false,
+        };
+      }
+
+      throw new AppError(errorCodes.CONFLICT, 'Lead analysis is already in progress.', 409);
+    }
+
     await deductCredits({
       tx,
       userId: req.user.id,
       workspaceId: item.leadList.workspaceId,
-      amount: 1,
+      amount: ANALYSIS_CREDITS,
       type: 'CREDIT_USED',
       reason: `Analyzed lead list item: ${sourceLead.businessName}`,
       referenceType: 'LeadListLead',
       referenceId: item.id,
     });
 
-    const analysis = await runRuleBasedAnalysis({
-      tx,
+    const analysis = await tx.leadAnalysis.create({
+      data: toLeadAnalysisCreateData({
       lead: sourceLead,
-      profile,
+        analysisData: finalAnalysisData,
       userId: req.user.id,
       workspaceId: item.leadList.workspaceId,
       campaignId: item.leadList.campaignId,
       leadListLeadId: item.id,
+      }),
     });
 
     await tx.leadListLead.update({
@@ -1101,15 +1201,29 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
         metadata: {
           workspaceId: item.leadList.workspaceId,
           analysisId: analysis.id,
-          creditsUsed: 1,
+          creditsUsed: ANALYSIS_CREDITS,
+          analysisSource: responseMetadata.analysisSource,
+          aiProvider: responseMetadata.aiProvider,
+          aiFallbackUsed: responseMetadata.aiFallbackUsed,
         },
       },
     });
 
-    return analysis;
+    return {
+      analysis: {
+        ...analysis,
+        analysisSource: responseMetadata.analysisSource,
+        aiProvider: responseMetadata.aiProvider,
+        aiModel: responseMetadata.aiModel,
+        aiFallbackUsed: responseMetadata.aiFallbackUsed,
+      },
+      reused: false,
+      creditsUsed: ANALYSIS_CREDITS,
+      ...responseMetadata,
+    };
   });
 
-  return successResponse(res, { analysis: result, reused: false, creditsUsed: 1 }, 'Lead list item analysis completed.');
+  return successResponse(res, result, result.reused ? 'Existing item analysis loaded.' : 'Lead list item analysis completed.');
 });
 
 export const analyzeListItems = asyncHandler(async (req, res) => {

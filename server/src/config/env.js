@@ -56,7 +56,7 @@ const envSchema = z.object({
   AI_DEFAULT_TASK_PROVIDER: z.string().default('gemini'),
   AI_DEFAULT_TASK_MODEL: z.string().default('gemini-2.5-flash'),
   AI_ANALYSIS_ENABLED: createBooleanParser(false),
-  AI_ANALYSIS_PROVIDER_CHAIN: z.string().default('gemini,openai,anthropic,deepseek,kimi,qwen,rule_based'),
+  AI_ANALYSIS_PROVIDER_CHAIN: z.string().default('gemini,rule_based'),
   AI_ANALYSIS_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
   AI_ANALYSIS_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
   AI_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),

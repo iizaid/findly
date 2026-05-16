@@ -11,6 +11,7 @@ let getAiProviderStatuses;
 let buildLeadAnalysisPrompt;
 let runLeadAnalysisAiReview;
 let MockAiProvider;
+let GeminiProvider;
 let AI_TASKS;
 
 const baseConfig = {
@@ -25,6 +26,7 @@ beforeAll(async () => {
   ({ buildLeadAnalysisPrompt } = await import('../../src/modules/ai/aiRequestBuilder.js'));
   ({ runLeadAnalysisAiReview } = await import('../../src/modules/ai/leadAnalysisAi.service.js'));
   ({ MockAiProvider } = await import('../../src/modules/ai/providers/mockProvider.js'));
+  ({ GeminiProvider } = await import('../../src/modules/ai/providers/geminiProvider.js'));
   ({ AI_TASKS } = await import('../../src/modules/ai/ai.types.js'));
 });
 
@@ -197,5 +199,117 @@ describe('AI router foundation', () => {
     expect(result.aiResult.ok).toBe(true);
     expect(result.analysis.analysisSource).toBe('AI_ASSISTED');
     expect(result.analysis.opportunityScore).toBeGreaterThan(50);
+  });
+
+  it('Gemini provider returns NOT_CONFIGURED when API key is missing', async () => {
+    const provider = new GeminiProvider({ apiKey: '', defaultModel: 'gemini-2.5-flash' });
+    const result = await provider.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 10 });
+
+    expect(result.ok).toBe(false);
+    expect(result.provider).toBe('gemini');
+    expect(result.errorType).toBe('NOT_CONFIGURED');
+  });
+
+  it('Gemini provider normalizes timeout, rate limit, provider, and safety errors', async () => {
+    const timeoutProvider = new GeminiProvider({
+      apiKey: 'test-key',
+      defaultModel: 'gemini-test',
+      clientFactory: async () => ({
+        models: {
+          generateContent: () => new Promise(() => {}),
+        },
+      }),
+    });
+    const timeoutResult = await timeoutProvider.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 1 });
+    expect(timeoutResult.ok).toBe(false);
+    expect(timeoutResult.errorType).toBe('TIMEOUT');
+
+    const rateLimitedProvider = new GeminiProvider({
+      apiKey: 'test-key',
+      clientFactory: async () => ({
+        models: {
+          generateContent: async () => {
+            const error = new Error('rate limited');
+            error.status = 429;
+            throw error;
+          },
+        },
+      }),
+    });
+    const rateLimitResult = await rateLimitedProvider.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 50 });
+    expect(rateLimitResult.errorType).toBe('RATE_LIMIT');
+
+    const providerError = new GeminiProvider({
+      apiKey: 'test-key',
+      clientFactory: async () => ({
+        models: {
+          generateContent: async () => {
+            const error = new Error('server error');
+            error.status = 500;
+            throw error;
+          },
+        },
+      }),
+    });
+    const providerErrorResult = await providerError.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 50 });
+    expect(providerErrorResult.errorType).toBe('PROVIDER_ERROR');
+    expect(providerErrorResult.retryable).toBe(true);
+
+    const safetyProvider = new GeminiProvider({
+      apiKey: 'test-key',
+      clientFactory: async () => ({
+        models: {
+          generateContent: async () => ({
+            promptFeedback: { blockReason: 'SAFETY' },
+            text: '{"aiFitScore":50}',
+          }),
+        },
+      }),
+    });
+    const safetyResult = await safetyProvider.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 50 });
+    expect(safetyResult.errorType).toBe('SAFETY_BLOCKED');
+  });
+
+  it('Gemini provider normalizes valid JSON without exposing the API key', async () => {
+    const provider = new GeminiProvider({
+      apiKey: 'test-key',
+      defaultModel: 'gemini-test',
+      clientFactory: async () => ({
+        models: {
+          generateContent: async () => ({
+            text: JSON.stringify({
+              aiFitScore: 71,
+              aiOpportunityScore: 72,
+              scoreLevel: 'HIGH',
+              shouldContact: true,
+              contactPriority: 'HIGH',
+              confidence: 'medium',
+              bestServiceToOffer: 'Website Development',
+              whyThisLeadFits: ['Good match.'],
+              whyThisLeadMayNotFit: [],
+              detectedDigitalGaps: ['Website needs review.'],
+              recommendedFirstOffer: 'Website audit.',
+              personalizedOutreachAngle: 'Lead with the website gap.',
+              messageDraft: 'Hello from Findly.',
+              nextBestAction: 'Send outreach.',
+              riskNotes: [],
+              dataQualityNotes: [],
+            }),
+            usageMetadata: {
+              promptTokenCount: 10,
+              candidatesTokenCount: 20,
+              totalTokenCount: 30,
+            },
+          }),
+        },
+      }),
+    });
+
+    const result = await provider.generateJson({ userPrompt: 'Return JSON.', timeoutMs: 50 });
+    const text = JSON.stringify(result);
+    expect(result.ok).toBe(true);
+    expect(result.model).toBe('gemini-test');
+    expect(result.usage.totalTokens).toBe(30);
+    expect(text).not.toContain('test-key');
   });
 });

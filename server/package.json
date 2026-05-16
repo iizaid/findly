@@ -16,11 +16,13 @@
     "import:datasets:dry-run": "node scripts/import-datasets.js --dry-run",
     "admin:topup-credits": "node scripts/adminTopupCredits.js",
     "admin:bootstrap-root": "node scripts/bootstrapRootUser.js",
+    "ai:smoke": "node scripts/smokeAiProvider.js",
     "load:smoke": "node load-tests/smoke.js",
     "load:search": "node load-tests/search-queue.js",
     "load:read-path": "node load-tests/queue-metrics.js"
   },
   "dependencies": {
+    "@google/genai": "^2.3.0",
     "@prisma/client": "^6.19.3",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
