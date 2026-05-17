@@ -83,7 +83,8 @@ const normalizeServiceSlug = (serviceType) => {
   if (!serviceType) return 'generic';
   return serviceType
     .toLowerCase()
-    .replace(/[\/\\]/g, '-')
+    .replace(/\//g, '-')
+    .replace(/\\/g, '-')
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
