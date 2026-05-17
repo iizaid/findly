@@ -1,5 +1,6 @@
 import { secureAiInputPayload } from './aiPayloadSecurity.service.js';
 import { getLeadAnalysisPlaybook } from './playbooks/playbookLoader.js';
+import { logger } from '../../utils/logger.js';
 
 const INTERNAL_SOURCE_LABELS = new Set([
   'LOCAL_DATASET',

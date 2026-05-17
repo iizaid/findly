@@ -74,7 +74,7 @@ describe('PlaybookLoader', () => {
 
     expect(first.systemPrompt).toBe(second.systemPrompt);
     expect(first.rubric).toBe(second.rubric);
-    expect(first.examples).toBe(second.examples);
+    expect(first.examples).toStrictEqual(second.examples);
   });
 
   it('clears cache correctly', () => {

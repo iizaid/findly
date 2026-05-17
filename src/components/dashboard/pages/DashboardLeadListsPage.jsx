@@ -476,245 +476,247 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                 <Loader2 size={24} className="animate-spin text-secondary" />
               </div>
             ) : filtered.length > 0 ? (
-              <div className="flex flex-col divide-y divide-black/[0.06]">
-                {filtered.map((lead) => {
-                  const targetId = getTargetId(lead);
-                  const isExpanded = selectedLead === targetId;
-                  const isListItem = !!lead.leadListItemId;
-                  const isCatalogLeadWithoutList = lead.catalogOnly && !isListItem;
-                  const a = lead.analyses?.[0];
-                  
-                  return (
-                    <div key={targetId} className="flex flex-col">
-                      <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-black/90 transition-colors ${isExpanded ? 'bg-black/[0.02]' : 'hover:bg-black/[0.01]'}`}>
-                        <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
-                          <p className="truncate font-semibold text-black">{lead.businessName}</p>
-                          {lead.rating && <p className="text-[11px] text-black/50 mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
-                        </div>
-                        <div className="truncate text-black/60">{lead.category || '-'}</div>
-                        <div className="truncate">{lead.city || '-'}</div>
-                        <div className="truncate text-[11px] text-black/60" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
-                        <div>
-                          {lead.websiteUrl ? (
-                            <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
-                              <Link2 size={13} /> Visit
-                            </a>
-                          ) : <span className="text-red-500 text-[11px]">Missing</span>}
-                        </div>
-                        <div>
-                          {lead.instagramUrl ? (
-                            <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
-                              <ExternalLink size={13} /> Open
-                            </a>
-                          ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">-</span>)}
-                        </div>
-                        <div className="truncate text-black/60">{lead.phone || '-'}</div>
-                        <div className="min-w-0">
-                          {a?.detectedSignals?.length ? (
-                            <div className="flex flex-wrap gap-1">
-                              {a.detectedSignals.slice(0, 2).map((sig) => (
-                                <span key={sig} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-black/60">{sig.replace(/_/g, ' ')}</span>
-                              ))}
-                              {a.detectedSignals.length > 2 && <span className="text-[10px] text-black/50">+{a.detectedSignals.length - 2}</span>}
-                            </div>
-                          ) : <span className="text-black/30">-</span>}
-                        </div>
-                        <div>{scoreBadge(a) || <span className="text-black/30">-</span>}</div>
-                        <div className="relative">
-                          <select
-                            value={lead.status}
-                            onChange={(e) => updateStatus(lead, e.target.value)}
-                            disabled={isCatalogLeadWithoutList || updatingStatus === targetId}
-                            title={isCatalogLeadWithoutList ? 'Status updates will be available after saving a catalog lead to your workspace.' : 'Update lead status'}
-                            className={`h-7 w-full rounded-md border-0 px-2 text-[11px] font-medium outline-none ${isCatalogLeadWithoutList ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${statusColor(lead.status)} ring-1 ring-black/5`}
-                          >
-                            {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLead(isExpanded ? null : targetId)}
-                            className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isExpanded ? 'bg-accent text-black' : 'bg-black/[0.04] text-secondary hover:bg-accent hover:text-black'}`}
-                            title="View details"
-                          >
-                            <Eye size={13} />
-                          </button>
-                          {lead.googleMapsUrl && (
-                            <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
-                              <ExternalLink size={13} />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      {isExpanded && (
-                        <div className="bg-black/[0.01] px-5 pb-5 pt-3 border-t border-black/[0.02]">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
-                                <h4 className="text-[13px] font-semibold text-black flex items-center gap-2">
-                                  AI Analysis
-                                  {a && (
-                                    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.analysisSource === 'AI_ASSISTED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                      {a.analysisSource === 'AI_ASSISTED' ? 'AI Assisted' : 'Rule Based'}
-                                      {a.aiProvider && ` • ${a.aiProvider}`}
-                                    </span>
-                                  )}
-                                  {a?.aiFallbackUsed && (
-                                    <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based fallback">
-                                      Fallback Used
-                                    </span>
-                                  )}
-                                </h4>
-                                {!a && !isCatalogLeadWithoutList ? (
-                                  <button 
-                                    onClick={() => analyzeLead(lead)}
-                                    disabled={analyzingLead === targetId}
-                                    className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors shrink-0 w-fit"
-                                  >
-                                    {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                                    Analyze
-                                  </button>
-                                ) : (a && (a.analysisSource === 'RULE_BASED' || !a.analysisSource) && !isCatalogLeadWithoutList) ? (
-                                  <button 
-                                    onClick={() => analyzeLead(lead, true)}
-                                    disabled={analyzingLead === targetId}
-                                    className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shrink-0 w-fit border border-blue-200"
-                                    title="Re-analyze using AI (consumes 1 credit)"
-                                  >
-                                    {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                                    Re-analyze with AI
-                                  </button>
-                                ) : null}
+              <>
+                <div className="flex flex-col divide-y divide-black/[0.06]">
+                  {filtered.map((lead) => {
+                    const targetId = getTargetId(lead);
+                    const isExpanded = selectedLead === targetId;
+                    const isListItem = !!lead.leadListItemId;
+                    const isCatalogLeadWithoutList = lead.catalogOnly && !isListItem;
+                    const a = lead.analyses?.[0];
+                    
+                    return (
+                      <div key={targetId} className="flex flex-col">
+                        <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-black/90 transition-colors ${isExpanded ? 'bg-black/[0.02]' : 'hover:bg-black/[0.01]'}`}>
+                          <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
+                            <p className="truncate font-semibold text-black">{lead.businessName}</p>
+                            {lead.rating && <p className="text-[11px] text-black/50 mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
+                          </div>
+                          <div className="truncate text-black/60">{lead.category || '-'}</div>
+                          <div className="truncate">{lead.city || '-'}</div>
+                          <div className="truncate text-[11px] text-black/60" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
+                          <div>
+                            {lead.websiteUrl ? (
+                              <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                                <Link2 size={13} /> Visit
+                              </a>
+                            ) : <span className="text-red-500 text-[11px]">Missing</span>}
+                          </div>
+                          <div>
+                            {lead.instagramUrl ? (
+                              <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
+                                <ExternalLink size={13} /> Open
+                              </a>
+                            ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">-</span>)}
+                          </div>
+                          <div className="truncate text-black/60">{lead.phone || '-'}</div>
+                          <div className="min-w-0">
+                            {a?.detectedSignals?.length ? (
+                              <div className="flex flex-wrap gap-1">
+                                {a.detectedSignals.slice(0, 2).map((sig) => (
+                                  <span key={sig} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-black/60">{sig.replace(/_/g, ' ')}</span>
+                                ))}
+                                {a.detectedSignals.length > 2 && <span className="text-[10px] text-black/50">+{a.detectedSignals.length - 2}</span>}
                               </div>
-                              
-                              {a ? (
-                                <div className="space-y-4 mt-2">
-                                  <div className="flex flex-wrap gap-3">
-                                    {a.confidence && (
-                                      <div className="flex flex-col gap-0.5">
-                                        <span className="text-[10px] font-semibold uppercase text-black/40">Confidence</span>
-                                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${a.confidence === 'high' ? 'bg-green-100 text-green-700' : a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                          {a.confidence}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {a.contactPriority && (
-                                      <div className="flex flex-col gap-0.5">
-                                        <span className="text-[10px] font-semibold uppercase text-black/40">Priority</span>
-                                        <span className="inline-flex items-center rounded-md bg-black/[0.04] px-2 py-0.5 text-[11px] font-bold text-black/70">{a.contactPriority}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {a.reasons?.some(r => r?.startsWith('AI explanation:')) && (
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-black/40">AI Score Explanation</span>
-                                      <p className="text-[13px] text-black/80 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI explanation:'))?.replace('AI explanation: ', '')}</p>
-                                    </div>
-                                  )}
-                                  <div className="flex flex-col gap-1">
-                                    <span className="text-[12px] font-medium text-black/40">Suggested Service</span>
-                                    <span className="text-[13px] font-medium text-black">{a.suggestedService || 'Not determined'}</span>
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <span className="text-[12px] font-medium text-black/40">Outreach Angle</span>
-                                    <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle || 'Not available'}</span>
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <span className="text-[12px] font-medium text-black/40">Message Draft</span>
-                                    <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] p-4 text-[13px] leading-relaxed text-black/80 whitespace-pre-wrap">
-                                      {a.messageDraft || 'No message draft available.'}
-                                    </div>
-                                  </div>
-                                  {a.reasons?.some(r => r?.startsWith('AI missing data:')) && (
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-amber-600">Missing Data</span>
-                                      <p className="text-[12px] text-black/60 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI missing data:'))?.replace('AI missing data: ', '')}</p>
-                                    </div>
-                                  )}
-                                  {a.analysisSource === 'AI_ASSISTED' && (
-                                    <p className="text-[11px] text-black/40 italic">Note: Scores may be similar across leads because the available data is similar.</p>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="py-8 text-center">
-                                  <p className="text-[13px] text-black/40">No analysis available for this lead yet.</p>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="space-y-4">
-                              {isListItem && (
-                                <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <h4 className="text-[13px] font-semibold text-black flex items-center gap-1.5"><FileText size={14} className="text-black/40" /> Notes</h4>
-                                    {editingNotes !== targetId ? (
-                                      <button 
-                                        onClick={() => {
-                                          setNotesValue(lead.notes || '');
-                                          setEditingNotes(targetId);
-                                        }}
-                                        className="text-[12px] font-medium text-blue-600 hover:underline"
-                                      >
-                                        Edit
-                                      </button>
-                                    ) : (
-                                      <button 
-                                        onClick={() => saveNotes(lead)}
-                                        className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:underline"
-                                      >
-                                        <CheckCircle2 size={14} /> Save
-                                      </button>
-                                    )}
-                                  </div>
-                                  
-                                  {editingNotes === targetId ? (
-                                    <textarea
-                                      value={notesValue}
-                                      onChange={(e) => setNotesValue(e.target.value)}
-                                      className="w-full rounded-xl border border-black/10 bg-black/[0.01] p-3 text-[13px] outline-none focus:border-accent focus:ring-1 focus:ring-accent min-h-[80px]"
-                                      placeholder="Add your notes here..."
-                                    />
-                                  ) : (
-                                    <p className="text-[13px] text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
-                                      {lead.notes || <span className="text-black/30 italic">No notes added.</span>}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
+                            ) : <span className="text-black/30">-</span>}
+                          </div>
+                          <div>{scoreBadge(a) || <span className="text-black/30">-</span>}</div>
+                          <div className="relative">
+                            <select
+                              value={lead.status}
+                              onChange={(e) => updateStatus(lead, e.target.value)}
+                              disabled={isCatalogLeadWithoutList || updatingStatus === targetId}
+                              title={isCatalogLeadWithoutList ? 'Status updates will be available after saving a catalog lead to your workspace.' : 'Update lead status'}
+                              className={`h-7 w-full rounded-md border-0 px-2 text-[11px] font-medium outline-none ${isCatalogLeadWithoutList ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${statusColor(lead.status)} ring-1 ring-black/5`}
+                            >
+                              {STATUS_OPTIONS.map((st) => <option key={st} value={st}>{st.replace(/_/g, ' ')}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLead(isExpanded ? null : targetId)}
+                              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isExpanded ? 'bg-accent text-black' : 'bg-black/[0.04] text-secondary hover:bg-accent hover:text-black'}`}
+                              title="View details"
+                            >
+                              <Eye size={13} />
+                            </button>
+                            {lead.googleMapsUrl && (
+                              <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
+                                <ExternalLink size={13} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="bg-black/[0.01] px-5 pb-5 pt-3 border-t border-black/[0.02]">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                                <h4 className="text-[13px] font-semibold text-black mb-4">Lead Details</h4>
-                                <div className="grid grid-cols-2 gap-y-3 text-[13px]">
-                                  <div className="text-black/50 font-medium">Email</div>
-                                  <div className="truncate text-black/90" title={lead.email}>{lead.email || '-'}</div>
-                                  <div className="text-black/50 font-medium">Address</div>
-                                  <div className="truncate text-black/90" title={lead.address}>{lead.address || '-'}</div>
-                                  <div className="text-black/50 font-medium">Record Type</div>
-                                  <div className="text-black/90">{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                                  <h4 className="text-[13px] font-semibold text-black flex items-center gap-2">
+                                    AI Analysis
+                                    {a && (
+                                      <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.analysisSource === 'AI_ASSISTED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {a.analysisSource === 'AI_ASSISTED' ? 'AI Assisted' : 'Rule Based'}
+                                        {a.aiProvider && ` • ${a.aiProvider}`}
+                                      </span>
+                                    )}
+                                    {a?.aiFallbackUsed && (
+                                      <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based fallback">
+                                        Fallback Used
+                                      </span>
+                                    )}
+                                  </h4>
+                                  {!a && !isCatalogLeadWithoutList ? (
+                                    <button 
+                                      onClick={() => analyzeLead(lead)}
+                                      disabled={analyzingLead === targetId}
+                                      className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors shrink-0 w-fit"
+                                    >
+                                      {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                                      Analyze
+                                    </button>
+                                  ) : (a && (a.analysisSource === 'RULE_BASED' || !a.analysisSource) && !isCatalogLeadWithoutList) ? (
+                                    <button 
+                                      onClick={() => analyzeLead(lead, true)}
+                                      disabled={analyzingLead === targetId}
+                                      className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shrink-0 w-fit border border-blue-200"
+                                      title="Re-analyze using AI (consumes 1 credit)"
+                                    >
+                                      {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                                      Re-analyze with AI
+                                    </button>
+                                  ) : null}
+                                </div>
+                                
+                                {a ? (
+                                  <div className="space-y-4 mt-2">
+                                    <div className="flex flex-wrap gap-3">
+                                      {a.confidence && (
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] font-semibold uppercase text-black/40">Confidence</span>
+                                          <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${a.confidence === 'high' ? 'bg-green-100 text-green-700' : a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                            {a.confidence}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {a.contactPriority && (
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] font-semibold uppercase text-black/40">Priority</span>
+                                          <span className="inline-flex items-center rounded-md bg-black/[0.04] px-2 py-0.5 text-[11px] font-bold text-black/70">{a.contactPriority}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    {a.reasons?.some(r => r?.startsWith('AI explanation:')) && (
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-[12px] font-medium text-black/40">AI Score Explanation</span>
+                                        <p className="text-[13px] text-black/80 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI explanation:'))?.replace('AI explanation: ', '')}</p>
+                                      </div>
+                                    )}
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[12px] font-medium text-black/40">Suggested Service</span>
+                                      <span className="text-[13px] font-medium text-black">{a.suggestedService || 'Not determined'}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[12px] font-medium text-black/40">Outreach Angle</span>
+                                      <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle || 'Not available'}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[12px] font-medium text-black/40">Message Draft</span>
+                                      <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] p-4 text-[13px] leading-relaxed text-black/80 whitespace-pre-wrap">
+                                        {a.messageDraft || 'No message draft available.'}
+                                      </div>
+                                    </div>
+                                    {a.reasons?.some(r => r?.startsWith('AI missing data:')) && (
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-[12px] font-medium text-amber-600">Missing Data</span>
+                                        <p className="text-[12px] text-black/60 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI missing data:'))?.replace('AI missing data: ', '')}</p>
+                                      </div>
+                                    )}
+                                    {a.analysisSource === 'AI_ASSISTED' && (
+                                      <p className="text-[11px] text-black/40 italic">Note: Scores may be similar across leads because the available data is similar.</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="py-8 text-center">
+                                    <p className="text-[13px] text-black/40">No analysis available for this lead yet.</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-4">
+                                {isListItem && (
+                                  <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-[13px] font-semibold text-black flex items-center gap-1.5"><FileText size={14} className="text-black/40" /> Notes</h4>
+                                      {editingNotes !== targetId ? (
+                                        <button 
+                                          onClick={() => {
+                                            setNotesValue(lead.notes || '');
+                                            setEditingNotes(targetId);
+                                          }}
+                                          className="text-[12px] font-medium text-blue-600 hover:underline"
+                                        >
+                                          Edit
+                                        </button>
+                                      ) : (
+                                        <button 
+                                          onClick={() => saveNotes(lead)}
+                                          className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:underline"
+                                        >
+                                          <CheckCircle2 size={14} /> Save
+                                        </button>
+                                      )}
+                                    </div>
+                                    
+                                    {editingNotes === targetId ? (
+                                      <textarea
+                                        value={notesValue}
+                                        onChange={(e) => setNotesValue(e.target.value)}
+                                        className="w-full rounded-xl border border-black/10 bg-black/[0.01] p-3 text-[13px] outline-none focus:border-accent focus:ring-1 focus:ring-accent min-h-[80px]"
+                                        placeholder="Add your notes here..."
+                                      />
+                                    ) : (
+                                      <p className="text-[13px] text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
+                                        {lead.notes || <span className="text-black/30 italic">No notes added.</span>}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
+                                  <h4 className="text-[13px] font-semibold text-black mb-4">Lead Details</h4>
+                                  <div className="grid grid-cols-2 gap-y-3 text-[13px]">
+                                    <div className="text-black/50 font-medium">Email</div>
+                                    <div className="truncate text-black/90" title={lead.email}>{lead.email || '-'}</div>
+                                    <div className="text-black/50 font-medium">Address</div>
+                                    <div className="truncate text-black/90" title={lead.address}>{lead.address || '-'}</div>
+                                    <div className="text-black/50 font-medium">Record Type</div>
+                                    <div className="text-black/90">{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {totalLeads > leads.length && !searchQuery && (
-                <div className="mt-6 mb-2 flex justify-center">
-                  <button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={isLoadingMore}
-                    className="flex items-center gap-2 rounded-xl bg-black/[0.04] px-6 py-2.5 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.08] disabled:opacity-50"
-                  >
-                    {isLoadingMore && <Loader2 size={16} className="animate-spin" />}
-                    {isLoadingMore ? 'Loading...' : 'Load more'}
-                  </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+                
+                {totalLeads > leads.length && !searchQuery && (
+                  <div className="mt-6 mb-2 flex justify-center">
+                    <button
+                      onClick={() => setPage((p) => p + 1)}
+                      disabled={isLoadingMore}
+                      className="flex items-center gap-2 rounded-xl bg-black/[0.04] px-6 py-2.5 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.08] disabled:opacity-50"
+                    >
+                      {isLoadingMore && <Loader2 size={16} className="animate-spin" />}
+                      {isLoadingMore ? 'Loading...' : 'Load more'}
+                    </button>
+                  </div>
+                )}
+              </>
             ) : null}
           </div>
         </div>
