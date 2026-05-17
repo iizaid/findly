@@ -64,9 +64,10 @@ export const getDiscoveryReadinessSummary = async () => {
       serpApi: {
         configured: Boolean(env.SERPAPI_API_KEY || serpApi.configured),
         runnable: false,
+        liveEnabled: Boolean(env.LIVE_SERP_DISCOVERY_ENABLED),
         requiresApiKey: true,
         plannedForPhase: 'Phase 4',
-        status: 'prepared_disabled',
+        status: env.LIVE_SERP_DISCOVERY_ENABLED && env.SERPAPI_API_KEY ? 'ready_cache_first' : 'prepared_disabled',
       },
       platformSignals: platformSignalSummary(),
       website: {

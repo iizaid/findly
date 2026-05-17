@@ -1,18 +1,19 @@
 # Pre-API Readiness Checklist
 
-Phase 3C makes Findly stable and predictable before live paid discovery APIs are enabled. It does not enable live SerpAPI calls, payments, social scraping, browser automation, or direct platform APIs.
+Phase 4 adds cache-first live discovery readiness. Findly still starts with LocalDataset / LeadCatalog and only calls paid metadata providers when local coverage is not enough, the provider is explicitly enabled, credentials exist, and campaign budget guardrails allow it. It does not enable payments, social scraping, browser automation, or direct platform APIs.
 
 ## Ready Now
 
 - LocalDataset / LeadCatalog is the live first discovery path.
 - Platform selections are treated as signal targets.
+- SerpAPI search-result metadata discovery can run only when `LIVE_SERP_DISCOVERY_ENABLED=true` and `SERPAPI_API_KEY` is configured.
+- Cache-first coverage checks skip SerpAPI when local results are enough.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
 
 ## Still Disabled
 
-- SerpAPI live discovery.
 - Instagram, TikTok, Facebook, Reddit, Yelp, and TripAdvisor direct APIs.
 - Social scraping, Google Search HTML scraping, login automation, browser automation, and proxies.
 - Payments and billing.
@@ -20,17 +21,18 @@ Phase 3C makes Findly stable and predictable before live paid discovery APIs are
 ## Current Discovery Flow
 
 1. User chooses signal targets such as Instagram, TikTok, Reddit, Yelp, Google Maps, Website, or Local Dataset.
-2. For platform and directory signals, Findly searches the local LeadCatalog today.
-3. Results are saved into Lead Lists and evidence is recorded where applicable.
-4. SerpAPI/search-result metadata can be activated in a future phase.
-5. Google Places can be used as an official local business source when configured.
-6. Website metadata remains enrichment for existing leads, not a standalone scraper.
+2. For platform and directory signals, Findly searches the local LeadCatalog first.
+3. If local coverage is enough, Findly returns local results and skips external calls.
+4. If local coverage is not enough, SerpAPI search-result metadata can fill missing results when the Phase 4 flag, key, and budget allow it.
+5. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
+6. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
+7. Website metadata remains enrichment for existing leads, not a standalone scraper.
 
 ## API Keys Needed Later
 
 - AI provider key such as Gemini/OpenAI/Anthropic if AI-assisted analysis should be enabled.
 - Google Places API key if Google Maps local business discovery should run live.
-- SerpAPI key in Phase 4 for unified search-result metadata discovery.
+- SerpAPI key plus `LIVE_SERP_DISCOVERY_ENABLED=true` for unified search-result metadata discovery.
 - SMTP credentials for production email verification and password reset.
 
 ## APIs Not Needed Now
@@ -65,15 +67,14 @@ These platforms are target signals now. Findly does not need direct access to th
 - Test SMTP delivery.
 - Test AI provider key from the ROOT admin panel if AI is enabled.
 - Add Google Places only if live Maps discovery is desired.
-- Keep SerpAPI disabled until Phase 4.
+- Enable SerpAPI only after setting `SERPAPI_API_KEY`, reviewing `SERPAPI_MAX_QUERIES_PER_CAMPAIGN`, and confirming budget limits.
 
 ## Known Disabled Items
 
-- SerpAPI live discovery.
 - Payments.
 - Direct platform APIs.
 - Social scraping.
 
 ## Next Phase
 
-Phase 4: SerpAPI Discovery Adapter.
+Phase 5: Website metadata plus robots and sitemap upgrade.

@@ -5,6 +5,9 @@ const DEFAULT_BUDGET = Object.freeze({
   maxEnrichmentCalls: 50,
   maxAiAnalyses: 100,
   maxEstimatedExternalCostMicrousd: 250000,
+  maxSerpQueries: 5,
+  maxGooglePlacesQueries: 2,
+  maxExternalResults: 20,
 });
 
 const COST_MICROUSD = Object.freeze({
@@ -33,6 +36,9 @@ const configuredBudget = (campaign) => {
       budget.maxEstimatedExternalCostMicrousd,
       DEFAULT_BUDGET.maxEstimatedExternalCostMicrousd
     ),
+    maxSerpQueries: positiveIntOrDefault(budget.maxSerpQueries, DEFAULT_BUDGET.maxSerpQueries),
+    maxGooglePlacesQueries: positiveIntOrDefault(budget.maxGooglePlacesQueries, DEFAULT_BUDGET.maxGooglePlacesQueries),
+    maxExternalResults: positiveIntOrDefault(budget.maxExternalResults, DEFAULT_BUDGET.maxExternalResults),
   };
 };
 

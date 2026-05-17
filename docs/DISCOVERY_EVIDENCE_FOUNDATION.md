@@ -23,20 +23,20 @@ Unified discovery flow:
 
 1. LocalDataset / LeadCatalog first.
 2. Existing Evidence cache second.
-3. Future SerpAPI/search-result metadata discovery.
+3. SerpAPI/search-result metadata discovery when Phase 4 live discovery is explicitly enabled and local coverage is insufficient.
 4. Optional Google Places verification and local business discovery.
 5. Website metadata enrichment for existing leads.
 
-Official platform APIs can still be added later, but only as optional compliant adapters. Phase 3B does not enable live SerpAPI calls and does not enable direct platform scraping.
+Official platform APIs can still be added later, but only as optional compliant adapters. Phase 4 can run SerpAPI as a search-result metadata provider behind `LIVE_SERP_DISCOVERY_ENABLED=true`; it still does not enable direct platform scraping.
 
 | User selection | Meaning now | Live method now | Future method | Direct scraping? |
 | --- | --- | --- | --- | --- |
-| Instagram | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
-| TikTok | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
-| Facebook | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
-| Reddit | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
-| Yelp | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
-| TripAdvisor | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
+| Instagram | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
+| TikTok | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
+| Facebook | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
+| Reddit | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
+| Yelp | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
+| TripAdvisor | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
 | Google Maps | Local business source | Google Places if configured or LocalDataset fallback | Google Places | No |
 | Website | Enrichment signal | Website metadata for existing leads | Website metadata | No |
 
@@ -59,16 +59,16 @@ LeadListLead: a saved/search result item inside a lead list, often linked to eit
 | User source | Target source | Discovery method | Adapter | Enabled now |
 | --- | --- | --- | --- | --- |
 | Google Maps | `GOOGLE_MAPS` | `GOOGLE_PLACES` | `GOOGLE_MAPS` | Yes, if configured |
-| Instagram | `INSTAGRAM` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| TikTok | `TIKTOK` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| Facebook | `FACEBOOK` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| LinkedIn | `LINKEDIN` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| YouTube | `YOUTUBE` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| X | `X` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| Yelp | `YELP` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
-| TripAdvisor | `TRIPADVISOR` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| Instagram | `INSTAGRAM` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| TikTok | `TIKTOK` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| Facebook | `FACEBOOK` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| LinkedIn | `LINKEDIN` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| YouTube | `YOUTUBE` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| X | `X` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| Yelp | `YELP` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
+| TripAdvisor | `TRIPADVISOR` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
 | Website | `WEBSITE` | `WEBSITE_METADATA` | `WEBSITE` | Enrichment only |
-| Reddit | `REDDIT` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| Reddit | `REDDIT` | `SERPAPI_DISCOVERY` if cache-first coverage requires it and SerpAPI is enabled | `SERPAPI` | Optional |
 | Local Dataset | `LOCAL_DATASET` | `LOCAL_DATASET` | `LOCAL_DATASET` | Yes |
 | CSV | `CSV` | `CSV_IMPORT` | `CSV` | Import only |
 
@@ -105,9 +105,26 @@ Campaign filters may include:
 
 These guardrails do not charge real money. They prepare Findly to avoid accidental external API spend in later phases.
 
+Phase 4 also supports:
+
+```json
+{
+  "budget": {
+    "maxSerpQueries": 5,
+    "maxGooglePlacesQueries": 2,
+    "maxExternalResults": 20
+  },
+  "discovery": {
+    "minLocalCoverageRatio": 0.7,
+    "minLocalAverageScore": 60,
+    "forceLiveDiscovery": false,
+    "disableLiveDiscovery": false
+  }
+}
+```
+
 ## Still Disabled
 
-- SerpAPI live calls.
 - Instagram scraping.
 - TikTok scraping.
 - Facebook scraping.
@@ -121,7 +138,5 @@ This foundation prepares Findly to buy and add paid APIs later without data chao
 
 ## Next Phases
 
-- Phase 3C: Pre-API readiness, smoothness, and regression hardening.
-- Phase 4: SerpAPI Discovery Adapter.
 - Phase 5: Website metadata plus robots and sitemap upgrade.
 - Phase 6: Selective Google Places enrichment and review queue.

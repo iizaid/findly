@@ -1,0 +1,166 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+process.env.NODE_ENV = 'test';
+process.env.PORT ??= '4114';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
+process.env.LIVE_SERP_DISCOVERY_ENABLED = 'true';
+process.env.SERPAPI_API_KEY = 'test-serp-key';
+
+let prisma;
+let runCampaign;
+let env;
+let userId;
+let workspaceId;
+const unique = Date.now().toString(36);
+
+const createCampaign = (data = {}) => prisma.searchCampaign.create({
+  data: {
+    userId,
+    workspaceId,
+    name: `Cache-first ${unique}`,
+    query: `phase4 ${unique}`,
+    country: 'Narnia',
+    city: `Cache City ${unique}`,
+    businessTypes: [`Phase4 Cafes ${unique}`],
+    sources: ['INSTAGRAM'],
+    requestedLimit: 2,
+    status: 'DRAFT',
+    filters: { goal: 'General opportunity discovery' },
+    ...data,
+  },
+});
+
+beforeAll(async () => {
+  ({ prisma } = await import('../../src/db/prisma.js'));
+  ({ runCampaign } = await import('../../src/modules/search/search.service.js'));
+  ({ env } = await import('../../src/config/env.js'));
+  env.LIVE_SERP_DISCOVERY_ENABLED = true;
+  env.SERPAPI_API_KEY = 'test-serp-key';
+  env.SERPAPI_BASE_URL = 'https://serpapi.com/search.json';
+
+  const user = await prisma.user.create({
+    data: {
+      name: 'Cache First Test',
+      email: `cache.first.${unique}@findly.local`,
+      passwordHash: 'hashed-password',
+      emailVerified: true,
+      creditsBalance: 500,
+    },
+  });
+  userId = user.id;
+
+  const workspace = await prisma.workspace.create({
+    data: {
+      ownerId: userId,
+      name: 'Cache First Workspace',
+    },
+  });
+  workspaceId = workspace.id;
+});
+
+afterAll(async () => {
+  vi.restoreAllMocks();
+  await prisma.user.delete({ where: { id: userId } }).catch(() => {});
+  await prisma.leadCatalog.deleteMany({
+    where: {
+      OR: [
+        { sourceId: { contains: unique } },
+        { businessName: { contains: unique } },
+        { normalizedFingerprint: { contains: unique } },
+      ],
+    },
+  }).catch(() => {});
+  await prisma.$disconnect();
+});
+
+describe('cache-first live discovery workflow', () => {
+  it('does not call SerpAPI when local results are enough', async () => {
+    global.fetch = vi.fn();
+    await prisma.leadCatalog.createMany({
+      data: [0, 1].map((index) => ({
+        businessName: `Local Phase4 Cafe ${index} ${unique}`,
+        category: `Phase4 Cafes ${unique}`,
+        country: 'LocalLand',
+        city: `Cache City ${unique}`,
+        source: 'LOCAL_DATASET',
+        sourceId: `local-phase4-${index}-${unique}`,
+        normalizedFingerprint: `local-phase4-${index}-${unique}`,
+        instagramUrl: `https://instagram.com/local_phase4_${index}_${unique}`,
+        detectedSignals: ['HAS_INSTAGRAM'],
+      })),
+    });
+
+    const campaign = await createCampaign({
+      country: 'LocalLand',
+      requestedLimit: 2,
+      filters: { goal: 'General opportunity discovery' },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.resultCount).toBe(2);
+    expect(result.externalDiscoveryUsed).toBe(false);
+    expect(result.externalDiscoverySkippedReason).toMatch(/LOCAL_COVERAGE/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses mocked SerpAPI when local coverage is insufficient and live discovery is enabled', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic_results: [
+          {
+            title: `External Phase4 Cafe ${unique} | Instagram`,
+            link: `https://instagram.com/external_phase4_${unique}`,
+            displayed_link: `instagram.com/external_phase4_${unique}`,
+            snippet: `External Phase4 Cafes ${unique} in External City ${unique}, ExternalLand`,
+            position: 1,
+          },
+        ],
+      }),
+    });
+
+    const campaign = await createCampaign({
+      country: 'ExternalLand',
+      city: `External City ${unique}`,
+      businessTypes: [`External Phase4 Cafes ${unique}`],
+      requestedLimit: 1,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { forceLiveDiscovery: true },
+        budget: { maxSerpQueries: 1, maxEstimatedExternalCostMicrousd: 50000 },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(true);
+    expect(result.externalProvider).toBe('SERPAPI');
+    expect(result.evidenceCreatedCount).toBeGreaterThanOrEqual(1);
+    expect(result.promotedToCatalogCount).toBeGreaterThanOrEqual(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const promoted = await prisma.leadCatalog.findFirst({
+      where: { source: 'SERPAPI', instagramUsername: `external_phase4_${unique}` },
+    });
+    expect(promoted).toBeTruthy();
+  });
+
+  it('returns local results without SerpAPI when budget blocks external discovery', async () => {
+    global.fetch = vi.fn();
+    const campaign = await createCampaign({
+      country: 'BudgetLand',
+      city: `Budget City ${unique}`,
+      businessTypes: [`Budget Phase4 Cafes ${unique}`],
+      requestedLimit: 1,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { forceLiveDiscovery: true },
+        budget: { maxSerpQueries: 1, maxEstimatedExternalCostMicrousd: 0 },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(false);
+    expect(result.externalDiscoverySkippedReason).toBe('BUDGET_LIMIT');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

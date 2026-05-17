@@ -13,6 +13,7 @@ let recordEnrichmentRun;
 let hashSnippet;
 let calculateDefaultStoreUntil;
 let sanitizeEvidenceMetadata;
+let promoteEvidenceToCatalogLead;
 
 const unique = Date.now().toString(36);
 let userId;
@@ -34,6 +35,7 @@ beforeAll(async () => {
     calculateDefaultStoreUntil,
     sanitizeEvidenceMetadata,
   } = await import('../../src/modules/search/discoveryEvidence.service.js'));
+  ({ promoteEvidenceToCatalogLead } = await import('../../src/modules/search/evidencePromotion.service.js'));
 
   const user = await prisma.user.create({
     data: {
@@ -202,5 +204,116 @@ describe('discovery evidence service', () => {
 
     await expect(prisma.validationEvent.count({ where: { campaignId } })).resolves.toBeGreaterThan(0);
     await expect(prisma.enrichmentRun.count({ where: { campaignId } })).resolves.toBeGreaterThan(0);
+  });
+
+  it('promotes high-confidence evidence to LeadCatalog and links duplicates', async () => {
+    await prisma.$transaction(async (tx) => {
+      const query = await createDiscoveryQuery({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        seedQuery: 'cafes',
+        expandedQuery: 'cafes | Amman | Instagram',
+        targetSources: ['INSTAGRAM'],
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        adapter: 'SERPAPI',
+        status: 'COMPLETED',
+      });
+
+      const evidence = await recordLeadEvidence({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        discoveryQueryId: query.id,
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://instagram.com/promoted_${unique}`,
+        title: `Promoted Cafe ${unique}`,
+        snippet: 'Coffee shop in Amman',
+        extractedFields: {
+          businessName: `Promoted Cafe ${unique}`,
+          city: 'Amman',
+          country: 'Jordan',
+          category: 'Cafe',
+          platformUsername: `promoted_${unique}`,
+          platformUrl: `https://instagram.com/promoted_${unique}`,
+        },
+        confidenceScore: 82,
+      });
+
+      const promoted = await promoteEvidenceToCatalogLead({
+        tx,
+        evidence,
+        campaign: { id: campaignId, city: 'Amman', country: 'Jordan', businessTypes: ['Cafe'] },
+      });
+
+      expect(promoted.status).toBe('PROMOTED');
+      expect(promoted.catalogLead.source).toBe('SERPAPI');
+      expect(promoted.catalogLead.instagramUsername).toBe(`promoted_${unique}`);
+
+      const duplicateEvidence = await recordLeadEvidence({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        discoveryQueryId: query.id,
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://instagram.com/promoted_${unique}`,
+        title: `Promoted Cafe ${unique}`,
+        extractedFields: {
+          businessName: `Promoted Cafe ${unique}`,
+          city: 'Amman',
+          country: 'Jordan',
+          category: 'Cafe',
+          platformUsername: `promoted_${unique}`,
+          platformUrl: `https://instagram.com/promoted_${unique}`,
+        },
+        confidenceScore: 82,
+      });
+
+      const duplicate = await promoteEvidenceToCatalogLead({
+        tx,
+        evidence: duplicateEvidence,
+        campaign: { id: campaignId, city: 'Amman', country: 'Jordan', businessTypes: ['Cafe'] },
+      });
+
+      expect(duplicate.status).toBe('LINKED_DUPLICATE');
+      expect(duplicate.catalogLead.id).toBe(promoted.catalogLead.id);
+    });
+
+    await expect(prisma.validationEvent.count({
+      where: { campaignId, validator: 'EVIDENCE_PROMOTION' },
+    })).resolves.toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not promote low-confidence evidence', async () => {
+    await prisma.$transaction(async (tx) => {
+      const evidence = await recordLeadEvidence({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://instagram.com/weak_${unique}`,
+        title: `Weak Cafe ${unique}`,
+        confidenceScore: 40,
+      });
+
+      const result = await promoteEvidenceToCatalogLead({
+        tx,
+        evidence,
+        campaign: { id: campaignId, city: 'Amman', country: 'Jordan', businessTypes: ['Cafe'] },
+      });
+
+      expect(result.status).toBe('REJECTED_LOW_CONFIDENCE');
+      expect(result.catalogLead).toBeNull();
+    });
   });
 });
