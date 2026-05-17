@@ -274,19 +274,38 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         setBulkAnalysisResult(res.data);
       }
       if (res?.data?.analyzedCount > 0) {
-        const params = new URLSearchParams();
-        params.set('listId', selectedListId);
-        params.set('limit', (page * 100).toString());
-        params.set('page', '1');
-        if (filterSource) params.set('source', filterSource);
-        if (filterCity) params.set('city', filterCity);
-        if (filterScore) params.set('scoreLevel', filterScore);
-        if (filterStatus) params.set('status', filterStatus);
-        if (filterMissingWeb) params.set('missingWebsite', 'true');
-        if (sortBy) params.set('sortBy', sortBy);
-        if (sortOrder) params.set('sortOrder', sortOrder);
-        const refRes = await apiRequest(`/api/search/leads?${params.toString()}`);
-        setLeads(refRes.data.leads || []);
+        let allLeads = [];
+        let total = 0;
+        
+        for (let i = 1; i <= page; i++) {
+          const params = new URLSearchParams();
+          params.set('listId', selectedListId);
+          params.set('limit', '100');
+          params.set('page', i.toString());
+          if (filterSource) params.set('source', filterSource);
+          if (filterCity) params.set('city', filterCity);
+          if (filterScore) params.set('scoreLevel', filterScore);
+          if (filterStatus) params.set('status', filterStatus);
+          if (filterMissingWeb) params.set('missingWebsite', 'true');
+          if (sortBy) params.set('sortBy', sortBy);
+          if (sortOrder) params.set('sortOrder', sortOrder);
+          
+          const refRes = await apiRequest(`/api/search/leads?${params.toString()}`);
+          if (refRes.data.leads?.length) {
+            allLeads = [...allLeads, ...refRes.data.leads];
+          }
+          if (refRes.data.pagination?.total) {
+            total = refRes.data.pagination.total;
+          }
+        }
+        
+        // Deduplicate
+        const uniqueLeads = Array.from(
+          new Map(allLeads.map(l => [getTargetId(l), l])).values()
+        );
+        
+        setLeads(uniqueLeads);
+        if (total > 0) setTotalLeads(total);
         onUpdate?.();
       }
     } catch (err) {
