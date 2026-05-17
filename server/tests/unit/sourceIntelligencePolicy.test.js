@@ -2,10 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getSourcePolicy,
   listRuntimeAllowedSources,
-  listAdminOnlySources,
   assertSourceAllowedForStage,
-  canSourceCreateEvidence,
-  canSourcePromoteToCatalog,
   STAGES,
   RISK_LEVELS,
 } from '../../src/modules/search/sourceIntelligencePolicy.service.js';

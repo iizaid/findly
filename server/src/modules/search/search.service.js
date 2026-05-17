@@ -26,9 +26,8 @@ import { GooglePlacesAdapter } from './adapters/GooglePlacesAdapter.js';
 import { SerpAdapter } from './adapters/SerpAdapter.js';
 import { env } from '../../config/env.js';
 import { buildDiscoveryPlan } from './sourceTargetMapping.service.js';
-import { assertDiscoveryBudget, getCampaignBudget } from './campaignBudget.service.js';
+import { assertDiscoveryBudget } from './campaignBudget.service.js';
 import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
-import { calculateMissingResultCount, evaluateLocalCoverage } from './cacheFirstDiscovery.service.js';
 import { promoteHighConfidenceEvidenceBatch } from './evidencePromotion.service.js';
 import { findReusableEvidenceCandidates, convertEvidenceToReusableLeadCandidates } from './evidenceCache.service.js';
 import { buildDiscoveryPlan as buildBrainDiscoveryPlan } from './discoveryDecisionEngine.service.js';
@@ -104,7 +103,7 @@ const summarizeDiscoveryPlan = (discoveryPlan) => ({
   })),
 });
 
-const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, evidenceCandidates, discoveryDecision }) => {
+const runExternalDiscoveryIfNeeded = async ({ campaign, _localResults, _evidenceCandidates, discoveryDecision }) => {
   const missingResultCount = discoveryDecision.missingCount;
   
   const metadata = {

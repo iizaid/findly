@@ -33,8 +33,6 @@ export const buildDiscoveryPlan = ({ campaign, localResults = [], evidenceCandid
   // ── Layer 3: Policy warnings ──
   const sourcePolicyWarnings = getPolicyWarningsForCampaign(campaign);
 
-  // Total covered = local + evidence
-  const totalCovered = localResults.length + evidenceCandidates.length;
   // Missing count respects forceLiveDiscovery via the cacheFirstDiscovery module
   const missingFromLocal = calculateMissingResultCount({ campaign, localResults });
   // If evidence fills the gap, reduce the missing count
