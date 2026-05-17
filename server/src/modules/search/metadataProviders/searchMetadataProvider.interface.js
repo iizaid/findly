@@ -6,12 +6,12 @@ export const SEARCH_METADATA_PROVIDERS = Object.freeze({
 export const normalizeProviderName = (value) => String(value || '').trim().toLowerCase();
 
 export const normalizeProviderResult = ({ title, link, displayedLink, snippet, position, provider, rawMetadata = {} }) => {
-  let safeLink = null;
+  let safeLink;
   try {
     const parsed = new URL(link);
     safeLink = ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
   } catch {
-    safeLink = null;
+    return null;
   }
 
   if (!safeLink) return null;
