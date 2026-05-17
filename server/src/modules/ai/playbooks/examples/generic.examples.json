@@ -1,9 +1,10 @@
 {
   "serviceType": "Generic",
-  "description": "Fallback examples when no service-specific match is found.",
+  "description": "Fallback examples when no service-specific match is found. Teaches the model to score conservatively when the user's service is unclear.",
   "examples": [
     {
       "inputSummary": {
+        "userServiceProfile": "Not provided or very vague (e.g. 'I sell things')",
         "businessName": "Active Local Business",
         "category": "Restaurant",
         "websiteUrl": null,
@@ -13,15 +14,17 @@
         "reviewCount": 200
       },
       "expectedAssessment": {
-        "scoreRange": "65-80",
-        "why": "Active business with strong reputation and contact path, but missing website. Good candidate for most digital services.",
-        "shouldContact": true,
-        "confidence": "medium",
-        "firstOffer": "Depends on user's service — match the offer to the digital gap observed."
+        "scoreRange": "40-60",
+        "why": "Business looks active and reachable, but serviceFit MUST be scored low because we don't know what the user sells. We cannot confidently recommend contact without knowing if the user can help them.",
+        "shouldContact": false,
+        "confidence": "low",
+        "missingData": ["User's exact service offering and target audience"],
+        "firstOffer": "Cannot recommend."
       }
     },
     {
       "inputSummary": {
+        "userServiceProfile": "Vague digital service",
         "businessName": "Mystery Business",
         "category": "Unknown",
         "websiteUrl": null,
@@ -31,7 +34,7 @@
       },
       "expectedAssessment": {
         "scoreRange": "10-25",
-        "why": "Very sparse data. No contact info, no category clarity, no reputation signals. Cannot confidently assess fit for any service.",
+        "why": "Very sparse data on both sides. No contact info, no category clarity, no reputation signals. Cannot confidently assess fit for any service.",
         "shouldContact": false,
         "confidence": "low",
         "firstOffer": null
@@ -39,26 +42,7 @@
     },
     {
       "inputSummary": {
-        "businessName": "Strong Digital Business",
-        "category": "Tech Startup",
-        "websiteUrl": "https://strongdigital.io",
-        "instagramUrl": "available",
-        "facebookUrl": "available",
-        "phone": "available",
-        "email": "available",
-        "rating": 4.8,
-        "reviewCount": 50
-      },
-      "expectedAssessment": {
-        "scoreRange": "15-35",
-        "why": "Already has strong digital presence across multiple channels. Most digital services would be low value unless specific gaps are identified. Service fit depends heavily on what the user actually sells.",
-        "shouldContact": false,
-        "confidence": "high",
-        "firstOffer": null
-      }
-    },
-    {
-      "inputSummary": {
+        "userServiceProfile": "Unclear service",
         "businessName": "Growing Salon",
         "category": "Beauty Salon",
         "websiteUrl": null,
@@ -68,11 +52,11 @@
         "reviewCount": 45
       },
       "expectedAssessment": {
-        "scoreRange": "50-70",
-        "why": "Consumer business with gaps (no website), decent reviews, reachable. Score depends on how well the user's specific service matches the salon's needs.",
-        "shouldContact": true,
-        "confidence": "medium",
-        "firstOffer": "Tailor the offer to the specific digital gap that matches the user's service."
+        "scoreRange": "45-65",
+        "why": "Consumer business with gaps (no website), decent reviews, reachable. However, score is capped because service fit is uncertain. Ask user for more profile detail.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
       }
     }
   ]

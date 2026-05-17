@@ -39,11 +39,32 @@ export const leadAnalysisAiSchema = z.object({
       path: ['confidence'],
     });
   }
-  if (data.dimensionScores.serviceFit < 35 && data.contactPriority === 'URGENT') {
+  if ((data.dimensionScores.serviceFit < 35 || data.dimensionScores.contactability < 25) && data.contactPriority === 'URGENT') {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Contact priority cannot be URGENT if service fit is below 35.',
+      message: 'Contact priority cannot be URGENT if service fit is < 35 or contactability is < 25.',
       path: ['contactPriority'],
+    });
+  }
+  if (!data.shouldContact && data.aiOpportunityScore > 65) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'aiOpportunityScore should not exceed 65 if shouldContact is false.',
+      path: ['aiOpportunityScore'],
+    });
+  }
+  if (data.scoreLevel === 'GOLD' && data.aiOpportunityScore < 85) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'aiOpportunityScore must be >= 85 for GOLD scoreLevel.',
+      path: ['aiOpportunityScore'],
+    });
+  }
+  if (data.scoreLevel === 'LOW' && data.aiOpportunityScore > 44) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'aiOpportunityScore must be <= 44 for LOW scoreLevel.',
+      path: ['aiOpportunityScore'],
     });
   }
 });

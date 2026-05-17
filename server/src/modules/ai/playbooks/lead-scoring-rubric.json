@@ -51,13 +51,17 @@
     "LOW": "0-44: Weak match or insufficient evidence."
   },
   "hardRules": [
-    "If serviceFit < 35, final aiFitScore should usually be below 55.",
-    "If dataQuality < 35, confidence cannot be high.",
+    "If no contact info and no active social/contact link exist, aiOpportunityScore should usually be <= 55.",
+    "If dataQuality < 30, aiOpportunityScore should usually be <= 45.",
+    "If serviceFit < 35, aiOpportunityScore should usually be <= 55.",
+    "If digitalGap is unknown or cannot be observed, digitalGap should not exceed 60.",
+    "If lead already has a website and service is Website Development, score should usually be lower unless redesign need is evidenced.",
+    "If service is Thumbnail Design and no YouTube/content/video evidence exists, score should be LOW/MEDIUM at best.",
     "If contactability < 25, contactPriority cannot be URGENT.",
-    "If there is no evidence of a digital gap, digitalGap must not be scored high.",
-    "If the user service and business type do not match, shouldContact should usually be false.",
-    "Do not give GOLD unless at least four dimensions are strong (>= 70).",
-    "Do not give high confidence with sparse data (fewer than 4 useful fields).",
-    "If shouldContact is false, aiOpportunityScore should normally be below 60."
+    "If shouldContact=false, aiOpportunityScore should not exceed 65 unless explanation clearly exists.",
+    "If dataQuality < 40, confidence cannot be high.",
+    "Do not give GOLD unless aiOpportunityScore is >= 85 and at least four dimensions are strong.",
+    "Do not give HIGH unless aiOpportunityScore is 70-84 and real evidence supports it.",
+    "No website alone is not enough for HIGH. No website + strong category fit + contact path + reputation = stronger lead."
   ]
 }

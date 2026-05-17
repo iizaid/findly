@@ -71,6 +71,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [notesValue, setNotesValue] = useState('');
   const [activeList, setActiveList] = useState(null);
   const [bulkAnalysisResult, setBulkAnalysisResult] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
 
   useEffect(() => {
@@ -107,14 +110,20 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         setLeads([]);
         setActiveList(null);
         setBulkAnalysisResult(null);
+        setPage(1);
+        setTotalLeads(0);
         setIsLoading(false);
         return;
       }
 
       try {
-        setIsLoading(true);
+        if (page === 1) setIsLoading(true);
+        else setIsLoadingMore(true);
+
         const params = new URLSearchParams();
         params.set('listId', selectedListId);
+        params.set('limit', '100');
+        params.set('page', page.toString());
         if (filterSource) params.set('source', filterSource);
         if (filterCity) params.set('city', filterCity);
         if (filterScore) params.set('scoreLevel', filterScore);
@@ -123,14 +132,32 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         if (sortBy) params.set('sortBy', sortBy);
         if (sortOrder) params.set('sortOrder', sortOrder);
         const res = await apiRequest(`/api/search/leads?${params.toString()}`);
-        setLeads(res.data.leads || []);
+        
+        const newLeads = res.data.leads || [];
+        setTotalLeads(res.data.pagination?.total || 0);
+        
+        if (page === 1) {
+          setLeads(newLeads);
+        } else {
+          setLeads((prev) => {
+            const existingIds = new Set(prev.map(l => l.leadListItemId || l.id));
+            const uniqueNew = newLeads.filter(l => !existingIds.has(l.leadListItemId || l.id));
+            return [...prev, ...uniqueNew];
+          });
+        }
       } catch (err) {
         setError(err.message || 'Failed to load leads');
       } finally {
         setIsLoading(false);
+        setIsLoadingMore(false);
       }
     };
     fetchLeads();
+  }, [selectedListId, filterSource, filterCity, filterScore, filterStatus, filterMissingWeb, sortBy, sortOrder, page]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
   }, [selectedListId, filterSource, filterCity, filterScore, filterStatus, filterMissingWeb, sortBy, sortOrder]);
 
   useEffect(() => {
@@ -247,7 +274,18 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         setBulkAnalysisResult(res.data);
       }
       if (res?.data?.analyzedCount > 0) {
-        const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
+        const params = new URLSearchParams();
+        params.set('listId', selectedListId);
+        params.set('limit', (page * 100).toString());
+        params.set('page', '1');
+        if (filterSource) params.set('source', filterSource);
+        if (filterCity) params.set('city', filterCity);
+        if (filterScore) params.set('scoreLevel', filterScore);
+        if (filterStatus) params.set('status', filterStatus);
+        if (filterMissingWeb) params.set('missingWebsite', 'true');
+        if (sortBy) params.set('sortBy', sortBy);
+        if (sortOrder) params.set('sortOrder', sortOrder);
+        const refRes = await apiRequest(`/api/search/leads?${params.toString()}`);
         setLeads(refRes.data.leads || []);
         onUpdate?.();
       }
@@ -374,7 +412,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
               </p>
             </div>
             <span className="inline-flex h-8 items-center rounded-lg bg-black/[0.04] px-3 text-[12px] font-medium text-black/70">
-              {activeList.leadCount || 0} leads matched
+              Showing {leads.length} of {totalLeads || activeList.leadCount || 0} leads
             </span>
           </div>
         </div>
@@ -594,6 +632,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                                       <p className="text-[12px] text-black/60 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI missing data:'))?.replace('AI missing data: ', '')}</p>
                                     </div>
                                   )}
+                                  {a.analysisSource === 'AI_ASSISTED' && (
+                                    <p className="text-[11px] text-black/40 italic">Note: Scores may be similar across leads because the available data is similar.</p>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="py-8 text-center">
@@ -661,6 +702,19 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                   );
                 })}
               </div>
+              
+              {totalLeads > leads.length && !searchQuery && (
+                <div className="mt-6 mb-2 flex justify-center">
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={isLoadingMore}
+                    className="flex items-center gap-2 rounded-xl bg-black/[0.04] px-6 py-2.5 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.08] disabled:opacity-50"
+                  >
+                    {isLoadingMore && <Loader2 size={16} className="animate-spin" />}
+                    {isLoadingMore ? 'Loading...' : 'Load more'}
+                  </button>
+                </div>
+              )}
             ) : null}
           </div>
         </div>

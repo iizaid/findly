@@ -133,7 +133,22 @@ export const buildLeadAnalysisPrompt = ({ lead, profile, campaign = null, ruleBa
   userParts.push('# INPUT DATA TO SCORE');
   userParts.push(JSON.stringify(input));
 
-  const userPrompt = userParts.join('\n');
+  let userPrompt = userParts.join('\n');
+
+  // estimated prompt size guard
+  if (systemPrompt.length + userPrompt.length > 25000 && playbook.examples) {
+    logger.warn('[AI] Prompt too large, removing examples to fit safely');
+    const userPartsWithoutExamples = [
+      'Given what the user sells, decide if this business is worth contacting.',
+      'Score each dimension (serviceFit, digitalGap, businessQuality, contactability, urgency, dataQuality) independently from 0-100.',
+      'Explain why in scoreExplanation, referencing specific evidence.',
+      'Suggest what should be offered first and compose a short outreach message following the style guide.',
+      '',
+      '# INPUT DATA TO SCORE',
+      JSON.stringify(input)
+    ];
+    userPrompt = userPartsWithoutExamples.join('\n');
+  }
 
   return { systemPrompt, userPrompt, input };
 };

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "case-1-strong-website-dev",
+    "profile": { "serviceType": "Website Development" },
+    "lead": { "businessName": "Old Plumber", "category": "Plumber", "phone": "12345", "rating": 4.8, "reviewCount": 100 },
+    "expected": { "isStrong": true, "digitalGapHigh": true }
+  },
+  {
+    "id": "case-2-weak-website-dev",
+    "profile": { "serviceType": "Website Development" },
+    "lead": { "businessName": "Unknown Shop", "category": "Retail" },
+    "expected": { "isStrong": false, "dataQualityLow": true }
+  },
+  {
+    "id": "case-3-wrong-service",
+    "profile": { "serviceType": "Social Media Management" },
+    "lead": { "businessName": "Tech Corp", "category": "Software", "instagramUrl": "active", "facebookUrl": "active", "rating": 4.9, "reviewCount": 200 },
+    "expected": { "isStrong": false, "wrongFit": true }
+  },
+  {
+    "id": "case-4-low-data",
+    "profile": { "serviceType": "SEO" },
+    "lead": { "businessName": "Just Name", "category": "Unknown" },
+    "expected": { "isStrong": false, "dataQualityLow": true }
+  },
+  {
+    "id": "case-5-strong-digital-menu",
+    "profile": { "serviceType": "Digital Menu" },
+    "lead": { "businessName": "Tasty Cafe", "category": "Cafe", "phone": "111", "rating": 4.5, "reviewCount": 50 },
+    "expected": { "isStrong": true, "digitalGapHigh": true }
+  },
+  {
+    "id": "case-6-booking-system",
+    "profile": { "serviceType": "Booking System" },
+    "lead": { "businessName": "Relax Spa", "category": "Spa", "phone": "222", "rating": 4.7, "reviewCount": 80 },
+    "expected": { "isStrong": true, "digitalGapHigh": true }
+  },
+  {
+    "id": "case-7-thumbnail-wrong-fit",
+    "profile": { "serviceType": "Thumbnail Design" },
+    "lead": { "businessName": "Local Plumber", "category": "Plumber", "phone": "333" },
+    "expected": { "isStrong": false, "wrongFit": true }
+  },
+  {
+    "id": "case-8-ecommerce",
+    "profile": { "serviceType": "Ecommerce" },
+    "lead": { "businessName": "Handmade Crafts", "category": "Retail", "instagramUrl": "yes" },
+    "expected": { "isStrong": true, "digitalGapHigh": true }
+  },
+  {
+    "id": "case-9-seo-with-website",
+    "profile": { "serviceType": "SEO" },
+    "lead": { "businessName": "Top Lawyer", "category": "Lawyer", "websiteUrl": "https://example.com", "phone": "444", "rating": 4.9, "reviewCount": 150 },
+    "expected": { "isStrong": false, "digitalGapHigh": false }
+  },
+  {
+    "id": "case-10-no-contact-path",
+    "profile": { "serviceType": "Website Development" },
+    "lead": { "businessName": "Ghost Biz", "category": "Restaurant", "rating": 4.0, "reviewCount": 10 },
+    "expected": { "isStrong": false, "contactabilityLow": true }
+  }
+]

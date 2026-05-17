@@ -4,10 +4,10 @@ import { runAiTask } from './aiRouter.service.js';
 
 const clampScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
-const scoreLevelFromScore = (score) => {
-  if (score > 75) return 'GOLD';
-  if (score > 55) return 'HIGH';
-  if (score > 30) return 'MEDIUM';
+const scoreLevelFromScore = (score, dataQuality) => {
+  if (score >= 85 && (dataQuality === undefined || dataQuality >= 40)) return 'GOLD';
+  if (score >= 70) return 'HIGH';
+  if (score >= 45) return 'MEDIUM';
   return 'LOW';
 };
 
@@ -62,7 +62,7 @@ export const mergeRuleBasedAndAiAnalysis = ({ ruleBasedAnalysis, aiAnalysis }) =
     ...ruleBasedAnalysis,
     fitScore,
     opportunityScore,
-    scoreLevel: scoreLevelFromScore(opportunityScore),
+    scoreLevel: scoreLevelFromScore(opportunityScore, aiAnalysis.dimensionScores?.dataQuality),
     suggestedService: aiAnalysis.bestServiceToOffer || ruleBasedAnalysis.suggestedService,
     outreachAngle: aiAnalysis.personalizedOutreachAngle || ruleBasedAnalysis.outreachAngle,
     messageDraft: aiAnalysis.messageDraft || ruleBasedAnalysis.messageDraft,

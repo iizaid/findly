@@ -115,7 +115,10 @@ export const getLeadAnalysisPlaybook = ({ serviceProfile } = {}) => {
   const dataQualityPolicy = loadDataQualityPolicy();
   const serviceMatchingPolicy = loadServiceMatchingPolicy();
   const antiHallucinationPolicy = loadAntiHallucinationPolicy();
-  const examples = loadExamples(serviceProfile?.serviceType);
+  let examples = loadExamples(serviceProfile?.serviceType);
+  if (examples?.examples && Array.isArray(examples.examples)) {
+    examples = { ...examples, examples: examples.examples.slice(0, 5) };
+  }
 
   return {
     systemPrompt,
