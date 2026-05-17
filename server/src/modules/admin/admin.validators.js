@@ -147,6 +147,7 @@ export const adminGrantCreditsSchema = z.object({
 });
 
 const aiProviderSchema = z.enum(['gemini', 'openai', 'anthropic', 'deepseek', 'kimi', 'qwen']);
+const discoveryProviderSchema = z.enum(['serper', 'serpapi', 'google_places', 'dataforseo', 'brave', 'searchapi']);
 
 export const adminAiProviderParamSchema = z.object({
   params: z.object({
@@ -183,5 +184,40 @@ export const adminAiProviderTestSchema = z.object({
   }),
   body: z.object({
     confirmProvider: aiProviderSchema,
+  }),
+});
+
+export const adminDiscoveryProviderSecretUpsertSchema = z.object({
+  params: z.object({
+    provider: discoveryProviderSchema,
+  }),
+  body: z.object({
+    apiKey: z.string().trim().min(8, 'API key is required.').max(4000),
+    baseUrl: z.union([z.literal(''), z.string().url('Base URL must be valid.')]).optional().nullable(),
+    role: z.enum(['SEARCH_METADATA', 'LOCAL_BUSINESS']).optional(),
+    priority: z.number().int().min(1).max(1000).optional(),
+    isPrimaryCandidate: z.boolean().optional(),
+    isFallbackCandidate: z.boolean().optional(),
+    confirmProvider: discoveryProviderSchema,
+    reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
+  }),
+});
+
+export const adminDiscoveryProviderSecretDeleteSchema = z.object({
+  params: z.object({
+    provider: discoveryProviderSchema,
+  }),
+  body: z.object({
+    confirmProvider: discoveryProviderSchema,
+    reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
+  }),
+});
+
+export const adminDiscoveryProviderTestSchema = z.object({
+  params: z.object({
+    provider: discoveryProviderSchema,
+  }),
+  body: z.object({
+    confirmProvider: discoveryProviderSchema,
   }),
 });

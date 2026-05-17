@@ -51,6 +51,9 @@ Defaults:
 ## Env Vars
 
 ```env
+DISCOVERY_DASHBOARD_SECRET_MANAGEMENT_ENABLED=false
+DISCOVERY_SECRETS_MASTER_KEY=
+
 LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=false
 SEARCH_METADATA_PROVIDER_PRIMARY=serper
 SEARCH_METADATA_PROVIDER_FALLBACK=serpapi
@@ -73,6 +76,8 @@ Legacy compatibility:
 - `LIVE_SERP_DISCOVERY_ENABLED=true` can still enable the SerpAPI-only path for older deployments.
 - Prefer `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true` for Phase 4B.
 
+Phase 4C adds optional dashboard-managed encrypted discovery provider keys. Active dashboard keys override env keys; env keys remain the fallback when dashboard secret management is disabled or no dashboard key exists.
+
 ## Budget Controls
 
 Campaign budget can limit:
@@ -91,6 +96,7 @@ Findly requests search-result metadata from a search metadata provider. It does 
 ## Manual QA
 
 - Run a campaign with enough local data and confirm no external provider is called.
+- Add a Serper key from the ROOT Discovery Providers dashboard and confirm only a fingerprint is visible.
 - Enable `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true` with a Serper key.
 - Run a low-coverage Instagram signal campaign and confirm Serper is used.
 - Configure SerpAPI as fallback and test weak Serper results in a non-production test setup.

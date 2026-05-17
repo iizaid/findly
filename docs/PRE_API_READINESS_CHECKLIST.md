@@ -7,6 +7,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - LocalDataset / LeadCatalog is the live first discovery path.
 - Platform selections are treated as signal targets.
 - Search metadata discovery can run only when explicitly enabled and a provider key is configured. Serper.dev is the preferred primary provider; SerpAPI remains fallback.
+- Serper, SerpAPI, and Google Places keys can be managed from the ROOT Discovery Providers dashboard when encrypted discovery secret management is enabled. Server env keys still work as fallback.
 - Cache-first coverage checks skip SerpAPI when local results are enough.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
@@ -69,6 +70,7 @@ These platforms are target signals now. Findly does not need direct access to th
 - Test AI provider key from the ROOT admin panel if AI is enabled.
 - Add Google Places only if live Maps discovery is desired.
 - Enable live search metadata only after setting `SERPER_API_KEY`, optional `SERPAPI_API_KEY`, reviewing query limits, and confirming budget limits.
+- Alternatively, enable `DISCOVERY_DASHBOARD_SECRET_MANAGEMENT_ENABLED=true`, set `DISCOVERY_SECRETS_MASTER_KEY`, then add Serper/SerpAPI/Google Places keys from the ROOT dashboard.
 
 ## Known Disabled Items
 

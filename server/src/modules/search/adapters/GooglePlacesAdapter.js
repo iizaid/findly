@@ -4,6 +4,8 @@ import { AppError, errorCodes } from '../../../utils/AppError.js';
 import { fetchJsonWithTimeout } from '../../../utils/httpClient.js';
 import { buildProviderCacheKey, getProviderCache, setProviderCache } from '../providerCache.service.js';
 import { logger } from '../../../utils/logger.js';
+import { getResolvedGooglePlacesConfig } from '../metadataProviders/searchMetadataProviderConfig.service.js';
+import { isDiscoverySecretManagementConfigured } from '../discoveryProviderSecretsVault.service.js';
 
 const isTestRuntime = () =>
   process.env.NODE_ENV === 'test' ||
@@ -41,7 +43,7 @@ export class GooglePlacesAdapter extends BaseAdapter {
 
   static isConfigured() {
     if (isTestRuntime()) return false;
-    return Boolean(env.GOOGLE_PLACES_API_KEY);
+    return Boolean(env.GOOGLE_PLACES_API_KEY || isDiscoverySecretManagementConfigured());
   }
 
   static estimateCost({ maxResults = env.SOURCE_MAX_RESULTS_DEFAULT } = {}) {
@@ -65,6 +67,8 @@ export class GooglePlacesAdapter extends BaseAdapter {
   }
 
   async search() {
+    const resolvedConfig = isTestRuntime() ? { apiKey: null } : await getResolvedGooglePlacesConfig();
+    this.apiKey = resolvedConfig.apiKey;
     if (!this.apiKey) {
       throw new AppError(errorCodes.SOURCE_NOT_CONFIGURED, 'Google Places source is not configured yet.', 400);
     }

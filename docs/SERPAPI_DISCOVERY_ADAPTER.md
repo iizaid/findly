@@ -35,6 +35,7 @@ SerpAPI can run only when all are true:
 
 - `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true` with SerpAPI selected as primary/fallback, or legacy `LIVE_SERP_DISCOVERY_ENABLED=true`
 - `SERPAPI_API_KEY` is configured server-side
+- or an active dashboard-managed SerpAPI key exists in the encrypted discovery provider vault
 - selected target sources map to search metadata discovery
 - local coverage is not enough, or `forceLiveDiscovery=true`
 - `disableLiveDiscovery` is not true
@@ -107,6 +108,8 @@ SERPAPI_MAX_QUERIES_PER_CAMPAIGN=5
 ```
 
 Keep these server-side only. Never expose the key through frontend `VITE_` variables.
+
+Phase 4C also allows ROOT users to manage the SerpAPI fallback key from Admin -> Discovery Providers. The dashboard shows only a fingerprint and safe status; the raw key is encrypted at rest and never returned.
 
 ## Manual QA Checklist
 

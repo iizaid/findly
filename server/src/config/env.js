@@ -94,6 +94,8 @@ export const envSchema = z.object({
   SERPAPI_BASE_URL: z.string().url().default('https://serpapi.com/search.json'),
   SERPAPI_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(10000),
   SERPAPI_MAX_QUERIES_PER_CAMPAIGN: z.coerce.number().int().min(1).max(20).default(5),
+  DISCOVERY_DASHBOARD_SECRET_MANAGEMENT_ENABLED: createBooleanParser(false),
+  DISCOVERY_SECRETS_MASTER_KEY: z.string().optional(),
   AI_ENABLED: createBooleanParser(false),
   AI_STRICT_SECURITY_MODE: createBooleanParser(true),
   AI_STORE_RAW_PAYLOADS: createBooleanParser(false),
@@ -282,6 +284,23 @@ export const envSchema = z.object({
       path: ['AI_SECRETS_MASTER_KEY'],
       message: 'AI_SECRETS_MASTER_KEY must decode to at least 32 bytes when dashboard secret management is enabled.',
     });
+  }
+
+  if (value.DISCOVERY_DASHBOARD_SECRET_MANAGEMENT_ENABLED) {
+    const discoveryMasterKey = value.DISCOVERY_SECRETS_MASTER_KEY || value.AI_SECRETS_MASTER_KEY;
+    if (!discoveryMasterKey) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DISCOVERY_SECRETS_MASTER_KEY'],
+        message: 'DISCOVERY_SECRETS_MASTER_KEY or AI_SECRETS_MASTER_KEY is required when discovery dashboard secret management is enabled.',
+      });
+    } else if (!isStrongMasterKey(discoveryMasterKey)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DISCOVERY_SECRETS_MASTER_KEY'],
+        message: 'Discovery secrets master key must decode to at least 32 bytes when dashboard secret management is enabled.',
+      });
+    }
   }
 
   const hasAiProviderKey = Boolean(

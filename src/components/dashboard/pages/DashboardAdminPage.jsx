@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard, Radio, Database, Upload, PenLine, Users, Rocket,
   FolderInput, ShieldAlert, Bug, RefreshCw, ShieldCheck, AlertCircle,
-  KeyRound,
+  KeyRound, Search,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '../../../lib/api';
 import DashboardCard from '../DashboardCard';
@@ -18,6 +18,7 @@ import AdminCatalogPanel from '../admin/panels/AdminCatalogPanel';
 import AdminLiveActivityPanel from '../admin/panels/AdminLiveActivityPanel';
 import AdminManualEntryPanel from '../admin/panels/AdminManualEntryPanel';
 import AdminAiProvidersPanel from '../admin/panels/AdminAiProvidersPanel';
+import AdminDiscoveryProvidersPanel from '../admin/panels/AdminDiscoveryProvidersPanel';
 import AdminDetailPanel from '../admin/AdminDetailPanel';
 import BulkImportCenter from './BulkImportCenter';
 
@@ -38,6 +39,7 @@ const TABS = [
   { id: 'security',    label: 'Security',       icon: ShieldAlert },
   { id: 'errors',      label: 'Errors',         icon: Bug },
   { id: 'ai',          label: 'AI Providers',   icon: KeyRound, rootOnly: true },
+  { id: 'discovery',   label: 'Discovery Providers', icon: Search, rootOnly: true },
 ];
 
 /* ============================================================== */
@@ -218,6 +220,8 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
         return <AdminErrorsPanel errors={errors} onSelect={(r) => openDetail(r, 'error')} />;
       case 'ai':
         return <AdminAiProvidersPanel currentUser={user} />;
+      case 'discovery':
+        return <AdminDiscoveryProvidersPanel currentUser={user} />;
       default:
         return null;
     }

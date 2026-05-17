@@ -13,6 +13,17 @@ import {
   testProviderSecret,
   upsertProviderSecret,
 } from '../ai/aiSecretsVault.service.js';
+import {
+  deleteDiscoveryProviderSecret,
+  DISCOVERY_PROVIDERS,
+  getDiscoveryProviderDefaults,
+  isDiscoverySecretManagementConfigured,
+  listDiscoveryProviderSecretStatuses,
+  testDiscoveryProviderSecret,
+  upsertDiscoveryProviderSecret,
+} from '../search/discoveryProviderSecretsVault.service.js';
+import { getSearchMetadataProviderStatus } from '../search/metadataProviders/searchMetadataProviderRegistry.js';
+import { getResolvedDiscoveryProviderConfig } from '../search/metadataProviders/searchMetadataProviderConfig.service.js';
 import { canManageRole, formatRole } from '../auth/roles.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
@@ -244,6 +255,122 @@ export const testAdminAiProviderSecret = asyncHandler(async (req, res) => {
   });
 
   return successResponse(res, { result }, 'AI provider test completed.');
+});
+
+const buildSafeDiscoveryProviderStatuses = async () => {
+  const dashboardStatuses = await listDiscoveryProviderSecretStatuses();
+  const dashboardByProvider = new Map(dashboardStatuses.map((status) => [status.provider, status]));
+  const providerDefaults = getDiscoveryProviderDefaults();
+  const metadataStatus = getSearchMetadataProviderStatus();
+  const providers = [];
+
+  for (const provider of Object.values(DISCOVERY_PROVIDERS)) {
+    const dashboard = dashboardByProvider.get(provider);
+    const resolved = await getResolvedDiscoveryProviderConfig(provider);
+    const defaults = providerDefaults[provider];
+    providers.push({
+      provider,
+      configured: Boolean(resolved.apiKey),
+      source: resolved.source,
+      fingerprint: dashboard?.fingerprint || null,
+      baseUrlConfigured: Boolean(resolved.baseUrl || dashboard?.baseUrlConfigured),
+      role: dashboard?.role || defaults.role,
+      priority: dashboard?.priority ?? defaults.priority,
+      isPrimaryCandidate: dashboard?.isPrimaryCandidate ?? defaults.primary,
+      isFallbackCandidate: dashboard?.isFallbackCandidate ?? defaults.fallback,
+      status: dashboard?.status || (resolved.apiKey ? 'ACTIVE' : 'missing'),
+      lastTestedAt: dashboard?.lastTestedAt || null,
+      lastStatus: dashboard?.lastStatus || null,
+      lastErrorType: dashboard?.lastErrorType || null,
+      updatedAt: dashboard?.updatedAt || null,
+    });
+  }
+
+  return {
+    secretManagementConfigured: isDiscoverySecretManagementConfigured(),
+    liveEnabled: metadataStatus.liveEnabled,
+    primaryProvider: metadataStatus.primaryProvider,
+    fallbackProvider: metadataStatus.fallbackProvider,
+    providers,
+  };
+};
+
+export const getAdminDiscoveryProviders = asyncHandler(async (_req, res) => {
+  const status = await buildSafeDiscoveryProviderStatuses();
+  return successResponse(res, status, 'Discovery provider statuses loaded.');
+});
+
+export const updateAdminDiscoveryProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { apiKey, baseUrl, role, priority, isPrimaryCandidate, isFallbackCandidate, confirmProvider, reason } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+
+  const status = await upsertDiscoveryProviderSecret({
+    provider,
+    apiKey,
+    baseUrl,
+    role,
+    priority,
+    isPrimaryCandidate,
+    isFallbackCandidate,
+    actorId: req.user.id,
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'DISCOVERY_PROVIDER_SECRET_UPDATED',
+      entityType: 'DiscoveryProviderSecret',
+      entityId: provider,
+      metadata: { actorId: req.user.id, provider, source: 'dashboard', fingerprint: status.fingerprint, reason },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { provider: status }, 'Discovery provider secret saved.');
+});
+
+export const deleteAdminDiscoveryProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { confirmProvider, reason } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+  const status = await deleteDiscoveryProviderSecret({ provider, actorId: req.user.id });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'DISCOVERY_PROVIDER_SECRET_DELETED',
+      entityType: 'DiscoveryProviderSecret',
+      entityId: provider,
+      metadata: { actorId: req.user.id, provider, reason },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { provider: status }, 'Discovery provider secret deleted.');
+});
+
+export const testAdminDiscoveryProviderSecret = asyncHandler(async (req, res) => {
+  const { provider } = req.validated.params;
+  const { confirmProvider } = req.validated.body;
+  assertConfirmProvider(provider, confirmProvider);
+  const result = await testDiscoveryProviderSecret({ provider, actorId: req.user.id });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'DISCOVERY_PROVIDER_SECRET_TESTED',
+      entityType: 'DiscoveryProviderSecret',
+      entityId: provider,
+      metadata: { actorId: req.user.id, provider, ok: result.ok, errorType: result.errorType },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { result }, 'Discovery provider test completed.');
 });
 
 export const getAdminUsers = asyncHandler(async (req, res) => {

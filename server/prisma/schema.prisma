@@ -149,6 +149,8 @@ model User {
   leadEvidences           LeadEvidence[]
   validationEvents        ValidationEvent[]
   enrichmentRuns          EnrichmentRun[]
+  discoveryProviderSecretsCreated DiscoveryProviderSecret[] @relation("DiscoveryProviderSecretCreatedBy")
+  discoveryProviderSecretsUpdated DiscoveryProviderSecret[] @relation("DiscoveryProviderSecretUpdatedBy")
   opportunitySignals      OpportunitySignal[]
   jobs                    Job[]
   datasetImports          DatasetImport[]
@@ -310,6 +312,35 @@ model AiProviderSecret {
   lastErrorType  String?
 
   @@index([status])
+  @@index([updatedAt])
+}
+
+model DiscoveryProviderSecret {
+  id                  String   @id @default(cuid())
+  provider            String   @unique
+  encryptedKey        String
+  keyFingerprint      String
+  baseUrl             String?
+  status              String   @default("ACTIVE")
+  role                String   @default("SEARCH_METADATA")
+  priority            Int      @default(100)
+  isPrimaryCandidate  Boolean  @default(false)
+  isFallbackCandidate Boolean  @default(false)
+  lastTestedAt        DateTime?
+  lastStatus          String?
+  lastErrorType       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdById         String?
+  updatedById         String?
+
+  createdBy User? @relation("DiscoveryProviderSecretCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("DiscoveryProviderSecretUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([provider])
+  @@index([status])
+  @@index([role])
+  @@index([priority])
   @@index([updatedAt])
 }
 

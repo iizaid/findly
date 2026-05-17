@@ -2,6 +2,8 @@ import { env } from '../../../config/env.js';
 import { fetchJsonWithTimeout } from '../../../utils/httpClient.js';
 import { buildProviderCacheKey, getProviderCache, setProviderCache } from '../providerCache.service.js';
 import { normalizeProviderResult } from './searchMetadataProvider.interface.js';
+import { isDiscoverySecretManagementConfigured } from '../discoveryProviderSecretsVault.service.js';
+import { getResolvedSearchMetadataProviderConfig } from './searchMetadataProviderConfig.service.js';
 
 const PROVIDER = 'SERPAPI';
 
@@ -10,7 +12,7 @@ export const SerpApiProvider = {
   label: 'SerpAPI',
 
   isConfigured() {
-    return Boolean(env.SERPAPI_API_KEY);
+    return Boolean(env.SERPAPI_API_KEY || isDiscoverySecretManagementConfigured());
   },
 
   getStatus() {
@@ -25,6 +27,8 @@ export const SerpApiProvider = {
   },
 
   async search({ query, campaign, limit = 10, timeoutMs = env.SERPAPI_TIMEOUT_MS }) {
+    const config = await getResolvedSearchMetadataProviderConfig('serpapi');
+    if (!config.apiKey) return [];
     const location = [campaign?.city, campaign?.country].filter(Boolean).join(', ');
     const cacheKey = buildProviderCacheKey({
       source: PROVIDER,
@@ -35,10 +39,10 @@ export const SerpApiProvider = {
     const cached = getProviderCache(cacheKey);
     if (cached) return cached;
 
-    const url = new URL(env.SERPAPI_BASE_URL);
+    const url = new URL(config.baseUrl || env.SERPAPI_BASE_URL);
     url.searchParams.set('engine', 'google');
     url.searchParams.set('q', query);
-    url.searchParams.set('api_key', env.SERPAPI_API_KEY);
+    url.searchParams.set('api_key', config.apiKey);
     url.searchParams.set('num', String(limit));
 
     const data = await fetchJsonWithTimeout(url.toString(), {
