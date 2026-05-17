@@ -15,7 +15,7 @@ import {
   releaseSearchCreditReservation,
   reserveSearchCredits,
 } from '../credits/credit.service.js';
-import { buildRuleBasedAnalysisData, runRuleBasedAnalysis, toLeadAnalysisCreateData } from './analysis.service.js';
+import { buildRuleBasedAnalysisData, toLeadAnalysisCreateData } from './analysis.service.js';
 import { runLeadAnalysisAiReview } from '../ai/leadAnalysisAi.service.js';
 import { markCampaignCancelled, markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
 import { env } from '../../config/env.js';

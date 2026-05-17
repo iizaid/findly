@@ -17,6 +17,16 @@ const defaultLeadAnalysisJson = {
   nextBestAction: 'Review lead and send a personalized message.',
   riskNotes: [],
   dataQualityNotes: ['Analysis is based only on provided lead data.'],
+  dimensionScores: {
+    serviceFit: 80,
+    digitalGap: 90,
+    businessQuality: 70,
+    contactability: 85,
+    urgency: 60,
+    dataQuality: 50,
+  },
+  scoreExplanation: 'Mock score explanation for tests.',
+  missingDataThatWouldImproveDecision: [],
 };
 
 export class MockAiProvider {
