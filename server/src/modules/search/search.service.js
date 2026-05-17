@@ -30,6 +30,8 @@ import { assertDiscoveryBudget, getCampaignBudget } from './campaignBudget.servi
 import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
 import { calculateMissingResultCount, evaluateLocalCoverage } from './cacheFirstDiscovery.service.js';
 import { promoteHighConfidenceEvidenceBatch } from './evidencePromotion.service.js';
+import { findReusableEvidenceCandidates, convertEvidenceToReusableLeadCandidates } from './evidenceCache.service.js';
+import { buildDiscoveryPlan as buildBrainDiscoveryPlan } from './discoveryDecisionEngine.service.js';
 
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK', 'REDDIT'];
@@ -102,87 +104,80 @@ const summarizeDiscoveryPlan = (discoveryPlan) => ({
   })),
 });
 
-const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsRequested }) => {
-  const coverage = evaluateLocalCoverage({ campaign, localResults });
-  const missingResultCount = calculateMissingResultCount({ campaign, localResults });
-  const budget = getCampaignBudget(campaign);
+const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, evidenceCandidates, discoveryDecision }) => {
+  const missingResultCount = discoveryDecision.missingCount;
+  
   const metadata = {
-    coverage,
     externalDiscoveryUsed: false,
-    externalDiscoverySkippedReason: coverage.decision === 'USE_LOCAL_ONLY' ? coverage.reason : null,
     externalProvider: null,
+    externalDiscoverySkippedReason: discoveryDecision.skippedReasons[0] || null,
     searchMetadataProviderPrimary: env.SEARCH_METADATA_PROVIDER_PRIMARY,
     searchMetadataProviderUsed: null,
     searchMetadataFallbackUsed: false,
     searchMetadataQueriesUsed: 0,
     searchMetadataProviderStats: [],
     externalCostEstimate: 0,
+    discoveryDecision: {
+       stageDecision: discoveryDecision.stageDecision,
+       skippedReasons: discoveryDecision.skippedReasons,
+       riskWarnings: discoveryDecision.riskWarnings,
+       sourcePolicyWarnings: discoveryDecision.sourcePolicyWarnings,
+       savedExternalCalls: discoveryDecision.savedExternalCalls,
+    }
   };
 
-  if (coverage.decision !== 'RUN_EXTERNAL' || missingResultCount <= 0) {
-    return { candidates: [], metadata };
-  }
-
   const candidates = [];
-  const searchTargets = platformsRequested.filter((source) => SEARCH_METADATA_SOURCE_KEYS.includes(source));
-  const canRunSerp = searchTargets.length > 0 && SerpAdapter.isConfigured();
-  const maxSerpQueries = Math.min(
-    budget.maxSerpQueries,
-    env.SEARCH_METADATA_MAX_QUERIES_PER_CAMPAIGN || env.SERPAPI_MAX_QUERIES_PER_CAMPAIGN,
-  );
-
-  if (searchTargets.length > 0 && !canRunSerp) {
-    metadata.externalDiscoverySkippedReason = (env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED || env.LIVE_SERP_DISCOVERY_ENABLED)
-      ? 'SEARCH_METADATA_NOT_CONFIGURED'
-      : 'SEARCH_METADATA_DISABLED';
+  
+  if (discoveryDecision.stageDecision !== 'LIVE_DISCOVERY' || missingResultCount <= 0) {
+    return { candidates, metadata };
   }
 
-  if (canRunSerp && maxSerpQueries > 0) {
-    try {
-      assertDiscoveryBudget({
-        campaign,
-        plannedDiscoveryCalls: maxSerpQueries,
-        discoveryMethod: 'SERPAPI_DISCOVERY',
-      });
-      const adapter = new SerpAdapter(campaign, {
-        targetSources: searchTargets,
-        missingResultCount: Math.min(missingResultCount, budget.maxExternalResults),
-      });
-      candidates.push(...await adapter.run());
-      metadata.externalDiscoveryUsed = candidates.length > 0;
-      metadata.externalProvider = adapter.metadata?.providerUsed || 'SEARCH_METADATA';
-      metadata.searchMetadataProviderUsed = adapter.metadata?.providerUsed || null;
-      metadata.searchMetadataFallbackUsed = Boolean(adapter.metadata?.fallbackUsed);
-      metadata.searchMetadataQueriesUsed = adapter.metadata?.queriesUsed || 0;
-      metadata.searchMetadataProviderStats = adapter.metadata?.providerStats || [];
-      metadata.externalCostEstimate += maxSerpQueries * 1000;
-      metadata.externalDiscoverySkippedReason = candidates.length > 0
-        ? null
-        : (adapter.metadata?.skippedReason || 'SEARCH_METADATA_NO_RESULTS');
-    } catch (error) {
-      metadata.externalDiscoverySkippedReason = error instanceof AppError && error.code === errorCodes.VALIDATION_ERROR
-        ? 'BUDGET_LIMIT'
-        : 'SEARCH_METADATA_UNAVAILABLE';
-      logger.warn('campaign.search_metadata.discovery.skipped', {
-        campaignId: campaign.id,
-        reason: metadata.externalDiscoverySkippedReason,
-      });
+  // SEARCH METADATA
+  if (discoveryDecision.runPaidSearchMetadata) {
+    const plan = discoveryDecision.searchMetadataPlan;
+    const canRunSerp = SerpAdapter.isConfigured();
+    
+    if (!canRunSerp) {
+      metadata.externalDiscoverySkippedReason = 'SEARCH_METADATA_NOT_CONFIGURED';
+    } else if (plan.maxQueriesAllowed > 0) {
+      try {
+        const adapter = new SerpAdapter(campaign, {
+          targetSources: campaign.sources.filter((source) => SEARCH_METADATA_SOURCE_KEYS.includes(source)),
+          missingResultCount: Math.min(missingResultCount, plan.maxExternalResults),
+        });
+        candidates.push(...await adapter.run());
+        metadata.externalDiscoveryUsed = candidates.length > 0;
+        metadata.externalProvider = adapter.metadata?.providerUsed || 'SEARCH_METADATA';
+        metadata.searchMetadataProviderUsed = adapter.metadata?.providerUsed || null;
+        metadata.searchMetadataFallbackUsed = Boolean(adapter.metadata?.fallbackUsed);
+        metadata.searchMetadataQueriesUsed = adapter.metadata?.queriesUsed || 0;
+        metadata.searchMetadataProviderStats = adapter.metadata?.providerStats || [];
+        metadata.externalCostEstimate += plan.maxQueriesAllowed * 1000;
+        metadata.externalDiscoverySkippedReason = candidates.length > 0
+          ? null
+          : (adapter.metadata?.skippedReason || 'SEARCH_METADATA_NO_RESULTS');
+      } catch (error) {
+        metadata.externalDiscoverySkippedReason = error instanceof AppError && error.code === errorCodes.VALIDATION_ERROR
+          ? 'BUDGET_LIMIT'
+          : 'SEARCH_METADATA_UNAVAILABLE';
+        logger.warn('campaign.search_metadata.discovery.skipped', {
+          campaignId: campaign.id,
+          reason: metadata.externalDiscoverySkippedReason,
+        });
+      }
     }
   }
 
-  if (platformsRequested.includes('GOOGLE_MAPS') && candidates.length < missingResultCount) {
+  // GOOGLE PLACES
+  if (discoveryDecision.googlePlacesPlan?.shouldRun && candidates.length < missingResultCount) {
+    const plan = discoveryDecision.googlePlacesPlan;
     if (!GooglePlacesAdapter.isConfigured()) {
       metadata.googlePlacesStatus = 'not_configured';
     } else {
       try {
-        assertDiscoveryBudget({
-          campaign,
-          plannedDiscoveryCalls: Math.min(budget.maxGooglePlacesQueries, 1),
-          discoveryMethod: 'GOOGLE_PLACES',
-        });
         const adapter = new GooglePlacesAdapter({
           ...campaign,
-          requestedLimit: Math.min(missingResultCount - candidates.length, budget.maxExternalResults),
+          requestedLimit: Math.min(missingResultCount - candidates.length, discoveryDecision.searchMetadataPlan.maxExternalResults),
         });
         const googleLeads = await adapter.run();
         candidates.push(...googleLeads.map((lead) => evidenceCandidateFromLead({
@@ -195,7 +190,7 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsR
         metadata.externalDiscoveryUsed = true;
         metadata.externalProvider = metadata.externalProvider || 'GOOGLE_PLACES';
         metadata.googlePlacesStatus = 'used';
-        metadata.externalCostEstimate += 1500;
+        metadata.externalCostEstimate += plan.maxQueriesAllowed * 1500;
       } catch (error) {
         metadata.googlePlacesStatus = error instanceof AppError && error.code === errorCodes.VALIDATION_ERROR
           ? 'budget_limited'
@@ -209,7 +204,7 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsR
   }
 
   return {
-    candidates: candidates.slice(0, Math.min(missingResultCount, budget.maxExternalResults)),
+    candidates: candidates.slice(0, missingResultCount),
     metadata,
   };
 };
@@ -641,18 +636,36 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     });
     const matchedLeads = await adapter.run();
     await assertNotCancelled({ jobId, campaignId: campaign.id });
+    
+    // EVIDENCE CACHE BRAIN
+    const evidenceRecords = await findReusableEvidenceCandidates({
+       campaign,
+       targetSources: platformsRequested,
+       limit: Math.max(1, (campaign.requestedLimit || 20) - matchedLeads.length),
+    });
+    const evidenceCandidates = convertEvidenceToReusableLeadCandidates({ evidences: evidenceRecords, campaign });
+    
+    // DISCOVERY DECISION ENGINE
+    const discoveryDecision = buildBrainDiscoveryPlan({
+       campaign,
+       localResults: matchedLeads,
+       evidenceCandidates,
+    });
+    
+    // PAID EXTERNAL DISCOVERY (if authorized by brain)
     const externalDiscovery = await runExternalDiscoveryIfNeeded({
       campaign,
       localResults: matchedLeads,
-      platformsRequested,
+      evidenceCandidates,
+      discoveryDecision,
     });
     const estimatedTotalResults = Math.min(
       campaign.requestedLimit || 20,
-      matchedLeads.length + externalDiscovery.candidates.length,
+      matchedLeads.length + evidenceCandidates.length + externalDiscovery.candidates.length,
     );
     await updateCampaignProgress({
       campaignId: campaign.id,
-      progressCurrent: Math.min(matchedLeads.length, campaign.requestedLimit || 20),
+      progressCurrent: Math.min(matchedLeads.length + evidenceCandidates.length, campaign.requestedLimit || 20),
       progressTotal: campaign.requestedLimit || 20,
       lastStep: 'Scoring leads',
     });
@@ -703,6 +716,9 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             discovery: {
               sourceUsed: 'LOCAL_DATASET',
               localResultsCount: matchedLeads.length,
+              evidenceCandidatesCount: evidenceCandidates.length,
+              evidenceSavedExternalCalls: discoveryDecision.evidenceCoverage.savedExternalCallsEstimate,
+              discoveryDecision: discoveryDecision.stageDecision,
               externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
               externalProvider: externalDiscovery.metadata.externalProvider,
               externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
@@ -724,23 +740,27 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         lastStep: 'Saving lead list',
       });
 
+      const combinedLocalAndEvidence = [...matchedLeads, ...evidenceCandidates].slice(0, campaign.requestedLimit || 20);
       const catalogIds = new Set();
-      if (matchedLeads.length > 0) {
+      if (combinedLocalAndEvidence.length > 0) {
         await tx.leadListLead.createMany({
-          data: matchedLeads.map((lead, index) => ({
+          data: combinedLocalAndEvidence.map((lead, index) => ({
             leadListId: createdList.id,
-            catalogLeadId: lead.id,
+            catalogLeadId: lead.isReusableEvidence && lead.catalogLeadId ? lead.catalogLeadId : (lead.isReusableEvidence ? null : lead.id),
             rank: index + 1,
             score: lead.localDatasetScore || null,
             metadata: {
               platformsRequested,
-              sourceUsed: 'LOCAL_DATASET',
+              sourceUsed: lead.isReusableEvidence ? 'LEAD_EVIDENCE_CACHE' : 'LOCAL_DATASET',
               fallbackUsed,
               fallbackReason,
+              evidenceId: lead.originalEvidenceId,
             },
           })),
           skipDuplicates: true,
         });
+        
+        // Only run standard promotion on actual matchedLeads
         matchedLeads.forEach((lead) => catalogIds.add(lead.id));
         await Promise.all(matchedLeads.map((lead) => recordLeadEvidence({
           tx,
