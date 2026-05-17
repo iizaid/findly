@@ -70,6 +70,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [editingNotes, setEditingNotes] = useState(null);
   const [notesValue, setNotesValue] = useState('');
   const [activeList, setActiveList] = useState(null);
+  const [bulkAnalysisResult, setBulkAnalysisResult] = useState(null);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
 
   useEffect(() => {
@@ -105,6 +106,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       if (!selectedListId) {
         setLeads([]);
         setActiveList(null);
+        setBulkAnalysisResult(null);
         setIsLoading(false);
         return;
       }
@@ -207,17 +209,22 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
     }
   };
 
-  const analyzeLead = async (lead) => {
+  const analyzeLead = async (lead, force = false) => {
     const targetId = getTargetId(lead);
     const isListItem = !!lead.leadListItemId;
+    
+    if (force && !window.confirm('Re-analyzing with AI will consume 1 search credit. Do you want to proceed?')) {
+      return;
+    }
+    
     setAnalyzingLead(targetId);
     setError(null);
     try {
       let res;
       if (isListItem && selectedListId) {
-        res = await apiRequest(`/api/search/lists/${selectedListId}/items/${targetId}/analyze`, { method: 'POST' });
+        res = await apiRequest(`/api/search/lists/${selectedListId}/items/${targetId}/analyze${force ? '?force=true' : ''}`, { method: 'POST' });
       } else if (!lead.catalogOnly) {
-        res = await apiRequest(`/api/search/leads/${lead.id}/analyze`, { method: 'POST' });
+        res = await apiRequest(`/api/search/leads/${lead.id}/analyze${force ? '?force=true' : ''}`, { method: 'POST' });
       }
       if (res?.data?.analysis) {
         setLeads((prev) => prev.map((l) => getTargetId(l) === targetId ? { ...l, analyses: [res.data.analysis] } : l));
@@ -236,6 +243,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
     setError(null);
     try {
       const res = await apiRequest(`/api/search/lists/${selectedListId}/analyze`, { method: 'POST' });
+      if (res?.data) {
+        setBulkAnalysisResult(res.data);
+      }
       if (res?.data?.analyzedCount > 0) {
         const refRes = await apiRequest(`/api/search/leads?listId=${selectedListId}`);
         setLeads(refRes.data.leads || []);
@@ -298,6 +308,52 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         <div className="mt-6 flex items-start gap-3 rounded-2xl bg-red-50 p-4 text-red-700 border border-red-100">
           <AlertCircle size={18} className="mt-0.5 shrink-0" />
           <p className="text-sm font-bold">{error}</p>
+        </div>
+      )}
+
+      {bulkAnalysisResult && (
+        <div className="mt-6 rounded-2xl border border-black/[0.08] bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[15px] font-bold text-black flex items-center gap-2">
+              <CheckCircle2 size={18} className="text-emerald-500" />
+              Bulk Analysis Complete
+            </h3>
+            <button onClick={() => setBulkAnalysisResult(null)} className="text-[12px] font-medium text-black/50 hover:text-black">Dismiss</button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
+              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Total Analyzed</div>
+              <div className="text-lg font-bold text-black">{bulkAnalysisResult.analyzedCount}</div>
+            </div>
+            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
+              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">AI Assisted</div>
+              <div className="text-lg font-bold text-blue-600">{bulkAnalysisResult.aiAssistedCount}</div>
+            </div>
+            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
+              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Rule Based / Fallback</div>
+              <div className="text-lg font-bold text-amber-600">{bulkAnalysisResult.fallbackCount}</div>
+            </div>
+            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
+              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Failed</div>
+              <div className="text-lg font-bold text-red-600">{bulkAnalysisResult.failedCount}</div>
+            </div>
+            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
+              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Credits Used</div>
+              <div className="text-lg font-bold text-black">{bulkAnalysisResult.creditsUsed}</div>
+            </div>
+          </div>
+          {bulkAnalysisResult.topOpportunities?.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-black/[0.04]">
+              <div className="text-[12px] font-semibold text-black/60 mb-2">Top Opportunities Found</div>
+              <div className="flex flex-wrap gap-2">
+                {bulkAnalysisResult.topOpportunities.map((opp, idx) => (
+                  <span key={idx} className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 border border-emerald-100">
+                    Score: {opp.score} ({opp.service})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -457,18 +513,41 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                         <div className="bg-black/[0.01] px-5 pb-5 pt-3 border-t border-black/[0.02]">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                              <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-[13px] font-semibold text-black">AI Analysis</h4>
-                                {!a && !isCatalogLeadWithoutList && (
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                                <h4 className="text-[13px] font-semibold text-black flex items-center gap-2">
+                                  AI Analysis
+                                  {a && (
+                                    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.analysisSource === 'AI_ASSISTED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {a.analysisSource === 'AI_ASSISTED' ? 'AI Assisted' : 'Rule Based'}
+                                      {a.aiProvider && ` • ${a.aiProvider}`}
+                                    </span>
+                                  )}
+                                  {a?.aiFallbackUsed && (
+                                    <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based fallback">
+                                      Fallback Used
+                                    </span>
+                                  )}
+                                </h4>
+                                {!a && !isCatalogLeadWithoutList ? (
                                   <button 
                                     onClick={() => analyzeLead(lead)}
                                     disabled={analyzingLead === targetId}
-                                    className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors"
+                                    className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors shrink-0 w-fit"
                                   >
                                     {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                                     Analyze
                                   </button>
-                                )}
+                                ) : (a && (a.analysisSource === 'RULE_BASED' || !a.analysisSource) && !isCatalogLeadWithoutList) ? (
+                                  <button 
+                                    onClick={() => analyzeLead(lead, true)}
+                                    disabled={analyzingLead === targetId}
+                                    className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shrink-0 w-fit border border-blue-200"
+                                    title="Re-analyze using AI (consumes 1 credit)"
+                                  >
+                                    {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                                    Re-analyze with AI
+                                  </button>
+                                ) : null}
                               </div>
                               
                               {a ? (
