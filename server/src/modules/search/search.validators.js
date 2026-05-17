@@ -127,4 +127,7 @@ export const listItemParamSchema = z.object({
     listId: z.string().cuid(),
     itemId: z.string().cuid(),
   }),
+  query: z.object({
+    force: z.enum(['true', 'false']).optional(),
+  }).optional(),
 });

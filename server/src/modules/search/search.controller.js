@@ -1,5 +1,6 @@
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
+import { logger } from '../../utils/logger.js';
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { toPagination } from '../../utils/pagination.js';
@@ -1099,7 +1100,9 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
     throw new AppError(errorCodes.NOT_FOUND, 'List item not found or you do not have permission.', 404);
   }
 
-  if (item.analyses.length > 0) {
+  const forceReanalyze = req.validated.query?.force === 'true';
+
+  if (item.analyses.length > 0 && !forceReanalyze) {
     const metadata = inferAnalysisMetadata(item.analyses[0]);
     return successResponse(res, {
       analysis: { ...item.analyses[0], ...metadata },
@@ -1145,10 +1148,10 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
         id: item.id,
         leadListId: listId,
         leadList: { userId: req.user.id },
-        analyses: { none: {} },
+        ...(forceReanalyze ? {} : { analyses: { none: {} } }),
         OR: [
           { analysisStatus: null },
-          { analysisStatus: { notIn: ['PROCESSING', 'COMPLETED'] } },
+          { analysisStatus: { notIn: forceReanalyze ? ['PROCESSING'] : ['PROCESSING', 'COMPLETED'] } },
         ],
       },
       data: { analysisStatus: 'PROCESSING' },
@@ -1160,7 +1163,7 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
         include: { analyses: { orderBy: { createdAt: 'desc' }, take: 1 } },
       });
 
-      if (existing?.analyses?.[0]) {
+      if (existing?.analyses?.[0] && !forceReanalyze) {
         const metadata = inferAnalysisMetadata(existing.analyses[0]);
         return {
           analysis: { ...existing.analyses[0], ...metadata },
@@ -1278,10 +1281,10 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
 
   const results = [];
 
-  const AI_ANALYSIS_CONCURRENCY = 2;
+  const concurrency = Math.max(1, Math.min(Number(env.AI_ANALYSIS_CONCURRENCY) || 2, 5));
   
-  for (let i = 0; i < items.length; i += AI_ANALYSIS_CONCURRENCY) {
-    const chunk = items.slice(i, i + AI_ANALYSIS_CONCURRENCY);
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
     
     const chunkPromises = chunk.map(async (item) => {
       const sourceLead = item.lead || item.catalogLead;
@@ -1359,7 +1362,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
 
         return { item, ...result };
       } catch (err) {
-        console.error(`[Bulk Analysis] Failed for item ${item.id}:`, err);
+        logger.error(`[Bulk Analysis] Failed for item ${item.id}:`, err);
         return { item, status: 'failed', reason: 'error' };
       }
     });

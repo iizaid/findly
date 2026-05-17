@@ -1,0 +1,16 @@
+{
+  "service": "Digital Presence Improvement",
+  "goodLeads": [
+    "Local businesses with missing website but have positive reviews.",
+    "Businesses with unverified map listings.",
+    "Businesses relying solely on a Facebook page with low engagement."
+  ],
+  "weakerLeads": [
+    "Businesses with fully updated profiles across multiple platforms.",
+    "Freelancers with no physical location or clear service area."
+  ],
+  "badLeads": [
+    "Closed or permanently relocated businesses.",
+    "Large corporate chains and franchises."
+  ]
+}
