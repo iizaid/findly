@@ -39,7 +39,12 @@ export const createApp = () => {
   app.use(cookieParser());
   app.use(csrfProtection);
 
-  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), {
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
 
   app.use('/api/health', healthRouter);
   app.use('/api/ready', readyRouter);

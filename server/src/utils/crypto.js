@@ -12,6 +12,8 @@ export const createSessionToken = () => crypto.randomBytes(TOKEN_BYTES).toString
 
 export const createEmailVerificationToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
 
+export const createPasswordResetToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
+
 export const hashSessionToken = (token) => {
   return crypto
     .createHmac('sha256', env.SESSION_SECRET)
@@ -23,6 +25,13 @@ export const hashEmailVerificationToken = (token) => {
   return crypto
     .createHmac('sha256', env.SESSION_SECRET)
     .update(`email-verification:${token}`)
+    .digest('hex');
+};
+
+export const hashPasswordResetToken = (token) => {
+  return crypto
+    .createHmac('sha256', env.SESSION_SECRET)
+    .update(`password-reset:${token}`)
     .digest('hex');
 };
 

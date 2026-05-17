@@ -4,6 +4,8 @@ const CSRF_EXEMPT = new Set([
   'POST /api/auth/register',
   'POST /api/auth/login',
   'POST /api/auth/verify-email',
+  'POST /api/auth/forgot-password',
+  'POST /api/auth/reset-password',
 ]);
 
 let csrfTokenPromise = null;

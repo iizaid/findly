@@ -5,6 +5,7 @@ import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { clearCookieOptions, getCookieOptions } from '../sessions/session.service.js';
 import { loginUser, logoutUser, registerUser, updatePassword as updatePasswordService, logoutEverywhere as logoutEverywhereService } from './auth.service.js';
 import { resendVerificationEmail, verifyEmailToken } from './emailVerification.service.js';
+import { PASSWORD_RESET_GENERIC_MESSAGE, requestPasswordReset, resetPasswordWithToken } from './passwordReset.service.js';
 
 export const register = asyncHandler(async (req, res) => {
   const result = await registerUser(req.validated.body, req);
@@ -105,4 +106,15 @@ export const logoutEverywhere = asyncHandler(async (req, res) => {
   await logoutEverywhereService(req.user.id);
   res.clearCookie(env.COOKIE_NAME, clearCookieOptions);
   return successResponse(res, {}, 'Logged out from all devices successfully.');
+});
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  await requestPasswordReset(req.validated.body, req);
+  return successResponse(res, {}, PASSWORD_RESET_GENERIC_MESSAGE);
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  await resetPasswordWithToken(req.validated.body, req);
+  res.clearCookie(env.COOKIE_NAME, clearCookieOptions);
+  return successResponse(res, {}, 'Password reset successfully. Please log in again.');
 });

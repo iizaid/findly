@@ -74,9 +74,10 @@ const getImageType = (buffer) => {
 const safeDeleteUploadedFile = async (avatarUrl) => {
   if (!avatarUrl?.startsWith('/uploads/')) return;
   const filename = path.basename(avatarUrl);
-  const target = path.join(uploadDir, filename);
+  const uploadRoot = path.resolve(uploadDir);
+  const target = path.resolve(uploadRoot, filename);
 
-  if (!target.startsWith(uploadDir)) return;
+  if (!target.startsWith(uploadRoot + path.sep)) return;
   await fs.promises.unlink(target).catch(() => {});
 };
 

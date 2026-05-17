@@ -12,7 +12,7 @@ const commonPasswords = new Set([
   'findly123',
 ]);
 
-const passwordSchema = z
+export const passwordSchema = z
   .string()
   .min(10, 'Password must be at least 10 characters.')
   .max(128, 'Password must be 128 characters or fewer.')
@@ -80,6 +80,23 @@ export const emptyAuthBodySchema = z.object({
 export const updatePasswordSchema = z.object({
   body: z.object({
     currentPassword: z.string().min(1).max(128),
+    newPassword: passwordSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().email().max(255).transform(normalizeEmail),
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    token: z.string().min(32, 'Reset token is required.').max(256),
     newPassword: passwordSchema,
   }).strict(),
   params: z.object({}).optional(),

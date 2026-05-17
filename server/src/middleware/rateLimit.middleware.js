@@ -79,6 +79,13 @@ export const loginRateLimiter = makeRateLimit({
   message: 'Too many login attempts. Please try again later.',
 });
 
+export const passwordResetRateLimiter = makeRateLimit({
+  name: 'password-reset',
+  windowMs: env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MS,
+  limit: env.PASSWORD_RESET_RATE_LIMIT_MAX,
+  message: 'Too many password reset attempts. Please try again later.',
+});
+
 export const searchRateLimiter = makeRateLimit({
   name: 'search',
   windowMs: env.RATE_LIMIT_WINDOW_MS,

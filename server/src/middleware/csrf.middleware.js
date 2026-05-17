@@ -7,6 +7,8 @@ const EXEMPT_PATHS = new Set([
   '/api/auth/register',
   '/api/auth/login',
   '/api/auth/verify-email',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
   '/api/csrf-token',
 ]);
 

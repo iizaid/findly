@@ -134,6 +134,7 @@ model User {
 
   sessions                Session[]
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
   ownedWorkspaces         Workspace[]              @relation("WorkspaceOwner")
   workspaceMembers        WorkspaceMember[]
   auditLogs               AuditLog[]
@@ -155,6 +156,24 @@ model User {
 }
 
 model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@index([userId, usedAt, expiresAt])
+}
+
+model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String
   tokenHash String    @unique

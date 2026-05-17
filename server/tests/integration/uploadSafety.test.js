@@ -1,19 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
 process.env.IMPORT_UPLOAD_TTL_MINUTES = '60';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
 
 describe('Upload cleanup service', () => {
-  let safeResolveUploadFile, removeAdminUploadFile, cleanupExpiredAdminUploads, getAdminUploadDir, uploadFileFilter;
+  let safeResolveUploadFile, removeAdminUploadFile, cleanupExpiredAdminUploads, getAdminUploadDir, uploadFileFilter, validateAdminUploadContent;
+  let createApp;
   let uploadDir;
 
   beforeAll(async () => {
-    ({ safeResolveUploadFile, removeAdminUploadFile, cleanupExpiredAdminUploads, getAdminUploadDir, uploadFileFilter } =
+    ({ safeResolveUploadFile, removeAdminUploadFile, cleanupExpiredAdminUploads, getAdminUploadDir, uploadFileFilter, validateAdminUploadContent } =
       await import('../../src/modules/admin/uploadCleanup.service.js'));
+    ({ createApp } = await import('../../src/app.js'));
     uploadDir = getAdminUploadDir();
     await fs.mkdir(uploadDir, { recursive: true });
+    await fs.mkdir(path.join(process.cwd(), 'public', 'uploads'), { recursive: true });
   });
 
   afterAll(async () => {
@@ -138,5 +143,44 @@ describe('Upload cleanup service', () => {
     expect(accepted).toEqual(['csv', 'xlsx']);
     expect(rejected).toContain('exe');
     expect(rejected).toContain('txt');
+  });
+
+  it('uploadFileFilter rejects mismatched unsafe MIME types', () => {
+    uploadFileFilter(null, { originalname: 'data.csv', mimetype: 'text/html' }, (err, _accept) => {
+      expect(err).toBeTruthy();
+    });
+  });
+
+  it('validates admin upload magic/content for csv and xlsx', async () => {
+    const csvFile = path.join(uploadDir, 'test-cleanup-valid.csv');
+    const htmlFile = path.join(uploadDir, 'test-cleanup-html.csv');
+    const xlsxFile = path.join(uploadDir, 'test-cleanup-valid.xlsx');
+    const badXlsxFile = path.join(uploadDir, 'test-cleanup-bad.xlsx');
+
+    await fs.writeFile(csvFile, 'businessName,city\nCafe,Amman\n');
+    await fs.writeFile(htmlFile, '<script>alert(1)</script>');
+    await fs.writeFile(xlsxFile, Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x00]));
+    await fs.writeFile(badXlsxFile, 'not a zip file');
+
+    expect(await validateAdminUploadContent(csvFile, 'valid.csv')).toBe(true);
+    expect(await validateAdminUploadContent(htmlFile, 'html.csv')).toBe(false);
+    expect(await validateAdminUploadContent(xlsxFile, 'valid.xlsx')).toBe(true);
+    expect(await validateAdminUploadContent(badXlsxFile, 'bad.xlsx')).toBe(false);
+  });
+
+  it('static uploads are served with nosniff headers and admin temp files are not public', async () => {
+    const publicUploadDir = path.join(process.cwd(), 'public', 'uploads');
+    const publicFile = path.join(publicUploadDir, 'test-cleanup-public.txt');
+    const adminFile = path.join(uploadDir, 'test-cleanup-private.csv');
+    await fs.writeFile(publicFile, 'public');
+    await fs.writeFile(adminFile, 'private');
+
+    const publicRes = await request(createApp()).get('/uploads/test-cleanup-public.txt').expect(200);
+    expect(publicRes.headers['x-content-type-options']).toBe('nosniff');
+
+    await request(createApp()).get('/uploads/test-cleanup-private.csv').expect(404);
+
+    await fs.unlink(publicFile).catch(() => {});
+    await fs.unlink(adminFile).catch(() => {});
   });
 });

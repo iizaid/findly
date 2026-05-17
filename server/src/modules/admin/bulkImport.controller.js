@@ -11,6 +11,7 @@ import {
   removeAdminUploadFile,
   cleanupExpiredAdminUploads,
   ensureUploadDir,
+  validateAdminUploadContent,
 } from './uploadCleanup.service.js';
 
 await ensureUploadDir();
@@ -67,6 +68,11 @@ export const parseImportFile = asyncHandler(async (req, res) => {
   await cleanupExpiredAdminUploads().catch(() => {});
 
   try {
+    const safeContent = await validateAdminUploadContent(filePath, originalName);
+    if (!safeContent) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, 'Uploaded file content does not match an allowed CSV or XLSX file.', 400);
+    }
+
     const inspection = await inspectDatasetFile(filePath);
     return successResponse(res, {
       fileName: originalName,

@@ -69,7 +69,7 @@ const recordAttempt = () => {
   window.localStorage.setItem(ATTEMPT_KEY, JSON.stringify([...attempts, now]));
 };
 
-const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNavigate, onSessionChange }) => {
+const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, onSessionChange }) => {
   const [mode, setMode] = useState(initialMode);
   const [screen, setScreen] = useState('form');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,6 +77,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
   const [accountEmail, setAccountEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [touched, setTouched] = useState({});
   const [form, setForm] = useState({
@@ -161,6 +162,35 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
     setStatus(null);
     setSubmitted(false);
     setTouched({});
+  };
+
+  const sendPasswordReset = async (event) => {
+    event.preventDefault();
+    setSubmitted(true);
+    setStatus(null);
+
+    const email = normalizeEmail(form.email);
+    if (!EMAIL_PATTERN.test(email)) {
+      setStatus({ type: 'error', message: 'Use a valid email address first.' });
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      await apiRequest('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setAccountEmail(email);
+      setStatus({ type: 'success', message: 'If an account exists, a reset email has been sent.' });
+    } catch (error) {
+      setStatus({
+        type: 'error',
+        message: error instanceof ApiError ? error.message : 'Could not request a password reset. Please try again.',
+      });
+    } finally {
+      setIsSendingReset(false);
+    }
   };
 
   const resendVerification = async () => {
@@ -428,6 +458,59 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
                     </button>
                   </div>
                 </div>
+              ) : screen === 'forgot-password' ? (
+                <div className="min-h-[650px] pt-10">
+                  <p className="text-sm font-bold uppercase tracking-[0.2em] text-secondary">Account recovery</p>
+                  <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
+                    Reset your password.
+                  </h2>
+                  <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-secondary">
+                    Enter your account email. For security, Findly will show the same response whether an account exists or not.
+                  </p>
+                  <form className="mt-8 space-y-5" onSubmit={sendPasswordReset} noValidate>
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-black">Email</label>
+                      <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                        <Mail size={18} className="text-secondary" />
+                        <input
+                          value={form.email}
+                          onChange={(event) => updateField('email', event.target.value)}
+                          maxLength={255}
+                          required
+                          type="email"
+                          className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-secondary/50"
+                          placeholder="you@company.com"
+                          autoComplete="email"
+                          inputMode="email"
+                        />
+                      </div>
+                    </div>
+                    {status && (
+                      <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
+                        {status.message}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        type="submit"
+                        disabled={isSendingReset}
+                        className="inline-flex h-12 items-center justify-center rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
+                      >
+                        {isSendingReset ? 'Sending...' : 'Send reset link'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScreen('form');
+                          setStatus(null);
+                        }}
+                        className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04]"
+                      >
+                        Back to login
+                      </button>
+                    </div>
+                  </form>
+                </div>
               ) : (
                 <>
                   <div>
@@ -637,10 +720,10 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNotice, onNa
                   {!isSignup && (
                     <button
                       type="button"
-                      onClick={() => onNotice?.({
-                        title: 'Coming Soon',
-                        message: 'Password reset functionality is under development and will be available in a future update.',
-                      })}
+                      onClick={() => {
+                        setScreen('forgot-password');
+                        setStatus(null);
+                      }}
                       className="text-left text-sm font-bold text-black hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:text-right"
                     >
                       Forgot password?

@@ -14,6 +14,7 @@ import { apiRequest, ApiError } from './lib/api';
 const AuthPage = lazy(() => import('./components/AuthPage'));
 const DashboardPage = lazy(() => import('./components/DashboardPage'));
 const VerifyEmailPage = lazy(() => import('./components/VerifyEmailPage'));
+const ResetPasswordPage = lazy(() => import('./components/ResetPasswordPage'));
 
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center bg-white px-6 text-center">
@@ -162,6 +163,23 @@ function App() {
             onNavigate={navigate}
             onAuthOpen={openAuth}
             onSessionChange={setCurrentUser}
+          />
+        </Suspense>
+        <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+      </MotionConfig>
+    );
+  }
+
+  if (route.pathname === '/reset-password') {
+    const token = new URLSearchParams(route.search).get('token') || '';
+
+    return (
+      <MotionConfig reducedMotion="user">
+        <Suspense fallback={<RouteFallback />}>
+          <ResetPasswordPage
+            token={token}
+            onNavigate={navigate}
+            onAuthOpen={openAuth}
           />
         </Suspense>
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />

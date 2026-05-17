@@ -4,6 +4,14 @@ import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 
 const ALLOWED_EXTENSIONS = new Set(['.csv', '.xlsx']);
+const ALLOWED_MIME_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/octet-stream',
+  'text/plain',
+]);
 
 /**
  * Returns the absolute path to the admin upload directory.
@@ -136,9 +144,39 @@ export const cleanupExpiredAdminUploads = async () => {
  */
 export const uploadFileFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  if (ALLOWED_EXTENSIONS.has(ext)) {
-    cb(null, true);
-  } else {
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
     cb(new Error(`Unsupported file type: ${ext}. Only .csv and .xlsx are allowed.`));
+    return;
+  }
+
+  if (file.mimetype && !ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    cb(new Error(`Unsupported file type: ${ext}. Only .csv and .xlsx are allowed.`));
+    return;
+  }
+
+  cb(null, true);
+};
+
+export const validateAdminUploadContent = async (filePath, originalName) => {
+  const ext = path.extname(originalName).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(ext)) return false;
+
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(512);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const sample = buffer.subarray(0, bytesRead);
+
+    if (ext === '.xlsx') {
+      return sample.length >= 4 && sample[0] === 0x50 && sample[1] === 0x4B;
+    }
+
+    const text = sample.toString('utf8').trimStart().toLowerCase();
+    if (text.startsWith('<!doctype html') || text.startsWith('<html') || text.startsWith('<script') || text.startsWith('<?xml')) {
+      return false;
+    }
+    return !sample.includes(0x00);
+  } finally {
+    await handle.close();
   }
 };

@@ -20,6 +20,7 @@ import {
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest } from '../../../lib/api';
+import { safeExternalUrl } from '../../../lib/urlSafety';
 
 const signalLabels = {
   NO_WEBSITE: { label: 'No website', color: 'bg-red-100 text-red-800' },
@@ -111,6 +112,8 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
 
   const analysis = detail?.analyses?.[0];
   const messageDraft = buildMessageDraft(detail, analysis);
+  const websiteUrl = safeExternalUrl(detail?.websiteUrl);
+  const googleMapsUrl = safeExternalUrl(detail?.googleMapsUrl);
 
   // List view (no lead selected or mobile)
   if (!selectedLead) {
@@ -238,8 +241,8 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
-                    {detail.websiteUrl && (
-                      <a href={detail.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-[#F7F8F6] px-4 py-2 text-xs font-bold transition-colors hover:bg-white">
+                    {websiteUrl && (
+                      <a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-[#F7F8F6] px-4 py-2 text-xs font-bold transition-colors hover:bg-white">
                         <Globe size={14} /> Website <ExternalLink size={11} />
                       </a>
                     )}
@@ -248,8 +251,8 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                         <Phone size={14} /> {detail.phone}
                       </a>
                     )}
-                    {detail.googleMapsUrl && (
-                      <a href={detail.googleMapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-[#F7F8F6] px-4 py-2 text-xs font-bold transition-colors hover:bg-white">
+                    {googleMapsUrl && (
+                      <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-[#F7F8F6] px-4 py-2 text-xs font-bold transition-colors hover:bg-white">
                         <MapPin size={14} /> Google Maps <ExternalLink size={11} />
                       </a>
                     )}

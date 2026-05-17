@@ -3,6 +3,7 @@ import { Plus, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, E
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest } from '../../../lib/api';
+import { safeExternalUrl } from '../../../lib/urlSafety';
 
 const STATUS_OPTIONS = ['NEW', 'REVIEWED', 'CONTACTED', 'INTERESTED', 'NOT_A_FIT', 'SAVED', 'QUALIFIED', 'DISQUALIFIED', 'ARCHIVED'];
 
@@ -503,6 +504,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                     const isListItem = !!lead.leadListItemId;
                     const isCatalogLeadWithoutList = lead.catalogOnly && !isListItem;
                     const a = lead.analyses?.[0];
+                    const websiteUrl = safeExternalUrl(lead.websiteUrl);
+                    const instagramUrl = safeExternalUrl(lead.instagramUrl);
+                    const googleMapsUrl = safeExternalUrl(lead.googleMapsUrl);
                     
                     return (
                       <div key={targetId} className="flex flex-col">
@@ -515,18 +519,18 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                           <div className="truncate">{lead.city || '-'}</div>
                           <div className="truncate text-[11px] text-black/60" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
                           <div>
-                            {lead.websiteUrl ? (
-                              <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                            {websiteUrl ? (
+                              <a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
                                 <Link2 size={13} /> Visit
                               </a>
-                            ) : <span className="text-red-500 text-[11px]">Missing</span>}
+                            ) : <span className={lead.websiteUrl ? 'text-red-500 text-[11px]' : 'text-red-500 text-[11px]'}>{lead.websiteUrl ? 'Invalid' : 'Missing'}</span>}
                           </div>
                           <div>
-                            {lead.instagramUrl ? (
-                              <a href={lead.instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
+                            {instagramUrl ? (
+                              <a href={instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
                                 <ExternalLink size={13} /> Open
                               </a>
-                            ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">-</span>)}
+                            ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">{lead.instagramUrl ? 'Invalid' : '-'}</span>)}
                           </div>
                           <div className="truncate text-black/60">{lead.phone || '-'}</div>
                           <div className="min-w-0">
@@ -560,8 +564,8 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                             >
                               <Eye size={13} />
                             </button>
-                            {lead.googleMapsUrl && (
-                              <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
+                            {googleMapsUrl && (
+                              <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.04] text-secondary hover:bg-accent hover:text-black transition-colors" title="Open in Maps">
                                 <ExternalLink size={13} />
                               </a>
                             )}

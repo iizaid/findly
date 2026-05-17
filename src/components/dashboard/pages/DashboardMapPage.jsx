@@ -3,6 +3,7 @@ import { AlertCircle, ExternalLink, Loader2, Map, MapPin, Navigation, Search } f
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest } from '../../../lib/api';
+import { safeExternalUrl } from '../../../lib/urlSafety';
 
 const scoreColor = (level) => {
   if (level === 'GOLD') return 'bg-yellow-400 text-black';
@@ -80,6 +81,7 @@ const DashboardMapPage = ({ onNavigate }) => {
   }, [filteredLeads]);
 
   const selectedLead = filteredLeads.find((lead) => lead.id === selectedLeadId) || filteredLeads[0];
+  const selectedGoogleMapsUrl = safeExternalUrl(selectedLead?.googleMapsUrl);
 
   return (
     <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
@@ -193,9 +195,9 @@ const DashboardMapPage = ({ onNavigate }) => {
                   <p className="mt-2 text-xl font-bold">{selectedLead.analyses?.[0]?.opportunityScore ?? 'Not analyzed'}</p>
                 </div>
               </div>
-              {selectedLead.googleMapsUrl && (
+              {selectedGoogleMapsUrl && (
                 <a
-                  href={selectedLead.googleMapsUrl}
+                  href={selectedGoogleMapsUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black"
