@@ -133,4 +133,53 @@ describe('Admin System Status Endpoint', () => {
     expect(bodyStr).not.toContain('C:\\');
     expect(bodyStr).not.toContain('/usr/src');
   });
+
+  it('returns safe discovery readiness for admins', async () => {
+    const res = await agentAdmin.get('/api/admin/discovery-readiness').expect(200);
+    const readiness = res.body.data.readiness;
+
+    expect(readiness.localDataset).toBeDefined();
+    expect(typeof readiness.localDataset.catalogLeadCount).toBe('number');
+    expect(readiness.evidence).toBeDefined();
+    expect(typeof readiness.evidence.discoveryQueryCount).toBe('number');
+    expect(typeof readiness.evidence.leadEvidenceCount).toBe('number');
+
+    expect(readiness.sources.serpApi).toMatchObject({
+      runnable: false,
+      requiresApiKey: true,
+      plannedForPhase: 'Phase 4',
+    });
+    expect(readiness.sources.website).toMatchObject({
+      enrichmentOnly: true,
+      runnableAsStandaloneSearch: false,
+    });
+
+    for (const key of ['instagram', 'tiktok', 'facebook', 'reddit', 'yelp', 'tripadvisor', 'linkedin', 'youtube', 'x']) {
+      expect(readiness.sources.platformSignals[key]).toMatchObject({
+        liveMethodNow: 'LOCAL_DATASET',
+        futureMethod: 'SERPAPI_DISCOVERY',
+        directApiRequiredNow: false,
+        externalCallToday: false,
+      });
+    }
+  });
+
+  it('protects discovery readiness from guests and normal users', async () => {
+    await agentGuest.get('/api/admin/discovery-readiness').expect(401);
+    await agentUser.get('/api/admin/discovery-readiness').expect(403);
+  });
+
+  it('does not expose secrets from discovery readiness', async () => {
+    const res = await agentAdmin.get('/api/admin/discovery-readiness').expect(200);
+    const bodyStr = JSON.stringify(res.body);
+
+    expect(bodyStr).not.toContain(process.env.DATABASE_URL || 'postgres://');
+    if (process.env.GOOGLE_PLACES_API_KEY) {
+      expect(bodyStr).not.toContain(process.env.GOOGLE_PLACES_API_KEY);
+    }
+    if (process.env.SERPAPI_API_KEY) {
+      expect(bodyStr).not.toContain(process.env.SERPAPI_API_KEY);
+    }
+    expect(bodyStr).not.toContain('sk-');
+  });
 });

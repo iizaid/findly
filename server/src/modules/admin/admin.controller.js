@@ -5,6 +5,7 @@ import { toPagination } from '../../utils/pagination.js';
 import { mapRawLocationToGovernorate, leadMatchesGovernorate } from '../search/locationNormalization.js';
 import { getSearchQueueMetrics } from '../jobs/jobQueue.service.js';
 import { getAiProviderStatuses } from '../ai/aiRouter.service.js';
+import { getDiscoveryReadinessSummary } from '../search/discoveryReadiness.service.js';
 import {
   deleteProviderSecret,
   isAiSecretManagementConfigured,
@@ -97,6 +98,11 @@ export const getAdminSummary = asyncHandler(async (_req, res) => {
 export const getQueueMetrics = asyncHandler(async (_req, res) => {
   const metrics = await getSearchQueueMetrics();
   return successResponse(res, { queue: metrics }, 'Queue metrics loaded.');
+});
+
+export const getDiscoveryReadiness = asyncHandler(async (_req, res) => {
+  const readiness = await getDiscoveryReadinessSummary();
+  return successResponse(res, { readiness }, 'Discovery readiness loaded.');
 });
 
 const buildSafeAiProviderStatuses = async () => {
@@ -1034,4 +1040,3 @@ export const grantUserCredits = asyncHandler(async (req, res) => {
 
   return successResponse(res, { user: result }, 'Credits granted successfully.');
 });
-

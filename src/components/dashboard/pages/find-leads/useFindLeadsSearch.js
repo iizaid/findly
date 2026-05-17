@@ -13,7 +13,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'Findly could not complete this signal target right now. Try another signal or broaden your search.';
+      return 'Findly could not complete this signal target right now. Local data is used for platform signals today, so try another signal or broaden your search.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
@@ -173,7 +173,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     const leadsReturned = campaign.resultCount ?? campaign.leadsReturned ?? campaign.savedLeadsCount ?? 0;
 
     if (leadsReturned === 0) {
-      setError('No matching leads found. Try broader filters, a different location, or fewer platform constraints.');
+      setError('No matching local leads found yet. Try broader filters, fewer platform signals, or import more local data.');
       setPendingSearch(null);
       return;
     }
@@ -249,7 +249,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     }
 
     if (selectedSources.length < 1) {
-      setError('Please select at least one platform to proceed.');
+      setError('Please select at least one signal target to proceed.');
       return;
     }
 

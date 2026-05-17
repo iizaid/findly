@@ -748,7 +748,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
           <div className="border-t border-black/[0.06] p-5">
             <DashboardEmptyState
               title={savedLists.length > 0 ? 'No leads in this saved search' : 'No saved searches yet'}
-              description={savedLists.length > 0 ? 'Try adjusting your filters or choose another saved search result set.' : 'Create your first search campaign. Every completed search will be saved here.'}
+              description={savedLists.length > 0 ? 'No matching local leads found for these filters. Try broader filters, fewer platform signals, or import more local data.' : 'Create your first search campaign. Every completed search will be saved here.'}
               actionLabel={savedLists.length > 0 ? 'Clear filters' : 'Create Search Campaign'}
               onAction={() => savedLists.length > 0 ? (setSearchQuery(''), setFilterSource(''), setFilterCity(''), setFilterScore(''), setFilterStatus(''), setFilterMissingWeb(false)) : onNavigate('/dashboard/find-leads')}
             />

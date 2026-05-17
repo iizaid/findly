@@ -42,7 +42,7 @@ const PlatformButton = ({ source, selected, onClick }) => {
   const disabled = !source.canRun;
   const Icon = iconMap[source.key] || Search;
   const isSearchReady = Boolean(source.searchable || source.available);
-  const statusLabel = source.status === 'index_ready' ? 'Index Ready' : isSearchReady ? 'Ready' : 'Later';
+  const statusLabel = source.status === 'index_ready' ? 'Local Ready' : isSearchReady ? 'Ready' : 'Later';
 
   return (
     <button

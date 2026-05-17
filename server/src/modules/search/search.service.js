@@ -70,6 +70,18 @@ const buildEvidenceFields = (lead) => ({
   source: lead.source,
 });
 
+const summarizeDiscoveryPlan = (discoveryPlan) => ({
+  targetSources: discoveryPlan?.targetSources || [],
+  methods: (discoveryPlan?.mappings || []).map((mapping) => ({
+    targetSource: mapping.targetSource,
+    discoveryMethod: mapping.discoveryMethod,
+    adapter: mapping.adapter,
+    runnable: Boolean(mapping.runnable),
+    targetOnly: Boolean(mapping.targetOnly),
+    enrichmentOnly: Boolean(mapping.enrichmentOnly),
+  })),
+});
+
 export const estimateSearchCreditsRequired = (requestedLimit) => estimateSearchCreditReservation({ requestedLimit });
 export const calculateSearchCreditsUsed = (leadsCount) => calculateSearchCreditCost({ returnedLeadsCount: leadsCount });
 
@@ -493,7 +505,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       campaignId: campaign.id,
       progressCurrent: 0,
       progressTotal: campaign.requestedLimit || 20,
-      lastStep: 'Searching selected platforms',
+      lastStep: 'Searching local business index for selected signals',
     });
     const matchedLeads = await adapter.run();
     await assertNotCancelled({ jobId, campaignId: campaign.id });
@@ -507,12 +519,12 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     const creditsUsed = calculateSearchCreditsUsed(leadsReturned);
     const message = leadsReturned > 0
       ? 'Search completed across selected platforms.'
-      : 'No matching leads found. Try broader filters, a different location, or fewer platform constraints.';
+      : 'No matching local leads found yet. Try broader filters, fewer platform signals, or import more local data.';
 
     const listNameParts = [
       Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
       campaign.city,
-      'Platform Signals',
+      'Signal Targets',
     ].filter(Boolean);
 
     const leadList = await prisma.$transaction(async (tx) => {
@@ -548,6 +560,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             platformsRequested,
             sourceUsed: 'LOCAL_DATASET',
             fallbackReason,
+            discoveryPlan: summarizeDiscoveryPlan(discoveryPlan),
           },
           resultCount: leadsReturned,
         },

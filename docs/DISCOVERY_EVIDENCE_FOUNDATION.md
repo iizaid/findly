@@ -121,7 +121,7 @@ This foundation prepares Findly to buy and add paid APIs later without data chao
 
 ## Next Phases
 
-- Phase 3C: Evidence cache-first search hardening.
+- Phase 3C: Pre-API readiness, smoothness, and regression hardening.
 - Phase 4: SerpAPI Discovery Adapter.
 - Phase 5: Website metadata plus robots and sitemap upgrade.
 - Phase 6: Selective Google Places enrichment and review queue.

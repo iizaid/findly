@@ -1245,7 +1245,7 @@ describe('LeadList Workflow Architecture', () => {
     expect(discoveryQueryCount).toBe(1);
   });
 
-  it.each(['TIKTOK', 'REDDIT', 'YELP', 'TRIPADVISOR'])('uses local dataset fallback for %s signal target without requiring a direct API key', async (source) => {
+  it.each(['INSTAGRAM', 'FACEBOOK', 'TIKTOK', 'REDDIT', 'YELP', 'TRIPADVISOR', 'LINKEDIN', 'YOUTUBE', 'X', 'WEBSITE'])('uses local dataset fallback for %s signal target without requiring a direct API key', async (source) => {
     await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
     const csrfToken = await getCsrfToken(agent1);
 

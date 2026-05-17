@@ -11,6 +11,7 @@ adminRouter.use(requireAuth, requireVerifiedEmail, requireAdmin);
 
 adminRouter.get('/system/status', ctrl.getSystemStatus);
 adminRouter.get('/system/queue', ctrl.getQueueMetrics);
+adminRouter.get('/discovery-readiness', ctrl.getDiscoveryReadiness);
 adminRouter.get('/activity', validate(v.adminActivityQuerySchema), ctrl.getActivityLogs);
 adminRouter.get('/summary', ctrl.getAdminSummary);
 adminRouter.get('/users', validate(v.adminUsersQuerySchema), ctrl.getAdminUsers);
