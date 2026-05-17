@@ -70,16 +70,44 @@ export const calculateSerpEvidenceConfidence = ({ result, extractedFields, targe
   const titleAndSnippet = `${result?.title || ''} ${result?.snippet || ''}`;
   const inferredTarget = inferTargetSourceFromUrl(extractedFields?.platformUrl || result?.link);
   let score = 40;
+  const reasons = [];
 
-  if (includesAnyCampaignTerm(titleAndSnippet, campaign)) score += 20;
-  if (campaign?.city && compact(titleAndSnippet).includes(compact(campaign.city))) score += 8;
-  if (campaign?.country && compact(titleAndSnippet).includes(compact(campaign.country))) score += 7;
-  if (inferredTarget === targetSource) score += 15;
-  if (extractedFields?.platformUsername || extractedFields?.businessName) score += 10;
-  if (!campaign?.city && !campaign?.country) score -= 10;
-  if (inferredTarget && inferredTarget !== targetSource && targetSource !== 'WEBSITE') score -= 15;
+  if (includesAnyCampaignTerm(titleAndSnippet, campaign)) {
+    score += 20;
+    reasons.push('CATEGORY_MATCH');
+  }
+  if (campaign?.city && compact(titleAndSnippet).includes(compact(campaign.city))) {
+    score += 8;
+    reasons.push('CITY_MATCH');
+  }
+  if (campaign?.country && compact(titleAndSnippet).includes(compact(campaign.country))) {
+    score += 7;
+    reasons.push('COUNTRY_MATCH');
+  }
+  if (inferredTarget === targetSource) {
+    score += 15;
+    reasons.push('TARGET_PLATFORM_MATCH');
+  }
+  if (extractedFields?.platformUsername) {
+    score += 10;
+    reasons.push('USERNAME_EXTRACTED');
+  } else if (extractedFields?.businessName) {
+    score += 5;
+    reasons.push('BUSINESS_NAME_EXTRACTED');
+  }
+  if (!campaign?.city && !campaign?.country) {
+    score -= 10;
+    reasons.push('MISSING_LOCATION_CONTEXT');
+  }
+  if (inferredTarget && inferredTarget !== targetSource && targetSource !== 'WEBSITE') {
+    score -= 15;
+    reasons.push('TARGET_PLATFORM_MISMATCH');
+  }
 
-  return Math.max(0, Math.min(90, Math.round(score)));
+  return {
+    confidenceScore: Math.max(0, Math.min(90, Math.round(score))),
+    confidenceReasons: reasons,
+  };
 };
 
 export const normalizeSerpResult = ({ result, targetSource, campaign }) => {
@@ -95,6 +123,7 @@ export const normalizeSerpResult = ({ result, targetSource, campaign }) => {
   const sourceUrl = parsed.href;
   const externalId = crypto.createHash('sha256').update(sourceUrl).digest('hex').slice(0, 32);
 
+  const displayedLink = result.displayedLink || result.displayed_link || parsed.hostname;
   const extractedFields = {
     businessName,
     city: campaign?.city || null,
@@ -102,11 +131,12 @@ export const normalizeSerpResult = ({ result, targetSource, campaign }) => {
     category: Array.isArray(campaign?.businessTypes) ? campaign.businessTypes[0] || null : null,
     platformUsername: username,
     platformUrl: sourceUrl,
-    displayedLink: result.displayed_link || parsed.hostname,
+    displayedLink,
     resultPosition: Number(result.position) || null,
+    provider: result.provider || null,
   };
 
-  const confidenceScore = calculateSerpEvidenceConfidence({
+  const { confidenceScore, confidenceReasons } = calculateSerpEvidenceConfidence({
     result,
     extractedFields,
     targetSource: normalizedTarget,
@@ -121,12 +151,18 @@ export const normalizeSerpResult = ({ result, targetSource, campaign }) => {
     externalId,
     title,
     snippet,
-    extractedFields,
+    extractedFields: {
+      ...extractedFields,
+      confidenceReasons,
+    },
     rawMetadata: {
-      displayedLink: result.displayed_link || null,
+      displayedLink,
       position: Number(result.position) || null,
       source: result.source || null,
+      provider: result.provider || null,
+      confidenceReasons,
     },
     confidenceScore,
+    confidenceReasons,
   };
 };

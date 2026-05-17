@@ -13,7 +13,13 @@ const TARGET_DOMAINS = Object.freeze({
 });
 
 const normalize = (value) => (value || '').toString().trim();
-const quote = (value) => `"${normalize(value).replace(/"/g, '')}"`;
+const sanitizeTerm = (value) => normalize(value)
+  .replace(/["'`<>]/g, '')
+  .replace(/\b(api[_-]?key|token|secret|password|cookie|authorization)\b/gi, '')
+  .replace(/\s+/g, ' ')
+  .slice(0, env.SEARCH_METADATA_MAX_QUERY_LENGTH || 180)
+  .trim();
+const quote = (value) => `"${sanitizeTerm(value)}"`;
 
 const singularize = (value) => {
   const text = normalize(value);
@@ -69,14 +75,17 @@ const queryForTarget = (targetSource, campaign) => {
 
 export const buildSerpQueriesForCampaign = ({ campaign, targetSources = [], missingResultCount = 20 }) => {
   const maxQueries = Math.max(1, Math.min(
-    Number(campaign?.filters?.budget?.maxSerpQueries) || env.SERPAPI_MAX_QUERIES_PER_CAMPAIGN,
+    Number(campaign?.filters?.budget?.maxSerpQueries)
+      || env.SEARCH_METADATA_MAX_QUERIES_PER_CAMPAIGN
+      || env.SERPAPI_MAX_QUERIES_PER_CAMPAIGN,
     Math.max(1, missingResultCount),
   ));
+  const maxLength = env.SEARCH_METADATA_MAX_QUERY_LENGTH || 180;
 
   const queries = [];
   for (const targetSource of targetSources) {
     for (const query of queryForTarget(targetSource, campaign)) {
-      const normalized = query.replace(/\s+/g, ' ').trim();
+      const normalized = query.replace(/\s+/g, ' ').trim().slice(0, maxLength);
       if (normalized && !queries.includes(normalized)) queries.push(normalized);
       if (queries.length >= maxQueries) return queries;
     }
@@ -84,7 +93,7 @@ export const buildSerpQueriesForCampaign = ({ campaign, targetSources = [], miss
 
   if (queries.length === 0) {
     const terms = campaignTerms(campaign);
-    queries.push(`${quote(terms.businessType)} ${quote(terms.city)} ${quote(terms.country)} contact`);
+    queries.push(`${quote(terms.businessType)} ${quote(terms.city)} ${quote(terms.country)} contact`.slice(0, maxLength));
   }
 
   return queries.slice(0, maxQueries);

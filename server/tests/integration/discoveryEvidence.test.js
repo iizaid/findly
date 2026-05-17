@@ -240,7 +240,10 @@ describe('discovery evidence service', () => {
           category: 'Cafe',
           platformUsername: `promoted_${unique}`,
           platformUrl: `https://instagram.com/promoted_${unique}`,
+          provider: 'SERPER',
+          confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'COUNTRY_MATCH', 'TARGET_PLATFORM_MATCH'],
         },
+        rawMetadata: { provider: 'SERPER', confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'COUNTRY_MATCH', 'TARGET_PLATFORM_MATCH'] },
         confidenceScore: 82,
       });
 
@@ -251,7 +254,7 @@ describe('discovery evidence service', () => {
       });
 
       expect(promoted.status).toBe('PROMOTED');
-      expect(promoted.catalogLead.source).toBe('SERPAPI');
+      expect(promoted.catalogLead.source).toBe('SERPER');
       expect(promoted.catalogLead.instagramUsername).toBe(`promoted_${unique}`);
 
       const duplicateEvidence = await recordLeadEvidence({
@@ -272,7 +275,10 @@ describe('discovery evidence service', () => {
           category: 'Cafe',
           platformUsername: `promoted_${unique}`,
           platformUrl: `https://instagram.com/promoted_${unique}`,
+          provider: 'SERPER',
+          confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'COUNTRY_MATCH', 'TARGET_PLATFORM_MATCH'],
         },
+        rawMetadata: { provider: 'SERPER', confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'COUNTRY_MATCH', 'TARGET_PLATFORM_MATCH'] },
         confidenceScore: 82,
       });
 
@@ -314,6 +320,66 @@ describe('discovery evidence service', () => {
 
       expect(result.status).toBe('REJECTED_LOW_CONFIDENCE');
       expect(result.catalogLead).toBeNull();
+    });
+  });
+
+  it('rejects generic names and target mismatches during promotion', async () => {
+    await prisma.$transaction(async (tx) => {
+      const genericEvidence = await recordLeadEvidence({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://instagram.com/generic_${unique}`,
+        title: 'Instagram',
+        extractedFields: {
+          businessName: 'Instagram',
+          city: 'Amman',
+          country: 'Jordan',
+          category: 'Cafe',
+          confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'TARGET_PLATFORM_MATCH'],
+        },
+        rawMetadata: { confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'TARGET_PLATFORM_MATCH'] },
+        confidenceScore: 85,
+      });
+
+      const generic = await promoteEvidenceToCatalogLead({
+        tx,
+        evidence: genericEvidence,
+        campaign: { id: campaignId, city: 'Amman', country: 'Jordan', businessTypes: ['Cafe'] },
+      });
+      expect(generic.status).toBe('REJECTED_GENERIC_NAME');
+
+      const mismatchEvidence = await recordLeadEvidence({
+        tx,
+        userId,
+        workspaceId,
+        campaignId,
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://facebook.com/mismatch_${unique}`,
+        title: `Mismatch Cafe ${unique}`,
+        extractedFields: {
+          businessName: `Mismatch Cafe ${unique}`,
+          city: 'Amman',
+          country: 'Jordan',
+          category: 'Cafe',
+          confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH'],
+        },
+        rawMetadata: { confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH'] },
+        confidenceScore: 85,
+      });
+
+      const mismatch = await promoteEvidenceToCatalogLead({
+        tx,
+        evidence: mismatchEvidence,
+        campaign: { id: campaignId, city: 'Amman', country: 'Jordan', businessTypes: ['Cafe'] },
+      });
+      expect(mismatch.status).toBe('REJECTED_TARGET_MISMATCH');
     });
   });
 });

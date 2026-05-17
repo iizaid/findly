@@ -1,6 +1,7 @@
 import { prisma } from '../../db/prisma.js';
 import { env } from '../../config/env.js';
 import { getSourceStatusByKey } from './source.registry.js';
+import { getSearchMetadataProviderStatus } from './metadataProviders/searchMetadataProviderRegistry.js';
 
 const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'];
 
@@ -38,6 +39,7 @@ export const getDiscoveryReadinessSummary = async () => {
 
   const googlePlaces = safeStatusFor('GOOGLE_MAPS');
   const serpApi = safeStatusFor('SERPAPI');
+  const searchMetadata = getSearchMetadataProviderStatus();
 
   return {
     localDataset: {
@@ -63,11 +65,27 @@ export const getDiscoveryReadinessSummary = async () => {
       },
       serpApi: {
         configured: Boolean(env.SERPAPI_API_KEY || serpApi.configured),
-        runnable: false,
+        runnable: searchMetadata.legacySerpEnabled && Boolean(env.SERPAPI_API_KEY),
         liveEnabled: Boolean(env.LIVE_SERP_DISCOVERY_ENABLED),
         requiresApiKey: true,
         plannedForPhase: 'Phase 4',
         status: env.LIVE_SERP_DISCOVERY_ENABLED && env.SERPAPI_API_KEY ? 'ready_cache_first' : 'prepared_disabled',
+      },
+      serper: {
+        configured: Boolean(env.SERPER_API_KEY),
+        runnable: Boolean(searchMetadata.liveEnabled && env.SERPER_API_KEY),
+        requiresApiKey: true,
+        status: searchMetadata.liveEnabled && env.SERPER_API_KEY ? 'ready_cache_first' : 'missing_or_disabled',
+      },
+      searchMetadata: {
+        liveEnabled: searchMetadata.liveEnabled,
+        primaryProvider: searchMetadata.primaryProvider,
+        primaryConfigured: searchMetadata.primaryConfigured,
+        fallbackProvider: searchMetadata.fallbackProvider,
+        fallbackConfigured: searchMetadata.fallbackConfigured,
+        availableProviders: searchMetadata.availableProviders,
+        runnable: searchMetadata.runnable,
+        status: searchMetadata.status,
       },
       platformSignals: platformSignalSummary(),
       website: {

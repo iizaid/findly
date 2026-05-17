@@ -3,6 +3,9 @@ import { buildLeadFingerprint, normalizeBusinessName, normalizeInstagramUsername
 import { recordValidationEvent } from './discoveryEvidence.service.js';
 
 const PROMOTION_MIN_CONFIDENCE = 65;
+const STRICT_PROMOTION_MIN_CONFIDENCE = 75;
+
+const GENERIC_NAMES = new Set(['unknown business', 'business', 'home', 'profile', 'instagram', 'facebook', 'tiktok', 'reddit', 'yelp', 'tripadvisor']);
 
 const validHttpUrl = (value) => {
   try {
@@ -16,7 +19,8 @@ const validHttpUrl = (value) => {
 const sourceIdFor = (sourceUrl) => crypto.createHash('sha256').update(sourceUrl || '').digest('hex').slice(0, 32);
 
 const detectedSignalsFor = (evidence) => {
-  const signals = ['SOURCE_SERPAPI', `HAS_${evidence.targetSource}`];
+  const provider = (evidence.rawMetadata?.provider || evidence.extractedFields?.provider || 'SEARCH_METADATA').toString().toUpperCase();
+  const signals = ['SOURCE_SEARCH_METADATA', `SOURCE_${provider}`, `HAS_${evidence.targetSource}`];
   if (evidence.extractedFields?.platformUrl) signals.push(`HAS_${evidence.targetSource}_URL`);
   return [...new Set(signals)];
 };
@@ -25,17 +29,19 @@ const catalogDataFromEvidence = (evidence, campaign) => {
   const fields = evidence.extractedFields || {};
   const sourceUrl = validHttpUrl(evidence.sourceUrl);
   const sourceId = sourceIdFor(sourceUrl);
+  const provider = (evidence.rawMetadata?.provider || evidence.extractedFields?.provider || 'SEARCH_METADATA').toString().toUpperCase();
   const data = {
     businessName: fields.businessName || evidence.title || 'Unknown Business',
     category: fields.category || (Array.isArray(campaign.businessTypes) ? campaign.businessTypes[0] || null : null),
     country: fields.country || campaign.country || null,
     city: fields.city || campaign.city || null,
-    source: 'SERPAPI',
+    source: provider,
     sourceId,
-    normalizedFingerprint: `serpapi:${sourceId}`,
+    normalizedFingerprint: `${provider.toLowerCase()}:${sourceId}`,
     rawData: {
       evidenceId: evidence.id,
       targetSource: evidence.targetSource,
+      provider,
       displayedLink: fields.displayedLink || null,
       resultPosition: fields.resultPosition || null,
     },
@@ -57,6 +63,42 @@ const catalogDataFromEvidence = (evidence, campaign) => {
   }
 
   return data;
+};
+
+const isGenericBusinessName = (value) => {
+  const normalized = normalizeBusinessName(value);
+  return !normalized || normalized.length < 3 || GENERIC_NAMES.has(normalized);
+};
+
+const targetMatchesUrl = (evidence) => {
+  if (!evidence?.sourceUrl || evidence.targetSource === 'WEBSITE') return true;
+  const hostname = (() => {
+    try {
+      return new URL(evidence.sourceUrl).hostname.replace(/^www\./i, '').toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  const expected = {
+    INSTAGRAM: 'instagram.com',
+    TIKTOK: 'tiktok.com',
+    FACEBOOK: 'facebook.com',
+    REDDIT: 'reddit.com',
+    YELP: 'yelp.com',
+    TRIPADVISOR: 'tripadvisor.com',
+    LINKEDIN: 'linkedin.com',
+    YOUTUBE: 'youtube.com',
+    X: 'x.com',
+  }[evidence.targetSource];
+  return !expected || hostname === expected || hostname.endsWith(`.${expected}`);
+};
+
+const needsStrictThreshold = (evidence) => {
+  if (!evidence) return false;
+  const reasons = evidence.rawMetadata?.confidenceReasons || evidence.extractedFields?.confidenceReasons || [];
+  const hasLocation = reasons.includes('CITY_MATCH') || reasons.includes('COUNTRY_MATCH');
+  const hasCategory = reasons.includes('CATEGORY_MATCH');
+  return !hasLocation || !hasCategory;
 };
 
 const findDuplicateCatalogLead = async ({ tx, lead }) => {
@@ -115,13 +157,14 @@ const recordPromotionEvent = ({ tx, evidence, campaign, result, catalogLeadId = 
 });
 
 export const promoteEvidenceToCatalogLead = async ({ tx, evidence, campaign }) => {
-  if (!evidence || evidence.confidenceScore < PROMOTION_MIN_CONFIDENCE) {
+  const threshold = needsStrictThreshold(evidence) ? STRICT_PROMOTION_MIN_CONFIDENCE : PROMOTION_MIN_CONFIDENCE;
+  if (!evidence || evidence.confidenceScore < threshold) {
     await recordPromotionEvent({
       tx,
       evidence,
       campaign,
       result: 'REJECTED_LOW_CONFIDENCE',
-      rationale: 'Evidence confidence is below promotion threshold.',
+      rationale: `Evidence confidence is below promotion threshold (${threshold}).`,
     });
     return { status: 'REJECTED_LOW_CONFIDENCE', catalogLead: null };
   }
@@ -139,6 +182,28 @@ export const promoteEvidenceToCatalogLead = async ({ tx, evidence, campaign }) =
   }
 
   const catalogData = catalogDataFromEvidence(evidence, campaign);
+  if (isGenericBusinessName(catalogData.businessName)) {
+    await recordPromotionEvent({
+      tx,
+      evidence,
+      campaign,
+      result: 'REJECTED_GENERIC_NAME',
+      rationale: 'Evidence did not include a usable business name.',
+    });
+    return { status: 'REJECTED_GENERIC_NAME', catalogLead: null };
+  }
+
+  if (!targetMatchesUrl(evidence)) {
+    await recordPromotionEvent({
+      tx,
+      evidence,
+      campaign,
+      result: 'REJECTED_TARGET_MISMATCH',
+      rationale: 'Evidence URL platform does not match the requested target source.',
+    });
+    return { status: 'REJECTED_TARGET_MISMATCH', catalogLead: null };
+  }
+
   const duplicate = await findDuplicateCatalogLead({ tx, lead: catalogData });
   if (duplicate) {
     await tx.leadEvidence.update({ where: { id: evidence.id }, data: { catalogLeadId: duplicate.id } });

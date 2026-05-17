@@ -44,6 +44,7 @@ describe('Serp result normalizer', () => {
     });
     expect(normalized.extractedFields.platformUsername).toBe('example_cafe');
     expect(normalized.confidenceScore).toBeGreaterThanOrEqual(65);
+    expect(normalized.confidenceReasons).toContain('TARGET_PLATFORM_MATCH');
     expect(normalized.rawMetadata).not.toHaveProperty('snippet');
   });
 

@@ -31,6 +31,22 @@ const averageScore = (localResults = []) => {
 
 const selectedSources = (campaign = {}) => Array.isArray(campaign.sources) ? campaign.sources : [];
 
+const freshnessStatusFor = (localResults = []) => {
+  if (!localResults.length) return 'NO_LOCAL_RESULTS';
+  const now = Date.now();
+  const staleAfterMs = 180 * 24 * 60 * 60 * 1000;
+  const dated = localResults
+    .map((result) => result.lastEnrichedAt || result.updatedAt || result.importedAt || result.createdAt)
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (!dated.length) return 'UNKNOWN';
+  const staleCount = dated.filter((value) => now - value > staleAfterMs).length;
+  if (staleCount === dated.length) return 'STALE';
+  if (staleCount > 0) return 'MIXED';
+  return 'FRESH';
+};
+
 const localOnlySelected = (campaign) => {
   const sources = selectedSources(campaign);
   return sources.length > 0 && sources.every((source) => datasetOnlySources.has(source));
@@ -47,8 +63,10 @@ export const evaluateLocalCoverage = ({ campaign, localResults = [] }) => {
   const strongEnough = avgScore >= overrides.minLocalAverageScore;
   const localOnly = localOnlySelected(campaign);
 
+  const freshnessStatus = freshnessStatusFor(localResults);
+  const warnings = [];
   let decision = 'RUN_EXTERNAL';
-  let reason = 'LOCAL_COVERAGE_BELOW_THRESHOLD';
+  let reason = localCount === 0 ? 'LOW_LOCAL_COUNT' : 'LOCAL_COVERAGE_BELOW_THRESHOLD';
 
   if (overrides.disableLiveDiscovery) {
     decision = 'USE_LOCAL_ONLY';
@@ -65,9 +83,16 @@ export const evaluateLocalCoverage = ({ campaign, localResults = [] }) => {
   } else if (enoughCoverage && strongEnough) {
     decision = 'USE_LOCAL_ONLY';
     reason = 'LOCAL_COVERAGE_ACCEPTABLE';
+  } else if (!strongEnough && localCount > 0) {
+    reason = 'WEAK_LOCAL_SCORE';
   }
 
+  if (freshnessStatus === 'STALE') warnings.push('LOCAL_RESULTS_STALE');
+  if (!strongEnough && localCount > 0) warnings.push('LOCAL_RESULTS_WEAK_SCORE');
+
   return {
+    decision,
+    reason,
     requestedLimit,
     localCount,
     averageLocalScore: avgScore,
@@ -77,9 +102,12 @@ export const evaluateLocalCoverage = ({ campaign, localResults = [] }) => {
     enoughCount,
     enoughCoverage,
     strongEnough,
+    freshnessStatus,
+    selectedSignals: selectedSources(campaign),
+    externalAllowed: decision === 'RUN_EXTERNAL',
+    maxExternalResults: overrides.maxExternalResults,
+    warnings,
     localOnly,
-    decision,
-    reason,
   };
 };
 

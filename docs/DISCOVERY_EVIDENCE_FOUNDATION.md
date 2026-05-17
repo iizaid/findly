@@ -23,20 +23,20 @@ Unified discovery flow:
 
 1. LocalDataset / LeadCatalog first.
 2. Existing Evidence cache second.
-3. SerpAPI/search-result metadata discovery when Phase 4 live discovery is explicitly enabled and local coverage is insufficient.
+3. Search metadata discovery when Phase 4B live discovery is explicitly enabled and local coverage is insufficient.
 4. Optional Google Places verification and local business discovery.
 5. Website metadata enrichment for existing leads.
 
-Official platform APIs can still be added later, but only as optional compliant adapters. Phase 4 can run SerpAPI as a search-result metadata provider behind `LIVE_SERP_DISCOVERY_ENABLED=true`; it still does not enable direct platform scraping.
+Official platform APIs can still be added later, but only as optional compliant adapters. Phase 4B can run Serper as primary and SerpAPI as fallback behind `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true`; it still does not enable direct platform scraping.
 
 | User selection | Meaning now | Live method now | Future method | Direct scraping? |
 | --- | --- | --- | --- | --- |
-| Instagram | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
-| TikTok | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
-| Facebook | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional official API later | No |
-| Reddit | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
-| Yelp | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
-| TripAdvisor | Platform signal | LocalDataset first, SerpAPI metadata only if enabled and needed | SerpAPI metadata / optional approved API later | No |
+| Instagram | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional official API later | No |
+| TikTok | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional official API later | No |
+| Facebook | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional official API later | No |
+| Reddit | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional approved API later | No |
+| Yelp | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional approved API later | No |
+| TripAdvisor | Platform signal | LocalDataset first, search metadata only if enabled and needed | Search metadata / optional approved API later | No |
 | Google Maps | Local business source | Google Places if configured or LocalDataset fallback | Google Places | No |
 | Website | Enrichment signal | Website metadata for existing leads | Website metadata | No |
 

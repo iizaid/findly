@@ -111,6 +111,11 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsR
     externalDiscoveryUsed: false,
     externalDiscoverySkippedReason: coverage.decision === 'USE_LOCAL_ONLY' ? coverage.reason : null,
     externalProvider: null,
+    searchMetadataProviderPrimary: env.SEARCH_METADATA_PROVIDER_PRIMARY,
+    searchMetadataProviderUsed: null,
+    searchMetadataFallbackUsed: false,
+    searchMetadataQueriesUsed: 0,
+    searchMetadataProviderStats: [],
     externalCostEstimate: 0,
   };
 
@@ -121,12 +126,15 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsR
   const candidates = [];
   const searchTargets = platformsRequested.filter((source) => SEARCH_METADATA_SOURCE_KEYS.includes(source));
   const canRunSerp = searchTargets.length > 0 && SerpAdapter.isConfigured();
-  const maxSerpQueries = Math.min(budget.maxSerpQueries, env.SERPAPI_MAX_QUERIES_PER_CAMPAIGN);
+  const maxSerpQueries = Math.min(
+    budget.maxSerpQueries,
+    env.SEARCH_METADATA_MAX_QUERIES_PER_CAMPAIGN || env.SERPAPI_MAX_QUERIES_PER_CAMPAIGN,
+  );
 
   if (searchTargets.length > 0 && !canRunSerp) {
-    metadata.externalDiscoverySkippedReason = env.LIVE_SERP_DISCOVERY_ENABLED
-      ? 'SERPAPI_NOT_CONFIGURED'
-      : 'SERPAPI_DISABLED';
+    metadata.externalDiscoverySkippedReason = (env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED || env.LIVE_SERP_DISCOVERY_ENABLED)
+      ? 'SEARCH_METADATA_NOT_CONFIGURED'
+      : 'SEARCH_METADATA_DISABLED';
   }
 
   if (canRunSerp && maxSerpQueries > 0) {
@@ -142,14 +150,20 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, localResults, platformsR
       });
       candidates.push(...await adapter.run());
       metadata.externalDiscoveryUsed = candidates.length > 0;
-      metadata.externalProvider = 'SERPAPI';
+      metadata.externalProvider = adapter.metadata?.providerUsed || 'SEARCH_METADATA';
+      metadata.searchMetadataProviderUsed = adapter.metadata?.providerUsed || null;
+      metadata.searchMetadataFallbackUsed = Boolean(adapter.metadata?.fallbackUsed);
+      metadata.searchMetadataQueriesUsed = adapter.metadata?.queriesUsed || 0;
+      metadata.searchMetadataProviderStats = adapter.metadata?.providerStats || [];
       metadata.externalCostEstimate += maxSerpQueries * 1000;
-      metadata.externalDiscoverySkippedReason = null;
+      metadata.externalDiscoverySkippedReason = candidates.length > 0
+        ? null
+        : (adapter.metadata?.skippedReason || 'SEARCH_METADATA_NO_RESULTS');
     } catch (error) {
       metadata.externalDiscoverySkippedReason = error instanceof AppError && error.code === errorCodes.VALIDATION_ERROR
         ? 'BUDGET_LIMIT'
-        : 'SERPAPI_UNAVAILABLE';
-      logger.warn('campaign.serpapi.discovery.skipped', {
+        : 'SEARCH_METADATA_UNAVAILABLE';
+      logger.warn('campaign.search_metadata.discovery.skipped', {
         campaignId: campaign.id,
         reason: metadata.externalDiscoverySkippedReason,
       });
@@ -692,6 +706,10 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
               externalProvider: externalDiscovery.metadata.externalProvider,
               externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+              searchMetadataProviderPrimary: externalDiscovery.metadata.searchMetadataProviderPrimary,
+              searchMetadataProviderUsed: externalDiscovery.metadata.searchMetadataProviderUsed,
+              searchMetadataFallbackUsed: externalDiscovery.metadata.searchMetadataFallbackUsed,
+              searchMetadataQueriesUsed: externalDiscovery.metadata.searchMetadataQueriesUsed,
               externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,
             },
           },
@@ -878,6 +896,10 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
             externalProvider: externalDiscovery.metadata.externalProvider,
             externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+            searchMetadataProviderPrimary: externalDiscovery.metadata.searchMetadataProviderPrimary,
+            searchMetadataProviderUsed: externalDiscovery.metadata.searchMetadataProviderUsed,
+            searchMetadataFallbackUsed: externalDiscovery.metadata.searchMetadataFallbackUsed,
+            searchMetadataQueriesUsed: externalDiscovery.metadata.searchMetadataQueriesUsed,
             evidenceCreatedCount,
             promotedToCatalogCount,
             externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,
@@ -928,6 +950,10 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
       externalProvider: externalDiscovery.metadata.externalProvider,
       externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+      searchMetadataProviderPrimary: externalDiscovery.metadata.searchMetadataProviderPrimary,
+      searchMetadataProviderUsed: externalDiscovery.metadata.searchMetadataProviderUsed,
+      searchMetadataFallbackUsed: externalDiscovery.metadata.searchMetadataFallbackUsed,
+      searchMetadataQueriesUsed: externalDiscovery.metadata.searchMetadataQueriesUsed,
       evidenceCreatedCount: leadListResult.evidenceCreatedCount,
       promotedToCatalogCount: leadListResult.promotedToCatalogCount,
       externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,

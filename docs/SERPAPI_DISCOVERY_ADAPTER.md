@@ -1,10 +1,10 @@
 # SerpAPI Discovery Adapter
 
-Phase 4 adds SerpAPI as a controlled search-result metadata provider. It is cache-first, budget-limited, and evidence-first.
+Phase 4 added SerpAPI as a controlled search-result metadata provider. Phase 4B keeps SerpAPI as fallback inside the vendor-neutral search metadata provider layer. Serper.dev is the preferred primary provider.
 
 ## What SerpAPI Does
 
-- Runs only after LocalDataset / LeadCatalog coverage is evaluated.
+- Runs only after LocalDataset / LeadCatalog coverage is evaluated and the provider registry selects SerpAPI.
 - Uses SerpAPI Google search metadata for platform and directory signal targets such as Instagram, TikTok, Facebook, Reddit, Yelp, TripAdvisor, LinkedIn, YouTube, and X.
 - Parses organic result metadata: title, link, displayed link, snippet, and position.
 - Records sanitized `LeadEvidence` before any reusable catalog update.
@@ -23,8 +23,8 @@ Phase 4 adds SerpAPI as a controlled search-result metadata provider. It is cach
 1. Search `LeadCatalog` through `LocalDatasetAdapter`.
 2. Evaluate local coverage using requested limit, local count, average local score, and campaign overrides.
 3. If local coverage is enough, return local results and skip external calls.
-4. If local coverage is insufficient, check live discovery flags, provider key, and campaign budget.
-5. Run bounded SerpAPI queries only when allowed.
+4. If local coverage is insufficient, check live discovery flags, provider keys, and campaign budget.
+5. Run bounded Serper or SerpAPI queries only when allowed.
 6. Normalize results into evidence candidates.
 7. Store evidence and promote high-confidence discoveries into `LeadCatalog`.
 8. Return a lead list containing local plus promoted external discoveries.
@@ -33,7 +33,7 @@ Phase 4 adds SerpAPI as a controlled search-result metadata provider. It is cach
 
 SerpAPI can run only when all are true:
 
-- `LIVE_SERP_DISCOVERY_ENABLED=true`
+- `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true` with SerpAPI selected as primary/fallback, or legacy `LIVE_SERP_DISCOVERY_ENABLED=true`
 - `SERPAPI_API_KEY` is configured server-side
 - selected target sources map to search metadata discovery
 - local coverage is not enough, or `forceLiveDiscovery=true`
@@ -44,7 +44,8 @@ SerpAPI can run only when all are true:
 
 - Local results satisfy cache-first coverage thresholds.
 - The selected source is only `LOCAL_DATASET`.
-- `LIVE_SERP_DISCOVERY_ENABLED=false`.
+- live search metadata discovery is disabled.
+- Serper primary results pass the quality gate.
 - `SERPAPI_API_KEY` is missing.
 - Campaign budget blocks external discovery.
 - Campaign filters set `discovery.disableLiveDiscovery=true`.
@@ -57,7 +58,7 @@ SerpAPI can run only when all are true:
 - `site:yelp.com "salon" "Chicago" "United States"`
 - `"restaurant" "Amman" "Jordan" "instagram"`
 
-Queries are deduplicated and limited by `SERPAPI_MAX_QUERIES_PER_CAMPAIGN` and campaign budget.
+Queries are deduplicated and limited by `SEARCH_METADATA_MAX_QUERIES_PER_CAMPAIGN`, legacy `SERPAPI_MAX_QUERIES_PER_CAMPAIGN`, and campaign budget.
 
 ## Evidence Storage Rules
 
@@ -72,7 +73,7 @@ High-confidence evidence can create or link a catalog record:
 
 - Default promotion threshold: confidence score >= 65.
 - Dedupe checks existing catalog records before creating a new one.
-- Promoted records use `source: "SERPAPI"` and a stable source hash.
+- Promoted records use the metadata provider source, such as `SERPER`, `SERPAPI`, or generic `SEARCH_METADATA`, and a stable source hash.
 - Promotion creates a `ValidationEvent`.
 
 ## Budget Guardrails
@@ -96,6 +97,9 @@ If budget is exceeded, Findly returns local results when available and marks ext
 
 ```env
 LIVE_SERP_DISCOVERY_ENABLED=false
+LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=false
+SEARCH_METADATA_PROVIDER_PRIMARY=serper
+SEARCH_METADATA_PROVIDER_FALLBACK=serpapi
 SERPAPI_API_KEY=
 SERPAPI_BASE_URL=https://serpapi.com/search.json
 SERPAPI_TIMEOUT_MS=10000
@@ -108,7 +112,7 @@ Keep these server-side only. Never expose the key through frontend `VITE_` varia
 
 - Import or seed local data.
 - Run a platform-signal search with enough local results and confirm SerpAPI is not called.
-- Enable `LIVE_SERP_DISCOVERY_ENABLED=true` with a server-side SerpAPI key.
+- Prefer `LIVE_SEARCH_METADATA_DISCOVERY_ENABLED=true` with a server-side Serper key and optional SerpAPI fallback key.
 - Run a low-coverage platform-signal campaign.
 - Confirm evidence is created.
 - Confirm high-confidence evidence is promoted to `LeadCatalog`.

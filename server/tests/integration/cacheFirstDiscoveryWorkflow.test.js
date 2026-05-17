@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.NODE_ENV = 'test';
 process.env.PORT ??= '4114';
@@ -9,6 +9,7 @@ process.env.SERPAPI_API_KEY = 'test-serp-key';
 let prisma;
 let runCampaign;
 let env;
+let clearProviderCache;
 let userId;
 let workspaceId;
 const unique = Date.now().toString(36);
@@ -34,9 +35,12 @@ beforeAll(async () => {
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ runCampaign } = await import('../../src/modules/search/search.service.js'));
   ({ env } = await import('../../src/config/env.js'));
+  ({ clearProviderCache } = await import('../../src/modules/search/providerCache.service.js'));
   env.LIVE_SERP_DISCOVERY_ENABLED = true;
   env.SERPAPI_API_KEY = 'test-serp-key';
   env.SERPAPI_BASE_URL = 'https://serpapi.com/search.json';
+  env.SERPER_API_KEY = 'test-serper-key';
+  env.SERPER_BASE_URL = 'https://google.serper.dev/search';
 
   const user = await prisma.user.create({
     data: {
@@ -56,6 +60,19 @@ beforeAll(async () => {
     },
   });
   workspaceId = workspace.id;
+});
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  clearProviderCache();
+  env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED = false;
+  env.LIVE_SERP_DISCOVERY_ENABLED = true;
+  env.SEARCH_METADATA_PROVIDER_PRIMARY = 'serper';
+  env.SEARCH_METADATA_PROVIDER_FALLBACK = 'serpapi';
+  env.SEARCH_METADATA_MIN_PROVIDER_RESULTS = 1;
+  env.SEARCH_METADATA_MIN_AVERAGE_CONFIDENCE = 55;
+  env.SERPER_API_KEY = 'test-serper-key';
+  env.SERPAPI_API_KEY = 'test-serp-key';
 });
 
 afterAll(async () => {
@@ -142,6 +159,101 @@ describe('cache-first live discovery workflow', () => {
       where: { source: 'SERPAPI', instagramUsername: `external_phase4_${unique}` },
     });
     expect(promoted).toBeTruthy();
+  });
+
+  it('uses Serper as primary search metadata provider when enabled', async () => {
+    env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED = true;
+    env.LIVE_SERP_DISCOVERY_ENABLED = false;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          {
+            title: `Serper Phase4 Cafe ${unique} | Instagram`,
+            link: `https://instagram.com/serper_phase4_${unique}`,
+            displayedLink: `instagram.com/serper_phase4_${unique}`,
+            snippet: `External Phase4 Cafes ${unique} in Serper City ${unique}, SerperLand`,
+            position: 1,
+          },
+        ],
+      }),
+    });
+
+    const campaign = await createCampaign({
+      country: 'SerperLand',
+      city: `Serper City ${unique}`,
+      businessTypes: [`External Phase4 Cafes ${unique}`],
+      requestedLimit: 1,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { forceLiveDiscovery: true },
+        budget: { maxSerpQueries: 1, maxEstimatedExternalCostMicrousd: 50000 },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(true);
+    expect(result.searchMetadataProviderUsed).toBe('SERPER');
+    expect(result.searchMetadataFallbackUsed).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toBe('https://google.serper.dev/search');
+  });
+
+  it('falls back to SerpAPI when Serper results are weak', async () => {
+    env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED = true;
+    env.LIVE_SERP_DISCOVERY_ENABLED = false;
+    env.SEARCH_METADATA_MIN_PROVIDER_RESULTS = 2;
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          organic: [{
+            title: 'Weak unrelated result',
+            link: `https://example.com/weak-${unique}`,
+            snippet: 'No location or category match',
+            position: 1,
+          }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          organic_results: [
+            {
+              title: `Fallback Phase4 Cafe ${unique} | Instagram`,
+              link: `https://instagram.com/fallback_phase4_${unique}`,
+              displayed_link: `instagram.com/fallback_phase4_${unique}`,
+              snippet: `External Phase4 Cafes ${unique} in Fallback City ${unique}, FallbackLand`,
+              position: 1,
+            },
+            {
+              title: `Fallback Roasters ${unique} | Instagram`,
+              link: `https://instagram.com/fallback_roasters_${unique}`,
+              displayed_link: `instagram.com/fallback_roasters_${unique}`,
+              snippet: `External Phase4 Cafes ${unique} in Fallback City ${unique}, FallbackLand`,
+              position: 2,
+            },
+          ],
+        }),
+      });
+
+    const campaign = await createCampaign({
+      country: 'FallbackLand',
+      city: `Fallback City ${unique}`,
+      businessTypes: [`External Phase4 Cafes ${unique}`],
+      requestedLimit: 2,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { forceLiveDiscovery: true },
+        budget: { maxSerpQueries: 1, maxEstimatedExternalCostMicrousd: 50000 },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(true);
+    expect(result.searchMetadataProviderUsed).toBe('SERPAPI');
+    expect(result.searchMetadataFallbackUsed).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('returns local results without SerpAPI when budget blocks external discovery', async () => {

@@ -6,7 +6,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 
 - LocalDataset / LeadCatalog is the live first discovery path.
 - Platform selections are treated as signal targets.
-- SerpAPI search-result metadata discovery can run only when `LIVE_SERP_DISCOVERY_ENABLED=true` and `SERPAPI_API_KEY` is configured.
+- Search metadata discovery can run only when explicitly enabled and a provider key is configured. Serper.dev is the preferred primary provider; SerpAPI remains fallback.
 - Cache-first coverage checks skip SerpAPI when local results are enough.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
@@ -23,7 +23,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 1. User chooses signal targets such as Instagram, TikTok, Reddit, Yelp, Google Maps, Website, or Local Dataset.
 2. For platform and directory signals, Findly searches the local LeadCatalog first.
 3. If local coverage is enough, Findly returns local results and skips external calls.
-4. If local coverage is not enough, SerpAPI search-result metadata can fill missing results when the Phase 4 flag, key, and budget allow it.
+4. If local coverage is not enough, the search metadata provider layer can fill missing results when the Phase 4B flag, provider key, quality gate, and budget allow it.
 5. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
 6. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
 7. Website metadata remains enrichment for existing leads, not a standalone scraper.
@@ -32,7 +32,8 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 
 - AI provider key such as Gemini/OpenAI/Anthropic if AI-assisted analysis should be enabled.
 - Google Places API key if Google Maps local business discovery should run live.
-- SerpAPI key plus `LIVE_SERP_DISCOVERY_ENABLED=true` for unified search-result metadata discovery.
+- Serper key for primary low-cost search metadata discovery.
+- Optional SerpAPI key for fallback search metadata discovery.
 - SMTP credentials for production email verification and password reset.
 
 ## APIs Not Needed Now
@@ -67,7 +68,7 @@ These platforms are target signals now. Findly does not need direct access to th
 - Test SMTP delivery.
 - Test AI provider key from the ROOT admin panel if AI is enabled.
 - Add Google Places only if live Maps discovery is desired.
-- Enable SerpAPI only after setting `SERPAPI_API_KEY`, reviewing `SERPAPI_MAX_QUERIES_PER_CAMPAIGN`, and confirming budget limits.
+- Enable live search metadata only after setting `SERPER_API_KEY`, optional `SERPAPI_API_KEY`, reviewing query limits, and confirming budget limits.
 
 ## Known Disabled Items
 
