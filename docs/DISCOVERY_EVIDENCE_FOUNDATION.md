@@ -15,6 +15,31 @@ Phase 3 adds an evidence-first discovery foundation while preserving Findly's lo
 
 Findly must not scrape Instagram, TikTok, Facebook, Reddit, or Google search pages directly. Social platforms are target signals: the user may want to find businesses with an Instagram or TikTok presence, but Findly should use compliant discovery methods such as local datasets, official APIs, or future paid search-result APIs.
 
+## Unified Discovery Model
+
+Findly no longer treats every platform as requiring its own direct API integration in the current roadmap. Social and directory platforms are target signals, while discovery methods are unified and separate.
+
+Unified discovery flow:
+
+1. LocalDataset / LeadCatalog first.
+2. Existing Evidence cache second.
+3. Future SerpAPI/search-result metadata discovery.
+4. Optional Google Places verification and local business discovery.
+5. Website metadata enrichment for existing leads.
+
+Official platform APIs can still be added later, but only as optional compliant adapters. Phase 3B does not enable live SerpAPI calls and does not enable direct platform scraping.
+
+| User selection | Meaning now | Live method now | Future method | Direct scraping? |
+| --- | --- | --- | --- | --- |
+| Instagram | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
+| TikTok | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
+| Facebook | Platform signal | LocalDataset | SerpAPI metadata / optional official API later | No |
+| Reddit | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
+| Yelp | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
+| TripAdvisor | Platform signal | LocalDataset | SerpAPI metadata / optional approved API later | No |
+| Google Maps | Local business source | Google Places if configured or LocalDataset fallback | Google Places | No |
+| Website | Enrichment signal | Website metadata for existing leads | Website metadata | No |
+
 ## Core Concepts
 
 Source target: what the user wants to find signals for, such as Instagram, Google Maps, website presence, or local dataset data.
@@ -37,8 +62,13 @@ LeadListLead: a saved/search result item inside a lead list, often linked to eit
 | Instagram | `INSTAGRAM` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
 | TikTok | `TIKTOK` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
 | Facebook | `FACEBOOK` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| LinkedIn | `LINKEDIN` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| YouTube | `YOUTUBE` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| X | `X` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| Yelp | `YELP` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
+| TripAdvisor | `TRIPADVISOR` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
 | Website | `WEBSITE` | `WEBSITE_METADATA` | `WEBSITE` | Enrichment only |
-| Reddit | `REDDIT` | approved/compliant source later | `REDDIT` | No |
+| Reddit | `REDDIT` | `SERPAPI_DISCOVERY` later | `SERPAPI` | No |
 | Local Dataset | `LOCAL_DATASET` | `LOCAL_DATASET` | `LOCAL_DATASET` | Yes |
 | CSV | `CSV` | `CSV_IMPORT` | `CSV` | Import only |
 
@@ -91,7 +121,7 @@ This foundation prepares Findly to buy and add paid APIs later without data chao
 
 ## Next Phases
 
-- Phase 3B: Evidence integration hardening and cache-first search.
+- Phase 3C: Evidence cache-first search hardening.
 - Phase 4: SerpAPI Discovery Adapter.
 - Phase 5: Website metadata plus robots and sitemap upgrade.
 - Phase 6: Selective Google Places enrichment and review queue.

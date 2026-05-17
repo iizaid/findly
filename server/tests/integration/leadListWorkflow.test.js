@@ -717,43 +717,55 @@ describe('LeadList Workflow Architecture', () => {
 
   it('releases a search reservation when a queued campaign fails before provider execution', async () => {
     await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
-    const csrfToken = await getCsrfToken(agent1);
     const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
 
-    const campaignRes = await agent1.post('/api/search/campaigns')
-      .set('X-CSRF-Token', csrfToken)
-      .send({
+    const { reserveSearchCredits } = await import('../../src/modules/credits/credit.service.js');
+    const { enqueueJob } = await import('../../src/modules/jobs/jobQueue.service.js');
+    const campaign = await prisma.searchCampaign.create({
+      data: {
+        userId: user1Id,
         workspaceId: workspace1Id,
-        name: 'Unavailable provider search',
-        query: 'reddit opportunity search',
+        name: 'Unsupported provider reservation release',
+        query: 'unsupported opportunity search',
         country: 'Jordan',
         city: 'Amman',
         businessTypes: ['Cafe'],
-        sources: ['REDDIT'],
+        sources: ['UNSUPPORTED_PROVIDER'],
         requestedLimit: 5,
-      })
-      .expect(201);
+        status: 'QUEUED',
+      },
+    });
+    const job = await enqueueJob({
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      type: 'SEARCH_CAMPAIGN_RUN',
+      payload: { campaignId: campaign.id },
+    });
+    await prisma.$transaction((tx) => reserveSearchCredits({
+      tx,
+      userId: user1Id,
+      workspaceId: workspace1Id,
+      campaignId: campaign.id,
+      jobId: job.id,
+      amount: 10,
+      reason: `Reserved search credits: ${campaign.name}`,
+    }));
 
-    const failedCampaignId = campaignRes.body.data.campaign.id;
-    await agent1.post(`/api/search/campaigns/${failedCampaignId}/run`)
-      .set('X-CSRF-Token', csrfToken)
-      .send({})
-      .expect(202);
-
-    const afterQueueCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
-    expect(afterQueueCredits).toBe(beforeCredits - 10);
+    const afterReservationCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
+    expect(afterReservationCredits).toBe(beforeCredits - 10);
 
     const result = await processNextSearchJob({ workerId: `test-worker-failure-${unique}` });
     expect(result?.status).toBe('FAILED');
 
     const afterFailureCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
     expect(afterFailureCredits).toBe(beforeCredits);
-    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: failedCampaignId } });
+    const reservation = await prisma.creditReservation.findFirst({ where: { campaignId: campaign.id } });
     expect(reservation.status).toBe('RELEASED');
     expect(reservation.releasedAmount).toBe(10);
-    const campaign = await prisma.searchCampaign.findUnique({ where: { id: failedCampaignId } });
-    expect(campaign.status).toBe('FAILED');
-    expect(campaign.creditsReserved).toBe(0);
+    const failedCampaign = await prisma.searchCampaign.findUnique({ where: { id: campaign.id } });
+    expect(failedCampaign.status).toBe('FAILED');
+    expect(failedCampaign.creditsReserved).toBe(0);
   });
 
   it('captures zero credits and releases the full reservation for zero-result completion', async () => {
@@ -1231,5 +1243,56 @@ describe('LeadList Workflow Architecture', () => {
     expect(listItemsForCampaign).toHaveLength(completed.resultCount);
     expect(evidenceCount).toBe(catalogIds.length);
     expect(discoveryQueryCount).toBe(1);
+  });
+
+  it.each(['TIKTOK', 'REDDIT', 'YELP', 'TRIPADVISOR'])('uses local dataset fallback for %s signal target without requiring a direct API key', async (source) => {
+    await prisma.user.update({ where: { id: user1Id }, data: { creditsBalance: 50 } });
+    const csrfToken = await getCsrfToken(agent1);
+
+    const campaignRes = await agent1.post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        workspaceId: workspace1Id,
+        name: `${source} signal fallback ${unique}`,
+        query: 'cafes in Amman',
+        country: 'Jordan',
+        city: 'Amman',
+        businessTypes: ['Cafes'],
+        sources: [source],
+        filters: { goal: 'General opportunity discovery' },
+        requestedLimit: 1,
+      })
+      .expect(201);
+
+    const signalCampaignId = campaignRes.body.data.campaign.id;
+    const runRes = await agent1.post(`/api/search/campaigns/${signalCampaignId}/run`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(202);
+
+    expect(runRes.body.data.status).toBe('QUEUED');
+    const completed = await processCampaignJob(signalCampaignId);
+    expect(completed.status).toBe('COMPLETED');
+    expect(completed.errorCode).toBeNull();
+
+    const list = await prisma.leadList.findFirst({
+      where: { campaignId: signalCampaignId },
+      select: { sourceUsed: true, fallbackUsed: true, resultCount: true },
+    });
+    expect(list).toMatchObject({
+      sourceUsed: 'LOCAL_DATASET',
+      fallbackUsed: true,
+    });
+    expect(list.resultCount).toBeGreaterThanOrEqual(0);
+
+    const discoveryQuery = await prisma.discoveryQuery.findFirst({
+      where: { campaignId: signalCampaignId },
+      select: { discoveryMethod: true, adapter: true, targetSources: true },
+    });
+    expect(discoveryQuery).toMatchObject({
+      discoveryMethod: 'LOCAL_DATASET',
+      adapter: 'LOCAL_DATASET',
+    });
+    expect(discoveryQuery.targetSources).toContain(source);
   });
 });

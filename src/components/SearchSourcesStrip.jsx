@@ -71,14 +71,16 @@ const icons = {
 };
 
 const sources = [
-  'Instagram', 'Facebook', 'Google Maps', 'LinkedIn', 'TikTok',
-  'Websites', 'Yelp', 'TripAdvisor', 'YouTube', 'X',
+  'Instagram signals', 'Facebook signals', 'Google Maps', 'LinkedIn signals', 'TikTok signals',
+  'Website signals', 'Yelp signals', 'TripAdvisor signals', 'YouTube signals', 'X signals',
 ];
+
+const iconFor = (name) => icons[name.replace(' signals', '').replace('Website', 'Websites')] || icons[name];
 
 const SourceItem = ({ name }) => (
   <div className="flex items-center gap-2.5 px-5 md:px-7 text-secondary/60 hover:text-primary transition-colors duration-300 cursor-default shrink-0 select-none group">
     <span className="group-hover:text-accent transition-colors duration-300">
-      {icons[name]}
+      {iconFor(name)}
     </span>
     <span className="text-sm font-medium tracking-wide whitespace-nowrap">
       {name}
@@ -97,7 +99,7 @@ const SearchSourcesStrip = () => {
       {/* Section label */}
       <div className="flex justify-center mb-5">
         <span className="text-[10px] font-semibold text-secondary/40 uppercase tracking-[0.25em]">
-          Search Sources
+          Signal Targets
         </span>
       </div>
 

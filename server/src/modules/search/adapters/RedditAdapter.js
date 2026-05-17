@@ -15,12 +15,12 @@ const DEFAULT_KEYWORDS = [
 
 export class RedditAdapter extends BaseAdapter {
   static key = 'REDDIT';
-  static label = 'Reddit';
-  static description = 'Discussion and demand-signal discovery from public Reddit data using official API access.';
+  static label = 'Reddit Signals';
+  static description = 'Target Reddit discussion or demand signals using local data now and compliant search-result metadata or approved API access later.';
   static requiresApiKey = true;
   static requiresApproval = true;
   static comingSoon = false;
-  static estimatedUseCase = 'Discover demand signals, service requests, and business pain points.';
+  static estimatedUseCase = 'Find Reddit-visible opportunities without direct scraping or unapproved commercial access.';
 
   static isConfigured() {
     return Boolean(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET && env.REDDIT_USER_AGENT && env.REDDIT_REFRESH_TOKEN);
@@ -39,8 +39,8 @@ export class RedditAdapter extends BaseAdapter {
       requiresApiKey: true,
       requiresApproval: true,
       reason: configured
-        ? 'Reddit source requires approved API access and compliant usage before execution is enabled.'
-        : 'Reddit API credentials are not configured.',
+        ? 'Reddit is treated as a target signal. Approved API access may become an optional future adapter, but live campaign execution uses local cache now.'
+        : 'Reddit is treated as a target signal. Current live discovery uses local cache; future discovery may use compliant search metadata or approved API access.',
       estimatedUseCase: this.estimatedUseCase,
     };
   }
@@ -53,8 +53,8 @@ export class RedditAdapter extends BaseAdapter {
       maxResults: capped,
       estimatedCredits: 5 + capped,
       warnings: this.isConfigured()
-        ? ['Reddit adapter is credential-ready but requires explicit compliance approval before execution.']
-        : ['Reddit API credentials are not configured.'],
+        ? ['Reddit signal discovery is credential-ready but remains disabled until compliant execution is explicitly approved.']
+        : ['Reddit signal discovery uses local cache now; no direct API key is required for current fallback behavior.'],
     };
   }
 

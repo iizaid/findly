@@ -673,7 +673,7 @@ describe('Findly auth, verification, and foundation API', () => {
     await agentB.get('/api/auth/me').expect(401);
   });
 
-  it('exposes safe readiness/source status and blocks unconfigured campaign runs cleanly', async () => {
+  it('exposes safe readiness/source status and runs platform signals through local fallback cleanly', async () => {
     const agent = request.agent(createApp());
     await agent.post('/api/auth/login').send({ email, password }).expect(200);
 
@@ -693,7 +693,7 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(googleMaps).not.toHaveProperty('apiKey');
     expect(website.available).toBe(true);
     expect(reddit).toBeTruthy();
-    expect(reddit.reason).toMatch(/Ready to search online business sources.|This source will be available later./);
+    expect(reddit.reason).toMatch(/business intelligence index|unified discovery later/);
     if (process.env.REDDIT_CLIENT_SECRET) {
       expect(JSON.stringify(reddit)).not.toContain(process.env.REDDIT_CLIENT_SECRET);
     }
@@ -720,22 +720,20 @@ describe('Findly auth, verification, and foundation API', () => {
       .expect(202);
 
     expect(runResponse.body.data.status).toBe('QUEUED');
-    const processedFailure = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
-    expect(processedFailure.status).toBe('FAILED');
-    expect(processedFailure.errorCode).toBe('SOURCE_NOT_CONFIGURED');
+    const processedSignalRun = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
+    expect(processedSignalRun.status).toBe('COMPLETED');
 
-    const failedJob = await prisma.job.findFirst({
+    const completedJob = await prisma.job.findFirst({
       where: { campaignId: campaignResponse.body.data.campaign.id },
       orderBy: { createdAt: 'desc' },
     });
-    expect(failedJob.status).toBe('FAILED');
-    expect(failedJob.errorCode).toBe('SOURCE_NOT_CONFIGURED');
+    expect(completedJob.status).toBe('COMPLETED');
 
     const statusResponse = await agent
       .get(`/api/search/campaigns/${campaignResponse.body.data.campaign.id}/status`)
       .expect(200);
-    expect(statusResponse.body.data.campaign.status).toBe('FAILED');
-    expect(statusResponse.body.data.campaign.job.status).toBe('FAILED');
+    expect(statusResponse.body.data.campaign.status).toBe('COMPLETED');
+    expect(statusResponse.body.data.campaign.job.status).toBe('COMPLETED');
 
     const redditCampaignResponse = await agent
       .post('/api/search/campaigns')
@@ -762,19 +760,14 @@ describe('Findly auth, verification, and foundation API', () => {
       .send({})
       .expect(202);
     expect(redditRunResponse.body.data.status).toBe('QUEUED');
-    const processedRedditFailure = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
-    expect(processedRedditFailure.status).toBe('FAILED');
-    expect(processedRedditFailure.errorCode).toBe('SOURCE_NOT_CONFIGURED');
+    const processedRedditRun = await processNextSearchJob({ workerId: `auth-test-worker-${unique}` });
+    expect(processedRedditRun.status).toBe('COMPLETED');
 
     const redditJob = await prisma.job.findFirst({
       where: { campaignId: redditCampaignResponse.body.data.campaign.id },
       orderBy: { createdAt: 'desc' },
     });
-    expect(redditJob.status).toBe('FAILED');
-
-    const { retryJobIfAllowed } = await import('../../src/modules/jobs/jobQueue.service.js');
-    const retriedJob = await retryJobIfAllowed({ jobId: redditJob.id });
-    expect(retriedJob.status).toBe('QUEUED');
+    expect(redditJob.status).toBe('COMPLETED');
 
     const jobResponse = await agent.get(`/api/jobs/${redditJob.id}`).expect(200);
     expect(jobResponse.body.data.job.id).toBe(redditJob.id);

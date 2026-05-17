@@ -6,6 +6,11 @@ export const SOURCE_TARGETS = Object.freeze({
   TIKTOK: 'TIKTOK',
   FACEBOOK: 'FACEBOOK',
   REDDIT: 'REDDIT',
+  LINKEDIN: 'LINKEDIN',
+  YOUTUBE: 'YOUTUBE',
+  X: 'X',
+  TRIPADVISOR: 'TRIPADVISOR',
+  YELP: 'YELP',
   WEBSITE: 'WEBSITE',
   LOCAL_DATASET: 'LOCAL_DATASET',
   CSV: 'CSV',
@@ -17,14 +22,26 @@ export const DISCOVERY_METHODS = Object.freeze({
   GOOGLE_PLACES: 'GOOGLE_PLACES',
   SERPAPI_DISCOVERY: 'SERPAPI_DISCOVERY',
   WEBSITE_METADATA: 'WEBSITE_METADATA',
-  OFFICIAL_REDDIT_API_LATER: 'OFFICIAL_REDDIT_API_LATER',
 });
 
-const SOCIAL_SIGNAL_REASON = Object.freeze({
-  INSTAGRAM: 'Instagram is treated as a platform signal target. Direct scraping is disabled.',
-  TIKTOK: 'TikTok is treated as a platform signal target. Direct scraping is disabled.',
-  FACEBOOK: 'Facebook is treated as a platform signal target. Direct scraping is disabled.',
-});
+const SEARCH_METADATA_TARGETS = new Set([
+  'INSTAGRAM',
+  'TIKTOK',
+  'FACEBOOK',
+  'LINKEDIN',
+  'YOUTUBE',
+  'X',
+  'TRIPADVISOR',
+  'YELP',
+  'REDDIT',
+]);
+
+const signalReasonFor = (source) => {
+  const optionalApi = source === 'REDDIT' || source === 'YELP' || source === 'TRIPADVISOR'
+    ? ' or an optional approved API'
+    : ' or an optional official API';
+  return `${source} is treated as a platform signal target. Direct scraping and login automation are disabled; future discovery uses compliant search-result metadata${optionalApi}.`;
+};
 
 const DATASET_SOURCES = new Set(['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN']);
 
@@ -36,6 +53,10 @@ const buildMapping = (source) => {
       discoveryMethod: DISCOVERY_METHODS.LOCAL_DATASET,
       adapter: 'LOCAL_DATASET',
       runnable: true,
+      targetOnly: false,
+      directPlatformApi: false,
+      enrichmentOnly: false,
+      importOnly: false,
       costTier: 'local',
       notes: 'Searches the internal LeadCatalog cache first.',
     };
@@ -48,6 +69,9 @@ const buildMapping = (source) => {
       discoveryMethod: DISCOVERY_METHODS.CSV_IMPORT,
       adapter: 'CSV',
       runnable: false,
+      targetOnly: false,
+      directPlatformApi: false,
+      enrichmentOnly: false,
       importOnly: true,
       notes: 'CSV files are imported into LeadCatalog before they become searchable.',
     };
@@ -60,32 +84,28 @@ const buildMapping = (source) => {
       discoveryMethod: DISCOVERY_METHODS.GOOGLE_PLACES,
       adapter: 'GOOGLE_MAPS',
       runnable: true,
+      targetOnly: false,
+      directPlatformApi: true,
+      enrichmentOnly: false,
+      importOnly: false,
       costTier: 'external',
       notes: 'Uses Google Places only when the adapter is configured.',
     };
   }
 
-  if (source === 'INSTAGRAM' || source === 'TIKTOK' || source === 'FACEBOOK') {
+  if (SEARCH_METADATA_TARGETS.has(source)) {
     return {
       selectedSource: source,
       targetSource: source,
       discoveryMethod: DISCOVERY_METHODS.SERPAPI_DISCOVERY,
       adapter: 'SERPAPI',
       runnable: false,
-      reason: SOCIAL_SIGNAL_REASON[source],
-      notes: 'Future compliant search-result metadata can produce evidence for this signal.',
-    };
-  }
-
-  if (source === 'REDDIT') {
-    return {
-      selectedSource: source,
-      targetSource: SOURCE_TARGETS.REDDIT,
-      discoveryMethod: DISCOVERY_METHODS.OFFICIAL_REDDIT_API_LATER,
-      adapter: 'REDDIT',
-      runnable: false,
-      reason: 'Reddit commercial usage requires compliant/approved access.',
-      notes: 'No direct scraping or unapproved Reddit access is enabled.',
+      targetOnly: true,
+      directPlatformApi: false,
+      enrichmentOnly: false,
+      importOnly: false,
+      reason: signalReasonFor(source),
+      notes: 'Local cache is used now; future compliant search-result metadata can produce LeadEvidence for this signal.',
     };
   }
 
@@ -96,7 +116,10 @@ const buildMapping = (source) => {
       discoveryMethod: DISCOVERY_METHODS.WEBSITE_METADATA,
       adapter: 'WEBSITE',
       runnable: false,
+      targetOnly: true,
+      directPlatformApi: false,
       enrichmentOnly: true,
+      importOnly: false,
       notes: 'Website metadata is an enrichment signal, not a standalone campaign source.',
     };
   }
@@ -107,6 +130,8 @@ const buildMapping = (source) => {
     discoveryMethod: 'UNSUPPORTED',
     adapter: null,
     runnable: false,
+    targetOnly: false,
+    directPlatformApi: false,
     unsupported: true,
     reason: `${source} is not a supported discovery target.`,
   };

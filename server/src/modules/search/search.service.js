@@ -27,7 +27,7 @@ import { assertDiscoveryBudget } from './campaignBudget.service.js';
 import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
 
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
-const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
+const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK', 'REDDIT'];
 const SOURCE_TO_DISCOVERY_METHOD = {
   GOOGLE_MAPS: 'GOOGLE_PLACES',
   SERPAPI: 'SERPAPI_DISCOVERY',
@@ -35,12 +35,11 @@ const SOURCE_TO_DISCOVERY_METHOD = {
 };
 
 const fallbackReasonFor = (sources = []) => {
-  if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_MAPS_NOT_CONNECTED';
-  if (sources.includes('INSTAGRAM')) return 'INSTAGRAM_API_NOT_CONNECTED';
-  if (sources.includes('FACEBOOK')) return 'FACEBOOK_API_NOT_CONNECTED';
-  if (sources.includes('REDDIT')) return 'REDDIT_API_NOT_CONNECTED';
-  if (sources.includes('YELP')) return 'YELP_API_NOT_CONNECTED';
-  if (sources.includes('SERPAPI')) return 'SERPAPI_NOT_CONNECTED';
+  if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_PLACES_NOT_CONNECTED_USING_LOCAL_CACHE';
+  if (sources.includes('SERPAPI')) return 'SEARCH_METADATA_DISCOVERY_DISABLED_USING_LOCAL_CACHE';
+  if (sources.some((source) => ['INSTAGRAM', 'FACEBOOK', 'TIKTOK', 'LINKEDIN', 'YOUTUBE', 'X', 'TRIPADVISOR', 'YELP', 'REDDIT'].includes(source))) {
+    return 'PLATFORM_SIGNAL_TARGET_USING_LOCAL_CACHE';
+  }
   if (sources.includes('WEBSITE')) return 'WEBSITE_ENRICHMENT_SEARCH_NOT_CONNECTED';
   return 'PROVIDERS_NOT_CONNECTED';
 };

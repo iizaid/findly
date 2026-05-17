@@ -12,14 +12,16 @@ describe('source target mapping', () => {
     expect(normalizeSelectedSources([' instagram ', 'INSTAGRAM', 'google_maps'])).toEqual(['INSTAGRAM', 'GOOGLE_MAPS']);
   });
 
-  it('maps social platforms to future SerpAPI discovery, not direct scraping adapters', () => {
-    for (const source of ['INSTAGRAM', 'TIKTOK', 'FACEBOOK']) {
+  it('maps social and directory platforms to unified search metadata targets', () => {
+    for (const source of ['INSTAGRAM', 'TIKTOK', 'FACEBOOK', 'REDDIT', 'YELP', 'TRIPADVISOR', 'LINKEDIN', 'YOUTUBE', 'X']) {
       const mapping = mappingFor(source);
       expect(mapping.targetSource).toBe(source);
       expect(mapping.discoveryMethod).toBe('SERPAPI_DISCOVERY');
       expect(mapping.adapter).toBe('SERPAPI');
       expect(mapping.runnable).toBe(false);
-      expect(mapping.reason).toContain('Direct scraping is disabled');
+      expect(mapping.targetOnly).toBe(true);
+      expect(mapping.directPlatformApi).toBe(false);
+      expect(mapping.reason).toContain('Direct scraping');
     }
   });
 
@@ -29,6 +31,8 @@ describe('source target mapping', () => {
       discoveryMethod: 'GOOGLE_PLACES',
       adapter: 'GOOGLE_MAPS',
       runnable: true,
+      targetOnly: false,
+      directPlatformApi: true,
     });
   });
 
@@ -39,6 +43,8 @@ describe('source target mapping', () => {
       adapter: 'WEBSITE',
       enrichmentOnly: true,
       runnable: false,
+      targetOnly: true,
+      directPlatformApi: false,
     });
   });
 
@@ -48,12 +54,15 @@ describe('source target mapping', () => {
       discoveryMethod: 'LOCAL_DATASET',
       adapter: 'LOCAL_DATASET',
       runnable: true,
+      targetOnly: false,
+      directPlatformApi: false,
     });
     expect(mappingFor('CSV')).toMatchObject({
       targetSource: 'CSV',
       discoveryMethod: 'CSV_IMPORT',
       adapter: 'CSV',
       importOnly: true,
+      directPlatformApi: false,
     });
   });
 

@@ -13,7 +13,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'Findly could not complete this source right now. Try another source or broaden your search.';
+      return 'Findly could not complete this signal target right now. Try another signal or broaden your search.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
@@ -121,7 +121,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       .catch(() => {
         if (!mounted) return;
         setSourceOptions([]);
-        setError('Platform status could not be loaded. Refresh the page and try again.');
+        setError('Signal target status could not be loaded. Refresh the page and try again.');
       })
       .finally(() => {
         if (mounted) setSourcesLoading(false);
@@ -146,7 +146,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
 
   const toggleSource = (sourceObj) => {
     if (!sourceObj.canRun) {
-      setError('This source is not available for search yet. Choose a searchable source to continue.');
+      setError('This signal target is not available for search yet. Choose a searchable signal to continue.');
       return;
     }
 
@@ -244,7 +244,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     clearResultSummary();
 
     if (sourcesLoading) {
-      setError('Search sources are still loading. Please wait a moment and try again.');
+      setError('Search signal targets are still loading. Please wait a moment and try again.');
       return;
     }
 
@@ -255,7 +255,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
 
     const unreadySource = selectedSources.find((id) => !sourceOptions.find((source) => source.id === id)?.canRun);
     if (unreadySource) {
-      setError('One of the selected platforms is not ready to run yet.');
+      setError('One of the selected signal targets is not ready to run yet.');
       return;
     }
 

@@ -12,7 +12,7 @@ const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames }) => (
         {[
           [Sparkles, 'Service fit', 'Matches leads to the service being sold.', 'bg-accent/20 text-black'],
           [MapPin, 'Location intent', 'Country and governorate shape the search scope.', 'bg-black/5 text-black'],
-          [Database, 'Source mix', `${selectedPlatformCount} selected source${selectedPlatformCount === 1 ? '' : 's'}${selectedPlatformNames ? `: ${selectedPlatformNames}` : ''}.`, 'bg-black/5 text-black'],
+    [Database, 'Signal mix', `${selectedPlatformCount} selected signal target${selectedPlatformCount === 1 ? '' : 's'}${selectedPlatformNames ? `: ${selectedPlatformNames}` : ''}.`, 'bg-black/5 text-black'],
           [Goal, 'Opportunity goal', 'Prioritizes the signals behind the selected search goal.', 'bg-black/5 text-black'],
         ].map(([Icon, title, description, colorClass]) => (
           <div key={title} className="flex gap-3 rounded-xl border border-black/5 bg-black/[0.02] p-4">
@@ -31,7 +31,7 @@ const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames }) => (
     <DashboardCard className="!bg-[#000000] p-5 text-white md:p-6">
       <h3 className="text-xl font-semibold tracking-tight text-white">Credits</h3>
       <p className="mt-2 text-[13px] font-semibold leading-relaxed text-white/50">
-        Search runs across ready sources and saves matching opportunities into a lead list.
+      Search uses local data now and future compliant metadata discovery for selected signal targets.
       </p>
       <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] font-medium text-white/80">
         Credits are reserved when a search starts. Unused or cancelled search credits are returned automatically.

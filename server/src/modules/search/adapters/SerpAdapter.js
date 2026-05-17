@@ -4,11 +4,11 @@ import { AppError, errorCodes } from '../../../utils/AppError.js';
 
 export class SerpAdapter extends BaseAdapter {
   static key = 'SERPAPI';
-  static label = 'SerpAPI';
-  static description = 'Future compliant search-result metadata adapter for evidence-first discovery.';
+  static label = 'Unified Search Metadata';
+  static description = 'Future unified discovery method for compliant search-result metadata.';
   static requiresApiKey = true;
   static comingSoon = true;
-  static estimatedUseCase = 'Discover platform signals such as Instagram, TikTok, and Facebook through compliant search metadata. It must produce LeadEvidence first and must not scrape social platforms directly.';
+  static estimatedUseCase = 'Target Instagram, TikTok, Facebook, Reddit, Yelp, TripAdvisor, and other platform signals through search metadata. It must produce LeadEvidence first and must not scrape platforms directly. Live execution remains disabled in Phase 3B.';
 
   static isConfigured() {
     return Boolean(env.SERPAPI_API_KEY);
@@ -21,11 +21,13 @@ export class SerpAdapter extends BaseAdapter {
       perResultCost: 1,
       maxResults: capped,
       estimatedCredits: 5 + capped,
-      warnings: this.isConfigured() ? ['SerpAPI adapter is API-ready but execution is not connected yet.'] : ['SerpAPI key is not configured.'],
+      warnings: this.isConfigured()
+        ? ['Unified search metadata adapter is API-ready but live execution remains disabled in Phase 3B.']
+        : ['Unified search metadata discovery is planned for later; local cache is used now.'],
     };
   }
 
   async run() {
-    throw new AppError(errorCodes.SOURCE_NOT_CONFIGURED, 'SerpAPI adapter is API-ready, but execution is not enabled until provider credentials and mapping are finalized.', 400);
+    throw new AppError(errorCodes.SOURCE_NOT_CONFIGURED, 'Unified search metadata discovery is not enabled in Phase 3B. Current campaigns use local cache first and produce LeadEvidence without live SerpAPI calls.', 400);
   }
 }

@@ -133,7 +133,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
 
             <fieldset className="md:col-span-2 mt-3 rounded-[24px] border border-black/[0.06] bg-black/[0.015] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <legend className="text-[13px] font-bold text-black">Search sources</legend>
+                <legend className="text-[13px] font-bold text-black">Signal targets</legend>
                 <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-secondary">
                   {search.selectedSources.length} selected
                 </span>
@@ -141,7 +141,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
               <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                 {search.sourcesLoading && (
                   <div className="rounded-2xl border border-black/5 bg-white px-4 py-3 text-[13px] font-medium text-black/50">
-                    Loading platform status...
+                    Loading signal status...
                   </div>
                 )}
                 {search.sourceOptions.map((source) => (
@@ -157,7 +157,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
                   disabled={submitDisabled}
                   className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-black px-6 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
-                  {search.sourcesLoading ? 'Loading sources...' : 'Start Search'}
+                  {search.sourcesLoading ? 'Loading signals...' : 'Start Search'}
                   {!search.sourcesLoading && <ArrowRight size={16} />}
                 </button>
               )}

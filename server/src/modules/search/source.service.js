@@ -14,6 +14,7 @@ const localFallbackSourceKeys = new Set([
   'X',
   'LINKEDIN',
   'TIKTOK',
+  'REDDIT',
 ]);
 
 const userVisibleSourceKeys = new Set([
@@ -46,8 +47,8 @@ const sanitizeSourceForUserResponse = (source, { fallbackAvailable = false } = {
     searchable: canSearch,
     comingSoon: later,
     reason: canSearch 
-      ? (source.available ? 'Ready to search online business sources.' : 'Available from Findly’s current business intelligence index.') 
-      : 'This source will be available later.',
+      ? (source.available ? 'Ready through a compliant source or official business API.' : 'Available from Findly’s current business intelligence index.') 
+      : 'This signal target will be available through unified discovery later.',
   };
 };
 

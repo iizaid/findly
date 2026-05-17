@@ -14,6 +14,7 @@ export const PREFERRED_SOURCE_ORDER = [
   'YOUTUBE',
   'TRIPADVISOR',
   'YELP',
+  'REDDIT',
   'X',
 ];
 
@@ -29,24 +30,26 @@ export const SEARCH_READY_SOURCES = new Set([
   'X',
   'LINKEDIN',
   'TIKTOK',
+  'REDDIT',
 ]);
 
 export const PLATFORM_LABELS = {
-  INSTAGRAM: 'Instagram',
+  INSTAGRAM: 'Instagram signals',
   GOOGLE_MAPS: 'Google Maps',
-  FACEBOOK: 'Facebook',
-  WEBSITE: 'Website',
-  TIKTOK: 'TikTok',
-  LINKEDIN: 'LinkedIn',
-  YOUTUBE: 'YouTube',
-  TRIPADVISOR: 'TripAdvisor',
-  YELP: 'Yelp',
-  X: 'X',
+  FACEBOOK: 'Facebook signals',
+  WEBSITE: 'Website signal',
+  TIKTOK: 'TikTok signals',
+  LINKEDIN: 'LinkedIn signals',
+  YOUTUBE: 'YouTube signals',
+  TRIPADVISOR: 'TripAdvisor signals',
+  YELP: 'Yelp signals',
+  REDDIT: 'Reddit signals',
+  X: 'X signals',
 };
 
 export const SEARCH_STEPS = [
   'Preparing search',
-  'Checking available sources',
+  'Checking available signal targets',
   'Matching business records',
   'Saving lead list',
   'Ready',
