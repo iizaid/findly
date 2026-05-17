@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+import { parseEnv } from '../../src/config/env.js';
+
+const strongSecret = 'test-session-secret-that-is-long-enough-for-findly';
+const strongMasterKey = Buffer.from('a'.repeat(32)).toString('base64');
+
+const productionEnv = {
+  DATABASE_URL: 'postgresql://user:pass@db.example.com:5432/findly',
+  NODE_ENV: 'production',
+  CLIENT_ORIGIN: 'https://app.findly.example',
+  CLIENT_URL: 'https://app.findly.example',
+  APP_URL: 'https://api.findly.example',
+  SESSION_SECRET: strongSecret,
+  COOKIE_SECURE: 'true',
+  CSRF_COOKIE_SECURE: 'true',
+  SMTP_HOST: 'smtp.example.com',
+  SMTP_USER: 'mailer@example.com',
+  SMTP_PASS: 'smtp-password-value',
+  EMAIL_FROM: 'Findly <mailer@example.com>',
+};
+
+describe('production env validation', () => {
+  it('allows development/test localhost defaults', () => {
+    const parsed = parseEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      NODE_ENV: 'test',
+      CLIENT_ORIGIN: 'http://localhost:5173',
+      SESSION_SECRET: strongSecret,
+    });
+
+    expect(parsed.NODE_ENV).toBe('test');
+    expect(parsed.CLIENT_ORIGINS).toEqual(['http://localhost:5173']);
+  });
+
+  it('rejects localhost client origins in production', () => {
+    expect(() => parseEnv({
+      ...productionEnv,
+      CLIENT_ORIGIN: 'https://app.findly.example,http://localhost:5173',
+    })).toThrow(/CLIENT_ORIGIN cannot point to localhost in production/);
+  });
+
+  it('rejects wildcard CORS origins in production', () => {
+    expect(() => parseEnv({
+      ...productionEnv,
+      CLIENT_ORIGIN: '*',
+    })).toThrow(/CLIENT_ORIGIN must be explicit/);
+  });
+
+  it('rejects insecure production cookie settings', () => {
+    expect(() => parseEnv({
+      ...productionEnv,
+      COOKIE_SECURE: 'false',
+    })).toThrow(/COOKIE_SECURE cannot be false in production/);
+  });
+
+  it('requires a strong AI secrets master key when dashboard secret management is enabled', () => {
+    expect(() => parseEnv({
+      ...productionEnv,
+      AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED: 'true',
+    })).toThrow(/AI_SECRETS_MASTER_KEY is required/);
+
+    expect(() => parseEnv({
+      ...productionEnv,
+      AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED: 'true',
+      AI_SECRETS_MASTER_KEY: 'short',
+    })).toThrow(/AI_SECRETS_MASTER_KEY must decode to at least 32 bytes/);
+
+    const parsed = parseEnv({
+      ...productionEnv,
+      AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED: 'true',
+      AI_SECRETS_MASTER_KEY: strongMasterKey,
+    });
+
+    expect(parsed.AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED).toBe(true);
+  });
+});

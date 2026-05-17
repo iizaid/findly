@@ -4,7 +4,32 @@ import { createBooleanParser } from './envParsers.js';
 
 dotenv.config({ quiet: true });
 
-const envSchema = z.object({
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+const parseOriginList = (value = '') => String(value)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const isLocalhostUrl = (value) => {
+  try {
+    const parsed = new URL(value);
+    return LOCAL_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
+const isStrongMasterKey = (value) => {
+  if (!value) return false;
+  try {
+    return Buffer.from(value, 'base64').length >= 32;
+  } catch {
+    return false;
+  }
+};
+
+export const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
@@ -124,6 +149,42 @@ const envSchema = z.object({
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== 'production') return;
 
+  const clientOrigins = parseOriginList(value.CLIENT_ORIGIN);
+  if (clientOrigins.includes('*')) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['CLIENT_ORIGIN'],
+      message: 'CLIENT_ORIGIN must be explicit in production and cannot use wildcard origins.',
+    });
+  }
+
+  for (const origin of clientOrigins) {
+    if (isLocalhostUrl(origin)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CLIENT_ORIGIN'],
+        message: 'CLIENT_ORIGIN cannot point to localhost in production.',
+      });
+      break;
+    }
+  }
+
+  if (isLocalhostUrl(value.CLIENT_URL)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['CLIENT_URL'],
+      message: 'CLIENT_URL cannot point to localhost in production.',
+    });
+  }
+
+  if (isLocalhostUrl(value.APP_URL)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['APP_URL'],
+      message: 'APP_URL cannot point to localhost in production.',
+    });
+  }
+
   const requiredSmtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'];
   for (const field of requiredSmtpFields) {
     if (!value[field]) {
@@ -133,6 +194,22 @@ const envSchema = z.object({
         message: `${field} is required in production.`,
       });
     }
+  }
+
+  if (value.COOKIE_SECURE === false) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['COOKIE_SECURE'],
+      message: 'COOKIE_SECURE cannot be false in production.',
+    });
+  }
+
+  if (value.CSRF_COOKIE_SECURE === false) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['CSRF_COOKIE_SECURE'],
+      message: 'CSRF_COOKIE_SECURE cannot be false in production.',
+    });
   }
 
   if (value.COOKIE_SAME_SITE === 'none' && value.COOKIE_SECURE === false) {
@@ -174,6 +251,22 @@ const envSchema = z.object({
     });
   }
 
+  if (value.AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED && !value.AI_SECRETS_MASTER_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_SECRETS_MASTER_KEY'],
+      message: 'AI_SECRETS_MASTER_KEY is required when AI dashboard secret management is enabled.',
+    });
+  }
+
+  if (value.AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED && !isStrongMasterKey(value.AI_SECRETS_MASTER_KEY)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AI_SECRETS_MASTER_KEY'],
+      message: 'AI_SECRETS_MASTER_KEY must decode to at least 32 bytes when dashboard secret management is enabled.',
+    });
+  }
+
   const hasAiProviderKey = Boolean(
     value.GEMINI_API_KEY
       || value.OPENAI_API_KEY
@@ -206,20 +299,22 @@ const envSchema = z.object({
   }
 });
 
-const parsed = envSchema.safeParse(process.env);
+export const parseEnv = (source = process.env) => {
+  const parsed = envSchema.safeParse(source);
 
-if (!parsed.success) {
-  const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
-  throw new Error(`Invalid server environment: ${issues}`);
-}
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+    throw new Error(`Invalid server environment: ${issues}`);
+  }
 
-export const env = {
-  ...parsed.data,
-  SEARCH_RATE_LIMIT_MAX: parsed.data.SEARCH_RUN_RATE_LIMIT_MAX ?? parsed.data.SEARCH_RATE_LIMIT_MAX,
-  ANALYSIS_RATE_LIMIT_MAX: parsed.data.ANALYSIS_RUN_RATE_LIMIT_MAX ?? parsed.data.ANALYSIS_RATE_LIMIT_MAX,
-  SEARCH_QUEUE_CONCURRENCY: parsed.data.SEARCH_QUEUE_CONCURRENCY ?? parsed.data.MAX_SEARCH_WORKER_CONCURRENCY,
-  IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
-  CLIENT_ORIGINS: parsed.data.CLIENT_ORIGIN.split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  return {
+    ...parsed.data,
+    SEARCH_RATE_LIMIT_MAX: parsed.data.SEARCH_RUN_RATE_LIMIT_MAX ?? parsed.data.SEARCH_RATE_LIMIT_MAX,
+    ANALYSIS_RATE_LIMIT_MAX: parsed.data.ANALYSIS_RUN_RATE_LIMIT_MAX ?? parsed.data.ANALYSIS_RATE_LIMIT_MAX,
+    SEARCH_QUEUE_CONCURRENCY: parsed.data.SEARCH_QUEUE_CONCURRENCY ?? parsed.data.MAX_SEARCH_WORKER_CONCURRENCY,
+    IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
+    CLIENT_ORIGINS: parseOriginList(parsed.data.CLIENT_ORIGIN),
+  };
 };
+
+export const env = parseEnv(process.env);

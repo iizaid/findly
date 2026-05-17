@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { successResponse } from '../../utils/apiResponse.js';
+import { errorResponse, successResponse } from '../../utils/apiResponse.js';
 import { prisma } from '../../db/prisma.js';
-import { getSourceStatuses } from '../search/source.service.js';
+import { env } from '../../config/env.js';
+import { errorCodes } from '../../utils/AppError.js';
 
 export const healthRouter = Router();
 export const readyRouter = Router();
@@ -10,38 +11,38 @@ healthRouter.get('/', (_req, res) => {
   return successResponse(
     res,
     {
-      status: 'ok',
+      ok: true,
       service: 'findly-api',
       timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      environment: env.NODE_ENV,
     },
     'Backend is healthy.',
   );
 });
 
-readyRouter.get('/', async (_req, res, next) => {
+const readyHandler = async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
 
     return successResponse(
       res,
       {
-        status: 'ready',
-        service: 'findly-api',
+        ok: true,
         database: 'ok',
-        sources: getSourceStatuses().map((source) => ({
-          key: source.key,
-          label: source.label,
-          status: source.status,
-          configured: source.configured,
-          available: source.available,
-          comingSoon: source.comingSoon,
-          requiresApiKey: source.requiresApiKey,
-        })),
         timestamp: new Date().toISOString(),
       },
       'Backend is ready.',
     );
-  } catch (error) {
-    return next(error);
+  } catch {
+    return errorResponse(
+      res,
+      errorCodes.INTERNAL_ERROR,
+      'Readiness check failed.',
+      503,
+    );
   }
-});
+};
+
+healthRouter.get('/ready', readyHandler);
+readyRouter.get('/', readyHandler);
