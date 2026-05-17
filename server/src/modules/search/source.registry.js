@@ -75,13 +75,25 @@ const adapterEntries = [
   { group: 'import', Adapter: CsvAdapter },
 ];
 
+const targetOnlyAdapterKeys = new Set(['SERPAPI', 'YELP', 'REDDIT']);
+
 export const adapterRegistry = Object.fromEntries(adapterEntries.map(({ Adapter }) => [Adapter.key, Adapter]));
 
 export const getSourceStatuses = () => [
-  ...adapterEntries.map(({ group, Adapter }) => ({
-    ...Adapter.getStatus(),
-    group,
-  })),
+  ...adapterEntries.map(({ group, Adapter }) => {
+    const status = Adapter.getStatus();
+    if (!targetOnlyAdapterKeys.has(Adapter.key)) {
+      return { ...status, group };
+    }
+
+    return {
+      ...status,
+      group,
+      available: false,
+      comingSoon: true,
+      reason: `${status.label} is treated as a signal target or search metadata path. Discovery uses local cache first; direct scraping and login automation are disabled.`,
+    };
+  }),
   ...comingLaterSources.map((source) => ({
     ...source,
     status: 'coming_later',
