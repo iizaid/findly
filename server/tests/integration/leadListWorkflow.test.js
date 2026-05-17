@@ -1208,5 +1208,28 @@ describe('LeadList Workflow Architecture', () => {
     expect(leadsRes.body.data.leads[0]).not.toHaveProperty('sourceFile');
     expect(JSON.stringify(leadsRes.body.data.leads)).not.toContain('LOCAL_DATASET');
     expect(JSON.stringify(leadsRes.body.data.leads)).not.toContain('DATASET_IMPORT');
+
+    const listItemsForCampaign = await prisma.leadListLead.findMany({
+      where: { leadListId: completed.leadListId },
+      select: { catalogLeadId: true },
+    });
+    const catalogIds = listItemsForCampaign.map((item) => item.catalogLeadId).filter(Boolean);
+    const evidenceCount = await prisma.leadEvidence.count({
+      where: {
+        campaignId,
+        discoveryMethod: 'LOCAL_DATASET',
+        catalogLeadId: { in: catalogIds },
+      },
+    });
+    const discoveryQueryCount = await prisma.discoveryQuery.count({
+      where: {
+        campaignId,
+        discoveryMethod: 'LOCAL_DATASET',
+      },
+    });
+
+    expect(listItemsForCampaign).toHaveLength(completed.resultCount);
+    expect(evidenceCount).toBe(catalogIds.length);
+    expect(discoveryQueryCount).toBe(1);
   });
 });

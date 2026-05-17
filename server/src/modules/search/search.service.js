@@ -22,9 +22,17 @@ import {
 } from './campaignJob.service.js';
 import { markJobCompleted, markJobFailed, markJobRunning } from '../jobs/jobQueue.service.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
+import { buildDiscoveryPlan } from './sourceTargetMapping.service.js';
+import { assertDiscoveryBudget } from './campaignBudget.service.js';
+import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
 
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK'];
+const SOURCE_TO_DISCOVERY_METHOD = {
+  GOOGLE_MAPS: 'GOOGLE_PLACES',
+  SERPAPI: 'SERPAPI_DISCOVERY',
+  WEBSITE: 'WEBSITE_METADATA',
+};
 
 const fallbackReasonFor = (sources = []) => {
   if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_MAPS_NOT_CONNECTED';
@@ -36,6 +44,32 @@ const fallbackReasonFor = (sources = []) => {
   if (sources.includes('WEBSITE')) return 'WEBSITE_ENRICHMENT_SEARCH_NOT_CONNECTED';
   return 'PROVIDERS_NOT_CONNECTED';
 };
+
+const preferredEvidenceUrl = (lead) => lead.instagramUrl
+  || lead.facebookUrl
+  || lead.googleMapsUrl
+  || lead.websiteUrl
+  || null;
+
+const primaryTargetSource = (sources = []) => sources.find((source) => source && source !== 'LOCAL_DATASET') || 'LOCAL_DATASET';
+
+const buildEvidenceFields = (lead) => ({
+  businessName: lead.businessName,
+  category: lead.category,
+  country: lead.country,
+  city: lead.city,
+  address: lead.address,
+  websiteUrl: lead.websiteUrl,
+  instagramUrl: lead.instagramUrl,
+  instagramUsername: lead.instagramUsername,
+  facebookUrl: lead.facebookUrl,
+  googleMapsUrl: lead.googleMapsUrl,
+  phone: lead.phone,
+  email: lead.email,
+  rating: lead.rating,
+  reviewCount: lead.reviewCount,
+  source: lead.source,
+});
 
 export const estimateSearchCreditsRequired = (requestedLimit) => estimateSearchCreditReservation({ requestedLimit });
 export const calculateSearchCreditsUsed = (leadsCount) => calculateSearchCreditCost({ returnedLeadsCount: leadsCount });
@@ -164,6 +198,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Campaign requires at least one source.', 400);
   }
 
+  const discoveryPlan = buildDiscoveryPlan({ campaign });
   const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
   const externalSourceKeys = sources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = externalSourceKeys.map((source) => ({ source, ...getRunnableAdapter(source) }));
@@ -186,6 +221,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       jobId,
       fallbackUsed: !localDatasetRequested,
       platformsRequested: sources,
+      discoveryPlan,
     });
   }
 
@@ -204,6 +240,11 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   if (!await hasActiveSearchReservation({ userId, campaignId: campaign.id })) {
     await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
   }
+  assertDiscoveryBudget({
+    campaign,
+    plannedDiscoveryCalls: runnableExternalSources.length,
+    discoveryMethod: runnableExternalSources[0]?.source ? SOURCE_TO_DISCOVERY_METHOD[runnableExternalSources[0].source] : 'UNKNOWN',
+  });
 
   await markCampaignRunning({
     campaignId: campaign.id,
@@ -244,6 +285,26 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     // Deduplication & Saving inside transaction
     await prisma.$transaction(async (tx) => {
       await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
+      const discoveryQueriesByMethod = new Map();
+      for (const source of runnableExternalSources) {
+        const mapping = discoveryPlan.mappings.find((item) => item.selectedSource === source.source);
+        const discoveryMethod = mapping?.discoveryMethod || SOURCE_TO_DISCOVERY_METHOD[source.source] || 'UNKNOWN';
+        const discoveryQuery = await createDiscoveryQuery({
+          tx,
+          userId,
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          seedQuery: campaign.query,
+          expandedQuery: discoveryPlan.expandedQuery,
+          geography: discoveryPlan.geography,
+          targetSources: discoveryPlan.targetSources,
+          discoveryMethod,
+          adapter: source.source,
+          status: 'COMPLETED',
+        });
+        discoveryQueriesByMethod.set(discoveryMethod, discoveryQuery.id);
+      }
+
       const leadList = await tx.leadList.create({
         data: {
           name: `${campaign.name} - Results`,
@@ -278,6 +339,26 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
               country: campaign.country,
               city: campaign.city,
             },
+          });
+          const discoveryMethod = SOURCE_TO_DISCOVERY_METHOD[lead.source] || 'UNKNOWN';
+          await recordLeadEvidence({
+            tx,
+            userId,
+            workspaceId: campaign.workspaceId,
+            campaignId: campaign.id,
+            discoveryQueryId: discoveryQueriesByMethod.get(discoveryMethod) || null,
+            leadId: newLead.id,
+            targetSource: lead.source || 'UNKNOWN',
+            discoveryMethod,
+            sourceType: `${lead.source || 'UNKNOWN'}_RESULT`,
+            sourceUrl: preferredEvidenceUrl(lead),
+            externalId: lead.sourceId || null,
+            title: lead.businessName,
+            snippet: lead.category || lead.address || null,
+            extractedFields: buildEvidenceFields(lead),
+            rawMetadata: lead.rawData,
+            confidenceScore: 75,
+            attributionRequired: lead.source === 'GOOGLE_MAPS',
           });
           savedLeadsCount++;
           
@@ -381,7 +462,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   }
 };
 
-const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, platformsRequested }) => {
+const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, platformsRequested, discoveryPlan }) => {
   await markCampaignRunning({
     campaignId: campaign.id,
     userId,
@@ -401,6 +482,11 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
   });
   const sourceRequested = platformsRequested.join(',');
   const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
+  assertDiscoveryBudget({
+    campaign,
+    plannedDiscoveryCalls: 1,
+    discoveryMethod: 'LOCAL_DATASET',
+  });
 
   try {
     await assertNotCancelled({ jobId, campaignId: campaign.id });
@@ -432,6 +518,19 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
 
     const leadList = await prisma.$transaction(async (tx) => {
       await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });
+      const discoveryQuery = await createDiscoveryQuery({
+        tx,
+        userId,
+        workspaceId: campaign.workspaceId,
+        campaignId: campaign.id,
+        seedQuery: campaign.query,
+        expandedQuery: discoveryPlan?.expandedQuery,
+        geography: discoveryPlan?.geography || [campaign.city, campaign.country].filter(Boolean).join(', ') || null,
+        targetSources: discoveryPlan?.targetSources || platformsRequested,
+        discoveryMethod: 'LOCAL_DATASET',
+        adapter: 'LOCAL_DATASET',
+        status: 'COMPLETED',
+      });
       const createdList = await tx.leadList.create({
         data: {
           userId,
@@ -478,6 +577,27 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
           })),
           skipDuplicates: true,
         });
+        await Promise.all(matchedLeads.map((lead) => recordLeadEvidence({
+          tx,
+          userId,
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          discoveryQueryId: discoveryQuery.id,
+          catalogLeadId: lead.id,
+          targetSource: primaryTargetSource(platformsRequested),
+          discoveryMethod: 'LOCAL_DATASET',
+          sourceType: 'LOCAL_DATASET_RESULT',
+          sourceUrl: preferredEvidenceUrl(lead),
+          externalId: lead.sourceId || null,
+          title: lead.businessName,
+          snippet: lead.category || lead.address || null,
+          extractedFields: buildEvidenceFields(lead),
+          rawMetadata: {
+            source: lead.source,
+            detectedSignals: lead.detectedSignals,
+          },
+          confidenceScore: lead.localDatasetScore || 60,
+        })));
       }
 
       await assertCampaignCanComplete({ tx, jobId, campaignId: campaign.id, userId });

@@ -5,10 +5,10 @@ import { AppError, errorCodes } from '../../../utils/AppError.js';
 export class SerpAdapter extends BaseAdapter {
   static key = 'SERPAPI';
   static label = 'SerpAPI';
-  static description = 'Compliant search API adapter for future web discovery workflows.';
+  static description = 'Future compliant search-result metadata adapter for evidence-first discovery.';
   static requiresApiKey = true;
   static comingSoon = true;
-  static estimatedUseCase = 'Discover public business pages through a compliant search provider.';
+  static estimatedUseCase = 'Discover platform signals such as Instagram, TikTok, and Facebook through compliant search metadata. It must produce LeadEvidence first and must not scrape social platforms directly.';
 
   static isConfigured() {
     return Boolean(env.SERPAPI_API_KEY);

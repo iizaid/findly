@@ -145,6 +145,10 @@ model User {
   leadLists               LeadList[]
   leads                   Lead[]
   leadAnalyses            LeadAnalysis[]
+  discoveryQueries        DiscoveryQuery[]
+  leadEvidences           LeadEvidence[]
+  validationEvents        ValidationEvent[]
+  enrichmentRuns          EnrichmentRun[]
   opportunitySignals      OpportunitySignal[]
   jobs                    Job[]
   datasetImports          DatasetImport[]
@@ -225,6 +229,10 @@ model Workspace {
   leadLists          LeadList[]
   leads              Lead[]
   leadAnalyses       LeadAnalysis[]
+  discoveryQueries   DiscoveryQuery[]
+  leadEvidences      LeadEvidence[]
+  validationEvents   ValidationEvent[]
+  enrichmentRuns     EnrichmentRun[]
   opportunitySignals OpportunitySignal[]
   jobs               Job[]
   datasetImports     DatasetImport[]
@@ -410,6 +418,10 @@ model SearchCampaign {
   leadLists          LeadList[]
   leads              Lead[]
   leadAnalyses       LeadAnalysis[]
+  discoveryQueries   DiscoveryQuery[]
+  leadEvidences      LeadEvidence[]
+  validationEvents   ValidationEvent[]
+  enrichmentRuns     EnrichmentRun[]
   opportunitySignals OpportunitySignal[]
   jobs               Job[]
   creditReservations CreditReservation[]
@@ -610,6 +622,9 @@ model LeadCatalog {
   datasetImport     DatasetImport?     @relation(fields: [datasetImportId], references: [id], onDelete: SetNull)
   datasetImportRows DatasetImportRow[]
   leadListItems     LeadListLead[]
+  leadEvidences      LeadEvidence[]
+  validationEvents   ValidationEvent[]
+  enrichmentRuns     EnrichmentRun[]
 
   @@index([datasetImportId])
   @@index([source])
@@ -670,6 +685,9 @@ model Lead {
   datasetImportRows DatasetImportRow[]
   analyses          LeadAnalysis[]
   leadListItems     LeadListLead[]
+  leadEvidences     LeadEvidence[]
+  validationEvents  ValidationEvent[]
+  enrichmentRuns    EnrichmentRun[]
 
   @@index([userId])
   @@index([workspaceId])
@@ -726,6 +744,152 @@ model LeadAnalysis {
   @@index([createdAt])
   @@unique([leadId])
   @@unique([leadListLeadId])
+}
+
+model DiscoveryQuery {
+  id              String    @id @default(cuid())
+  userId          String
+  workspaceId     String
+  campaignId      String?
+  seedQuery       String?
+  expandedQuery   String
+  locale          String?
+  geography       String?
+  targetSources   Json?
+  discoveryMethod String
+  adapter         String
+  costUnits       Int       @default(0)
+  status          String    @default("CREATED")
+  createdAt       DateTime  @default(now())
+  executedAt      DateTime?
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  evidences LeadEvidence[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([adapter])
+  @@index([discoveryMethod])
+  @@index([createdAt])
+}
+
+model LeadEvidence {
+  id                  String   @id @default(cuid())
+  userId              String
+  workspaceId         String
+  campaignId          String?
+  leadId              String?
+  catalogLeadId       String?
+  discoveryQueryId    String?
+  targetSource        String
+  discoveryMethod     String
+  sourceType          String
+  sourceUrl           String?
+  externalId          String?
+  title               String?
+  snippetHash         String?
+  extractedFields     Json?
+  rawMetadata         Json?
+  confidenceScore     Int      @default(0)
+  attributionRequired Boolean  @default(false)
+  robotsStatus        String?
+  storeUntil          DateTime?
+  observedAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign         SearchCampaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  lead             Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  catalogLead      LeadCatalog?     @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
+  discoveryQuery   DiscoveryQuery?  @relation(fields: [discoveryQueryId], references: [id], onDelete: SetNull)
+  validationEvents ValidationEvent[]
+  enrichmentRuns   EnrichmentRun[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([leadId])
+  @@index([catalogLeadId])
+  @@index([discoveryQueryId])
+  @@index([targetSource])
+  @@index([discoveryMethod])
+  @@index([sourceType])
+  @@index([externalId])
+  @@index([confidenceScore])
+  @@index([observedAt])
+  @@index([storeUntil])
+}
+
+model ValidationEvent {
+  id            String   @id @default(cuid())
+  userId        String?
+  workspaceId   String?
+  campaignId    String?
+  leadId        String?
+  catalogLeadId String?
+  evidenceId    String?
+  validator     String
+  result        String
+  rationale     String?
+  scoreDelta    Int      @default(0)
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace   Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  campaign    SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  lead        Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  catalogLead LeadCatalog?    @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
+  evidence    LeadEvidence?   @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([leadId])
+  @@index([catalogLeadId])
+  @@index([evidenceId])
+  @@index([validator])
+  @@index([result])
+  @@index([createdAt])
+}
+
+model EnrichmentRun {
+  id                   String   @id @default(cuid())
+  userId               String?
+  workspaceId          String?
+  campaignId           String?
+  leadId               String?
+  catalogLeadId        String?
+  evidenceId           String?
+  provider             String
+  requestedFields      Json?
+  returnedFields       Json?
+  marginalCostMicrousd Int      @default(0)
+  status               String   @default("COMPLETED")
+  errorCode            String?
+  createdAt            DateTime @default(now())
+
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace   Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  campaign    SearchCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  lead        Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  catalogLead LeadCatalog?    @relation(fields: [catalogLeadId], references: [id], onDelete: SetNull)
+  evidence    LeadEvidence?   @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([leadId])
+  @@index([catalogLeadId])
+  @@index([evidenceId])
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model OpportunitySignal {
