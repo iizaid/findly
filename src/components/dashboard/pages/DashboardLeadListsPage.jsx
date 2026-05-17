@@ -552,20 +552,48 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                               
                               {a ? (
                                 <div className="space-y-4 mt-2">
+                                  <div className="flex flex-wrap gap-3">
+                                    {a.confidence && (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[10px] font-semibold uppercase text-black/40">Confidence</span>
+                                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${a.confidence === 'high' ? 'bg-green-100 text-green-700' : a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                          {a.confidence}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {a.contactPriority && (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[10px] font-semibold uppercase text-black/40">Priority</span>
+                                        <span className="inline-flex items-center rounded-md bg-black/[0.04] px-2 py-0.5 text-[11px] font-bold text-black/70">{a.contactPriority}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {a.reasons?.some(r => r?.startsWith('AI explanation:')) && (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[12px] font-medium text-black/40">AI Score Explanation</span>
+                                      <p className="text-[13px] text-black/80 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI explanation:'))?.replace('AI explanation: ', '')}</p>
+                                    </div>
+                                  )}
                                   <div className="flex flex-col gap-1">
                                     <span className="text-[12px] font-medium text-black/40">Suggested Service</span>
-                                    <span className="text-[13px] font-medium text-black">{a.suggestedService}</span>
+                                    <span className="text-[13px] font-medium text-black">{a.suggestedService || 'Not determined'}</span>
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <span className="text-[12px] font-medium text-black/40">Outreach Angle</span>
-                                    <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle}</span>
+                                    <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle || 'Not available'}</span>
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <span className="text-[12px] font-medium text-black/40">Message Draft</span>
                                     <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] p-4 text-[13px] leading-relaxed text-black/80 whitespace-pre-wrap">
-                                      {a.messageDraft}
+                                      {a.messageDraft || 'No message draft available.'}
                                     </div>
                                   </div>
+                                  {a.reasons?.some(r => r?.startsWith('AI missing data:')) && (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[12px] font-medium text-amber-600">Missing Data</span>
+                                      <p className="text-[12px] text-black/60 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI missing data:'))?.replace('AI missing data: ', '')}</p>
+                                    </div>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="py-8 text-center">

@@ -1,16 +1,75 @@
 {
-  "service": "Digital Menu",
-  "goodLeads": [
-    "Restaurants, cafes, or food trucks with no website but have strong map presence.",
-    "Food businesses that only link to a Facebook page instead of a menu.",
-    "High review count food businesses that are clearly active but lack modern ordering links."
-  ],
-  "weakerLeads": [
-    "Non-food businesses (e.g., plumbers, accountants).",
-    "Restaurants that already link to Delivery apps (Talabat, UberEats) and seem fully integrated."
-  ],
-  "badLeads": [
-    "Businesses with no reviews and no contact information.",
-    "Corporate franchise locations (McDonalds, Starbucks) that use corporate apps."
+  "serviceType": "Digital Menu",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Baba Shawarma",
+        "category": "Restaurant",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.4,
+        "reviewCount": 350
+      },
+      "expectedAssessment": {
+        "scoreRange": "80-92",
+        "why": "Popular restaurant with no website. Customers likely search for menu online. Strong Instagram presence means they are active. High review count validates demand.",
+        "shouldContact": true,
+        "confidence": "high",
+        "firstOffer": "Digital menu with photos, prices, and QR code for tables."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Sunrise Bakery",
+        "category": "Bakery",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.0,
+        "reviewCount": 60
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Food business without website, decent reviews. Bakeries benefit from showcasing products online. Moderate urgency.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Simple digital catalog with product photos, prices, and contact/order link."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Al-Masri Accounting",
+        "category": "Accounting Firm",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.3,
+        "reviewCount": 20
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-25",
+        "why": "Not a food business. Digital menu service does not fit an accounting firm. Strong service mismatch.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Street Bites Food Truck",
+        "category": "Food Truck",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "40-55",
+        "why": "Food business that could use a menu, but no phone and no reviews reduce confidence. Instagram is the only contact path.",
+        "shouldContact": true,
+        "confidence": "low",
+        "firstOffer": "Simple link-in-bio style menu page."
+      }
+    }
   ]
 }

@@ -1,16 +1,92 @@
 {
-  "service": "Website Development",
-  "goodLeads": [
-    "Local businesses (restaurants, clinics, salons) with high review counts but NO website URL.",
-    "Service businesses where a portfolio is critical but their digital presence relies solely on Facebook.",
-    "Businesses with strong ratings and contact info, showing they are active and likely have budget."
-  ],
-  "weakerLeads": [
-    "Businesses with no phone, no email, and no website (hard to reach, low data quality).",
-    "Categories that rarely need custom websites (e.g., street kiosks, ATMs, generic corporate branches)."
-  ],
-  "badLeads": [
-    "Businesses that already have a functioning, modern website (unless a redesign gap is obvious).",
-    "Closed or permanently shut down businesses."
+  "serviceType": "Website Development",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Amman Fresh Juice",
+        "category": "Juice Bar",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.6,
+        "reviewCount": 220
+      },
+      "expectedAssessment": {
+        "scoreRange": "75-90",
+        "why": "No website, strong local credibility (4.6 rating, 220 reviews), clear contact path, food business benefits from menu/location/info page.",
+        "shouldContact": true,
+        "confidence": "high",
+        "firstOffer": "Simple website with menu, location, hours, and WhatsApp/contact CTA."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Quick Fix Plumbing",
+        "category": "Plumber",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.2,
+        "reviewCount": 45
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Service business with no website, decent reviews, reachable by phone. Service businesses benefit from a landing page with services and contact form.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Landing page with services list, service area, and easy contact/quote request."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Unknown Shop",
+        "category": "Retail",
+        "websiteUrl": null,
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "20-40",
+        "why": "No website but also no contact info, no rating, no reviews. Cannot reach them. Data quality is very low.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "TechVista Solutions",
+        "category": "IT Company",
+        "websiteUrl": "https://techvista.com",
+        "phone": "available",
+        "rating": 4.8,
+        "reviewCount": 120
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-30",
+        "why": "Already has a website. An IT company likely maintains its own web presence. Low service fit unless redesign need is evident.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Royal Barber",
+        "category": "Barber Shop",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 3.8,
+        "reviewCount": 30
+      },
+      "expectedAssessment": {
+        "scoreRange": "55-70",
+        "why": "No website, has social presence and phone. Moderate reviews. A simple site with gallery and booking could help, but urgency is moderate.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Simple portfolio site with gallery, pricing, and WhatsApp booking link."
+      }
+    }
   ]
 }

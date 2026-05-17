@@ -34,6 +34,30 @@ export const mergeRuleBasedAndAiAnalysis = ({ ruleBasedAnalysis, aiAnalysis }) =
   );
   const fitScore = clampScore((ruleBasedAnalysis.fitScore * ruleWeight) + (aiAnalysis.aiFitScore * aiWeight));
 
+  // Encode dimension scores and explanation into reasons/signals for storage
+  const dimensionSummary = aiAnalysis.dimensionScores
+    ? `AI_DIMS:fit=${aiAnalysis.dimensionScores.serviceFit},gap=${aiAnalysis.dimensionScores.digitalGap},biz=${aiAnalysis.dimensionScores.businessQuality},contact=${aiAnalysis.dimensionScores.contactability},urg=${aiAnalysis.dimensionScores.urgency},dq=${aiAnalysis.dimensionScores.dataQuality}`
+    : null;
+
+  const aiReasons = [
+    ...(aiAnalysis.whyThisLeadFits || []).map((reason) => `AI fit: ${reason}`),
+    ...(aiAnalysis.whyThisLeadMayNotFit || []).map((reason) => `AI caution: ${reason}`),
+  ];
+
+  if (aiAnalysis.scoreExplanation) {
+    aiReasons.push(`AI explanation: ${aiAnalysis.scoreExplanation}`);
+  }
+
+  if (aiAnalysis.missingDataThatWouldImproveDecision?.length > 0) {
+    aiReasons.push(`AI missing data: ${aiAnalysis.missingDataThatWouldImproveDecision.join(', ')}`);
+  }
+
+  const mergedSignals = [
+    ...(ruleBasedAnalysis.detectedSignals || []),
+    ...(aiAnalysis.detectedDigitalGaps || []).map((gap) => `AI_GAP:${gap}`),
+  ];
+  if (dimensionSummary) mergedSignals.push(dimensionSummary);
+
   return {
     ...ruleBasedAnalysis,
     fitScore,
@@ -46,13 +70,9 @@ export const mergeRuleBasedAndAiAnalysis = ({ ruleBasedAnalysis, aiAnalysis }) =
     nextBestAction: aiAnalysis.nextBestAction || ruleBasedAnalysis.nextBestAction,
     reasons: [
       ...(ruleBasedAnalysis.reasons || []),
-      ...(aiAnalysis.whyThisLeadFits || []).map((reason) => `AI fit: ${reason}`),
-      ...(aiAnalysis.whyThisLeadMayNotFit || []).map((reason) => `AI caution: ${reason}`),
-    ].slice(0, 12),
-    detectedSignals: [
-      ...(ruleBasedAnalysis.detectedSignals || []),
-      ...(aiAnalysis.detectedDigitalGaps || []).map((gap) => `AI_GAP:${gap}`),
-    ].slice(0, 20),
+      ...aiReasons,
+    ].slice(0, 16),
+    detectedSignals: mergedSignals.slice(0, 20),
     shouldContact: aiAnalysis.shouldContact,
     contactPriority: aiAnalysis.contactPriority,
     analysisSource: ANALYSIS_SOURCE.AI_ASSISTED,

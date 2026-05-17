@@ -1,16 +1,59 @@
 {
-  "service": "Social Media Management",
-  "goodLeads": [
-    "Any local business with a website but missing Instagram/Facebook links.",
-    "Retail, Food, and Beauty businesses where visual marketing is critical.",
-    "Businesses with good reviews but seemingly low digital engagement."
-  ],
-  "weakerLeads": [
-    "Highly industrial B2B companies (e.g., wholesale manufacturing) unless specifically targeting LinkedIn.",
-    "Businesses with perfectly populated and linked social media profiles."
-  ],
-  "badLeads": [
-    "Empty or closed businesses.",
-    "Businesses that clearly have active, high-quality social media teams."
+  "serviceType": "Social Media Management",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Velvet Lounge Restaurant",
+        "category": "Restaurant",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.3,
+        "reviewCount": 175
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Consumer-facing restaurant with Instagram presence. High reviews suggest active business. If social engagement is low, management could help. However, without engagement data, confidence is limited.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Social media audit and content strategy tailored for restaurants."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Precision Engineering Ltd",
+        "category": "Engineering Firm",
+        "websiteUrl": "https://precisioneng.jo",
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 15
+      },
+      "expectedAssessment": {
+        "scoreRange": "15-30",
+        "why": "B2B engineering firm. Social media management is typically low priority for this category. Few reviews suggest limited consumer-facing activity.",
+        "shouldContact": false,
+        "confidence": "medium",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Bloom Flower Shop",
+        "category": "Florist",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "facebookUrl": "available",
+        "phone": "available",
+        "rating": 4.7,
+        "reviewCount": 90
+      },
+      "expectedAssessment": {
+        "scoreRange": "65-80",
+        "why": "Visually driven business with existing social accounts. Strong reviews and contact path. Social media management could boost engagement and seasonal sales.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Monthly social media content plan with seasonal campaign ideas."
+      }
+    }
   ]
 }

@@ -1,16 +1,59 @@
 {
-  "service": "Digital Presence Improvement",
-  "goodLeads": [
-    "Local businesses with missing website but have positive reviews.",
-    "Businesses with unverified map listings.",
-    "Businesses relying solely on a Facebook page with low engagement."
-  ],
-  "weakerLeads": [
-    "Businesses with fully updated profiles across multiple platforms.",
-    "Freelancers with no physical location or clear service area."
-  ],
-  "badLeads": [
-    "Closed or permanently relocated businesses.",
-    "Large corporate chains and franchises."
+  "serviceType": "Digital Presence Improvement",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Royal Sweets",
+        "category": "Sweet Shop",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 300
+      },
+      "expectedAssessment": {
+        "scoreRange": "75-88",
+        "why": "Popular business with strong reputation but no website. Multiple digital gaps: no website, likely no online menu or ordering. Instagram is active. Strong candidate for overall digital improvement.",
+        "shouldContact": true,
+        "confidence": "high",
+        "firstOffer": "Website with product showcase, online ordering link, and Google Business optimization."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Sunset Hotel",
+        "category": "Hotel",
+        "websiteUrl": "https://sunsethotel.jo",
+        "instagramUrl": "available",
+        "facebookUrl": "available",
+        "phone": "available",
+        "rating": 4.2,
+        "reviewCount": 200
+      },
+      "expectedAssessment": {
+        "scoreRange": "35-50",
+        "why": "Already has website and social presence. Some improvement may be possible, but existing digital presence is decent. Without evidence of specific gaps, score is moderate.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Digital presence audit covering website, social, and booking flow."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Nameless Business",
+        "category": null,
+        "websiteUrl": null,
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "5-20",
+        "why": "Extremely sparse data. No category, no contact, no digital presence info. Cannot assess digital gaps with confidence.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
+      }
+    }
   ]
 }

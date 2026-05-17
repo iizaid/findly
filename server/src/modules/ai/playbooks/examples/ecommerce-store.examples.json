@@ -1,0 +1,58 @@
+{
+  "serviceType": "E-commerce Store",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Aroma Perfumes",
+        "category": "Perfume Shop",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.7,
+        "reviewCount": 200
+      },
+      "expectedAssessment": {
+        "scoreRange": "75-88",
+        "why": "Product-based retail business with strong social and reputation. No website means no online ordering. Instagram suggests visual product marketing. High fit for e-commerce.",
+        "shouldContact": true,
+        "confidence": "high",
+        "firstOffer": "Online store with product catalog, photos, pricing, and WhatsApp/checkout integration."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Dr. Smile Dental",
+        "category": "Dental Clinic",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 90
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-25",
+        "why": "Service business, not product-based. Dental clinics don't sell products online. Strong service mismatch for e-commerce.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Trendy Threads",
+        "category": "Clothing Store",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "40-55",
+        "why": "Clothing store with Instagram but no phone, no rating, no reviews. Good category fit but data quality is low. Contact path is limited to social DM.",
+        "shouldContact": true,
+        "confidence": "low",
+        "firstOffer": "Simple online catalog linked from Instagram bio."
+      }
+    }
+  ]
+}

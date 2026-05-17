@@ -1,16 +1,57 @@
 {
-  "service": "Booking System",
-  "goodLeads": [
-    "Salons, barbershops, clinics, and spas.",
-    "Businesses that operate on appointments but only list a phone number.",
-    "High-traffic service businesses with no clear 'Book Now' link."
-  ],
-  "weakerLeads": [
-    "Retail stores or food businesses where walk-ins or deliveries are standard.",
-    "Service businesses with no digital footprint to verify."
-  ],
-  "badLeads": [
-    "Businesses that already use Fresha, Booksy, or similar platforms.",
-    "B2B corporate offices."
+  "serviceType": "Booking System",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Glow Beauty Salon",
+        "category": "Salon",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 150
+      },
+      "expectedAssessment": {
+        "scoreRange": "75-90",
+        "why": "Appointment-based business with no website/booking system. Strong reviews and contact path. Customers likely call or DM to book — a booking system would streamline this.",
+        "shouldContact": true,
+        "confidence": "high",
+        "firstOffer": "Online booking page with services, pricing, and time slot selection."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Fitness Hub Gym",
+        "category": "Gym",
+        "websiteUrl": "https://fitnesshub.jo",
+        "phone": "available",
+        "rating": 4.2,
+        "reviewCount": 80
+      },
+      "expectedAssessment": {
+        "scoreRange": "45-60",
+        "why": "Has a website already. May or may not have online booking. Medium fit — would need to verify if their site lacks booking functionality.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Offer to audit their current booking flow and suggest improvements."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Quick Mart",
+        "category": "Grocery Store",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 3.5,
+        "reviewCount": 15
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-25",
+        "why": "Grocery stores typically don't need appointment booking. Strong service mismatch.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    }
   ]
 }

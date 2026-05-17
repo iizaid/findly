@@ -1,0 +1,56 @@
+{
+  "serviceType": "Automation",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Jordan Real Estate Group",
+        "category": "Real Estate Agency",
+        "websiteUrl": "https://jordanrealestate.jo",
+        "phone": "available",
+        "rating": 4.3,
+        "reviewCount": 120
+      },
+      "expectedAssessment": {
+        "scoreRange": "65-80",
+        "why": "Real estate agencies handle repeated inquiries, property listings, follow-ups. High review count suggests volume. Automation/CRM could streamline lead tracking.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "CRM setup for lead tracking, automated follow-up sequences, and inquiry management."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Corner Kiosk",
+        "category": "Convenience Store",
+        "websiteUrl": null,
+        "phone": null,
+        "rating": 2.8,
+        "reviewCount": 5
+      },
+      "expectedAssessment": {
+        "scoreRange": "5-20",
+        "why": "Tiny retail business with no evidence of process volume. No contact path. Very low data quality. Automation is not a fit.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Sparkle Cleaning Services",
+        "category": "Cleaning Service",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.0,
+        "reviewCount": 55
+      },
+      "expectedAssessment": {
+        "scoreRange": "55-70",
+        "why": "Service business that likely handles repeated booking/follow-up requests. Decent reviews suggest active customer base. Could benefit from automated scheduling and reminders.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Automated booking confirmation and reminder system."
+      }
+    }
+  ]
+}

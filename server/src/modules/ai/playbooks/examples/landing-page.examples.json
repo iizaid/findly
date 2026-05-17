@@ -1,0 +1,57 @@
+{
+  "serviceType": "Landing Page",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Peak Fitness Academy",
+        "category": "Gym",
+        "websiteUrl": "https://peakfitness.jo",
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 110
+      },
+      "expectedAssessment": {
+        "scoreRange": "55-70",
+        "why": "Has a website but gyms often benefit from focused landing pages for promotions, new member offers, or class signups. Good credibility.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Focused landing page for new member signup with special offer and class schedule."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Coding Bootcamp JO",
+        "category": "Education",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Education/course provider with no website. Landing page is perfect for course enrollment. Instagram presence shows activity. Low data quality reduces confidence.",
+        "shouldContact": true,
+        "confidence": "low",
+        "firstOffer": "Course enrollment landing page with program details, pricing, and registration form."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Ali's Corner Shop",
+        "category": "Convenience Store",
+        "websiteUrl": null,
+        "phone": null,
+        "rating": 3.0,
+        "reviewCount": 8
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-20",
+        "why": "Small convenience store with no contact path. Landing pages are not relevant for this business type.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
+      }
+    }
+  ]
+}

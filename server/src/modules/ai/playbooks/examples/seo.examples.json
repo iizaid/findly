@@ -1,0 +1,56 @@
+{
+  "serviceType": "SEO",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Amman Dental Center",
+        "category": "Dental Clinic",
+        "websiteUrl": "https://ammandental.jo",
+        "phone": "available",
+        "rating": 4.6,
+        "reviewCount": 280
+      },
+      "expectedAssessment": {
+        "scoreRange": "65-80",
+        "why": "Has a website in a competitive local category. Strong reviews but may not rank well for dental searches. SEO would help capture local search traffic.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Local SEO audit with focus on dental keyword rankings and Google Business optimization."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Street Falafel Stand",
+        "category": "Food Stand",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.1,
+        "reviewCount": 30
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-25",
+        "why": "No website. Cannot do SEO without a website. This is a Website Development lead first.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Elite Travel Agency",
+        "category": "Travel Agency",
+        "websiteUrl": "https://elitetravel.jo",
+        "phone": "available",
+        "rating": 4.4,
+        "reviewCount": 95
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Travel is a competitive online category. Has website and good reviews. SEO could improve discoverability. Without site analysis, we can't confirm gap severity.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "SEO audit focusing on travel-related search terms and local competition."
+      }
+    }
+  ]
+}

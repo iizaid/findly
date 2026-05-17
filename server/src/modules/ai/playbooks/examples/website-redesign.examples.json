@@ -1,0 +1,56 @@
+{
+  "serviceType": "Website Redesign",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Golden Gate Hotel",
+        "category": "Hotel",
+        "websiteUrl": "http://goldengatehotel.jo",
+        "phone": "available",
+        "rating": 4.1,
+        "reviewCount": 180
+      },
+      "expectedAssessment": {
+        "scoreRange": "65-80",
+        "why": "Has a website but hotels benefit greatly from modern booking-optimized design. Good credibility. HTTP-only URL suggests an older site.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Modern responsive redesign with integrated booking, gallery, and mobile optimization."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Desert Rose Clinic",
+        "category": "Medical Clinic",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 95
+      },
+      "expectedAssessment": {
+        "scoreRange": "15-30",
+        "why": "No website exists — this is a Website Development lead, not redesign. Service mismatch.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Modern Dental Care",
+        "category": "Dental Clinic",
+        "websiteUrl": "https://moderndental.jo",
+        "phone": "available",
+        "rating": 4.7,
+        "reviewCount": 310
+      },
+      "expectedAssessment": {
+        "scoreRange": "50-65",
+        "why": "Has a website and strong reviews. Without evidence the site is outdated, redesign need is uncertain. Medium confidence.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Offer a free quick audit of their current site's mobile experience and booking flow."
+      }
+    }
+  ]
+}

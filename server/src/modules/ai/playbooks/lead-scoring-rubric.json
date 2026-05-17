@@ -1,8 +1,63 @@
 {
-  "serviceFit": 25,
-  "digitalGap": 25,
-  "businessQuality": 15,
-  "contactability": 15,
-  "urgency": 10,
-  "dataQuality": 10
+  "version": "1.1.0",
+  "dimensions": {
+    "serviceFit": {
+      "weight": 25,
+      "description": "How closely the business matches what the user sells.",
+      "high": "The lead type clearly needs or benefits from the user's service.",
+      "medium": "The lead may benefit, but evidence is partial.",
+      "low": "The service is weakly related or irrelevant."
+    },
+    "digitalGap": {
+      "weight": 25,
+      "description": "Evidence of missing or weak digital infrastructure.",
+      "high": "No website, weak/unclear web presence, missing booking/menu/catalog/contact flow.",
+      "medium": "Some digital gaps exist but not severe.",
+      "low": "Strong existing digital presence or no evidence of a gap."
+    },
+    "businessQuality": {
+      "weight": 15,
+      "description": "Signs that the business is real, active, reputable, and worth contacting.",
+      "high": "Good rating/reviews, complete profile, active public presence.",
+      "medium": "Some signs of legitimacy but limited evidence.",
+      "low": "Sparse, unclear, or unreliable data."
+    },
+    "contactability": {
+      "weight": 15,
+      "description": "How easy it is to reach the business.",
+      "high": "Phone, WhatsApp, email, website form, or active social link exists.",
+      "medium": "Only one weak contact path exists.",
+      "low": "No reliable contact path."
+    },
+    "urgency": {
+      "weight": 10,
+      "description": "How urgent and obvious the need appears.",
+      "high": "The business likely loses customers due to the observed gap.",
+      "medium": "The gap matters but urgency is uncertain.",
+      "low": "No clear urgency."
+    },
+    "dataQuality": {
+      "weight": 10,
+      "description": "How much reliable data is available to judge the lead.",
+      "high": "Multiple useful fields exist (name, category, location, contact, rating, social).",
+      "medium": "Enough data for a moderate judgment.",
+      "low": "Too little data to make a strong call."
+    }
+  },
+  "scoreBands": {
+    "GOLD": "85-100: Highly relevant, strong opportunity, high contact priority.",
+    "HIGH": "70-84: Good lead worth contacting soon.",
+    "MEDIUM": "45-69: Possible lead, needs review or more data.",
+    "LOW": "0-44: Weak match or insufficient evidence."
+  },
+  "hardRules": [
+    "If serviceFit < 35, final aiFitScore should usually be below 55.",
+    "If dataQuality < 35, confidence cannot be high.",
+    "If contactability < 25, contactPriority cannot be URGENT.",
+    "If there is no evidence of a digital gap, digitalGap must not be scored high.",
+    "If the user service and business type do not match, shouldContact should usually be false.",
+    "Do not give GOLD unless at least four dimensions are strong (>= 70).",
+    "Do not give high confidence with sparse data (fewer than 4 useful fields).",
+    "If shouldContact is false, aiOpportunityScore should normally be below 60."
+  ]
 }

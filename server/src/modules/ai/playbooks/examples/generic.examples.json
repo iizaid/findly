@@ -1,0 +1,79 @@
+{
+  "serviceType": "Generic",
+  "description": "Fallback examples when no service-specific match is found.",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Active Local Business",
+        "category": "Restaurant",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.5,
+        "reviewCount": 200
+      },
+      "expectedAssessment": {
+        "scoreRange": "65-80",
+        "why": "Active business with strong reputation and contact path, but missing website. Good candidate for most digital services.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Depends on user's service — match the offer to the digital gap observed."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Mystery Business",
+        "category": "Unknown",
+        "websiteUrl": null,
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "10-25",
+        "why": "Very sparse data. No contact info, no category clarity, no reputation signals. Cannot confidently assess fit for any service.",
+        "shouldContact": false,
+        "confidence": "low",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Strong Digital Business",
+        "category": "Tech Startup",
+        "websiteUrl": "https://strongdigital.io",
+        "instagramUrl": "available",
+        "facebookUrl": "available",
+        "phone": "available",
+        "email": "available",
+        "rating": 4.8,
+        "reviewCount": 50
+      },
+      "expectedAssessment": {
+        "scoreRange": "15-35",
+        "why": "Already has strong digital presence across multiple channels. Most digital services would be low value unless specific gaps are identified. Service fit depends heavily on what the user actually sells.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Growing Salon",
+        "category": "Beauty Salon",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.2,
+        "reviewCount": 45
+      },
+      "expectedAssessment": {
+        "scoreRange": "50-70",
+        "why": "Consumer business with gaps (no website), decent reviews, reachable. Score depends on how well the user's specific service matches the salon's needs.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Tailor the offer to the specific digital gap that matches the user's service."
+      }
+    }
+  ]
+}

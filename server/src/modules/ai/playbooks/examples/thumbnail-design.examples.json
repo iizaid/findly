@@ -1,15 +1,59 @@
 {
-  "service": "YouTube Thumbnail Design",
-  "goodLeads": [
-    "Content creators, media brands, coaches, and podcasters.",
-    "Businesses with YouTube links but visually inconsistent or generic thumbnails.",
-    "Channels with good subscriber counts but low relative views (indicating CTR issues)."
-  ],
-  "weakerLeads": [
-    "Local brick-and-mortar stores (bakeries, mechanics) that don't produce video content."
-  ],
-  "badLeads": [
-    "Businesses with no video presence whatsoever.",
-    "Channels with clearly professional, high-performing custom thumbnails."
+  "serviceType": "Thumbnail Design",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "TechTalk Jordan",
+        "category": "YouTube Channel",
+        "websiteUrl": "https://youtube.com/@techtalkjo",
+        "instagramUrl": "available",
+        "phone": null,
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "70-85",
+        "why": "YouTube channel/content creator. Thumbnail design directly fits their content needs. Active social presence suggests content creation activity.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Custom thumbnail design package for upcoming videos."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "City Plumbing",
+        "category": "Plumber",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 3.8,
+        "reviewCount": 20
+      },
+      "expectedAssessment": {
+        "scoreRange": "5-15",
+        "why": "Local plumbing service with no evidence of content creation or video presence. Thumbnail design is irrelevant.",
+        "shouldContact": false,
+        "confidence": "high",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Chef Ahmad Show",
+        "category": "Food Media",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "facebookUrl": "available",
+        "phone": "available",
+        "rating": null,
+        "reviewCount": null
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Food media presence suggests video/content creation. If they produce cooking content, thumbnails are valuable. Without YouTube URL, fit is assumed, not confirmed.",
+        "shouldContact": true,
+        "confidence": "low",
+        "firstOffer": "Sample thumbnail designs for their content style."
+      }
+    }
   ]
 }

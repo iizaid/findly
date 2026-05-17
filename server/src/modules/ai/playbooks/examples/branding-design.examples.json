@@ -1,0 +1,59 @@
+{
+  "serviceType": "Branding Design",
+  "examples": [
+    {
+      "inputSummary": {
+        "businessName": "Luna Boutique",
+        "category": "Fashion Boutique",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "phone": "available",
+        "rating": 4.4,
+        "reviewCount": 65
+      },
+      "expectedAssessment": {
+        "scoreRange": "60-75",
+        "why": "Visually driven fashion business using only Instagram. No website suggests potential lack of unified branding. Boutiques benefit from cohesive visual identity.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Brand identity package: logo, color palette, and social media template set."
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "AutoFix Garage",
+        "category": "Auto Repair",
+        "websiteUrl": null,
+        "phone": "available",
+        "rating": 3.9,
+        "reviewCount": 25
+      },
+      "expectedAssessment": {
+        "scoreRange": "20-35",
+        "why": "Auto repair shops rarely prioritize branding/design. Low visual need. Service mismatch.",
+        "shouldContact": false,
+        "confidence": "medium",
+        "firstOffer": null
+      }
+    },
+    {
+      "inputSummary": {
+        "businessName": "Nouveau Cafe",
+        "category": "Cafe",
+        "websiteUrl": null,
+        "instagramUrl": "available",
+        "facebookUrl": "available",
+        "phone": "available",
+        "rating": 4.6,
+        "reviewCount": 140
+      },
+      "expectedAssessment": {
+        "scoreRange": "55-70",
+        "why": "Cafe with multiple social presences. Strong reviews. If branding is inconsistent across platforms, design work could help. Without seeing the actual profiles, confidence is limited.",
+        "shouldContact": true,
+        "confidence": "medium",
+        "firstOffer": "Visual brand audit and unified social template package."
+      }
+    }
+  ]
+}
