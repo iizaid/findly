@@ -47,7 +47,7 @@ export const normalizeLeadForAnalysis = (input) => {
 
 export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   let opportunityScore = 0;
-  let fitScore = 0;
+  let fitScore;
   let dataQualityScore = 0;
   let contactabilityScore = 0;
   let digitalGapScore = 0;

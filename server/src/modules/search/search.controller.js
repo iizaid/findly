@@ -371,7 +371,7 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
   });
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
 
-  if ['QUEUED', 'RUNNING'].includes(campaign.status) {
+  if (['QUEUED', 'RUNNING'].includes(campaign.status)) {
     throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Campaign is already queued or running.', 409);
   }
 
