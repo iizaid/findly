@@ -1,0 +1,16 @@
+{
+  "service": "Social Media Management",
+  "goodLeads": [
+    "Any local business with a website but missing Instagram/Facebook links.",
+    "Retail, Food, and Beauty businesses where visual marketing is critical.",
+    "Businesses with good reviews but seemingly low digital engagement."
+  ],
+  "weakerLeads": [
+    "Highly industrial B2B companies (e.g., wholesale manufacturing) unless specifically targeting LinkedIn.",
+    "Businesses with perfectly populated and linked social media profiles."
+  ],
+  "badLeads": [
+    "Empty or closed businesses.",
+    "Businesses that clearly have active, high-quality social media teams."
+  ]
+}

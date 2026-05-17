@@ -1,0 +1,15 @@
+{
+  "service": "YouTube Thumbnail Design",
+  "goodLeads": [
+    "Content creators, media brands, coaches, and podcasters.",
+    "Businesses with YouTube links but visually inconsistent or generic thumbnails.",
+    "Channels with good subscriber counts but low relative views (indicating CTR issues)."
+  ],
+  "weakerLeads": [
+    "Local brick-and-mortar stores (bakeries, mechanics) that don't produce video content."
+  ],
+  "badLeads": [
+    "Businesses with no video presence whatsoever.",
+    "Channels with clearly professional, high-performing custom thumbnails."
+  ]
+}

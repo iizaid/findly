@@ -1,0 +1,16 @@
+{
+  "service": "Website Development",
+  "goodLeads": [
+    "Local businesses (restaurants, clinics, salons) with high review counts but NO website URL.",
+    "Service businesses where a portfolio is critical but their digital presence relies solely on Facebook.",
+    "Businesses with strong ratings and contact info, showing they are active and likely have budget."
+  ],
+  "weakerLeads": [
+    "Businesses with no phone, no email, and no website (hard to reach, low data quality).",
+    "Categories that rarely need custom websites (e.g., street kiosks, ATMs, generic corporate branches)."
+  ],
+  "badLeads": [
+    "Businesses that already have a functioning, modern website (unless a redesign gap is obvious).",
+    "Closed or permanently shut down businesses."
+  ]
+}

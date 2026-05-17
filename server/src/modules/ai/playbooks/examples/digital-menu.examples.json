@@ -1,0 +1,16 @@
+{
+  "service": "Digital Menu",
+  "goodLeads": [
+    "Restaurants, cafes, or food trucks with no website but have strong map presence.",
+    "Food businesses that only link to a Facebook page instead of a menu.",
+    "High review count food businesses that are clearly active but lack modern ordering links."
+  ],
+  "weakerLeads": [
+    "Non-food businesses (e.g., plumbers, accountants).",
+    "Restaurants that already link to Delivery apps (Talabat, UberEats) and seem fully integrated."
+  ],
+  "badLeads": [
+    "Businesses with no reviews and no contact information.",
+    "Corporate franchise locations (McDonalds, Starbucks) that use corporate apps."
+  ]
+}

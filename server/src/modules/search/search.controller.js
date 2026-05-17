@@ -371,7 +371,7 @@ export const runExistingCampaign = asyncHandler(async (req, res) => {
   });
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
 
-  if (['QUEUED', 'RUNNING'].includes(campaign.status)) {
+  if ['QUEUED', 'RUNNING'].includes(campaign.status) {
     throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Campaign is already queued or running.', 409);
   }
 
@@ -1186,12 +1186,12 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
 
     const analysis = await tx.leadAnalysis.create({
       data: toLeadAnalysisCreateData({
-      lead: sourceLead,
+        lead: sourceLead,
         analysisData: finalAnalysisData,
-      userId: req.user.id,
-      workspaceId: item.leadList.workspaceId,
-      campaignId: item.leadList.campaignId,
-      leadListLeadId: item.id,
+        userId: req.user.id,
+        workspaceId: item.leadList.workspaceId,
+        campaignId: item.leadList.campaignId,
+        leadListLeadId: item.id,
       }),
     });
 
@@ -1253,6 +1253,10 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
   const items = await prisma.leadListLead.findMany({
     where: {
       leadListId: listId,
+      OR: [
+        { analysisStatus: null },
+        { analysisStatus: { notIn: ['COMPLETED'] } },
+      ],
       analyses: { none: {} },
     },
     include: { lead: true, catalogLead: true },
@@ -1260,68 +1264,172 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
   });
 
   if (items.length === 0) {
-    return successResponse(res, { analyzedCount: 0, creditsUsed: 0 }, 'No items require analysis or list empty.');
+    return successResponse(res, { analyzedCount: 0, creditsUsed: 0, aiAssistedCount: 0, fallbackCount: 0, failedCount: 0, skippedExistingCount: 0 }, 'No items require analysis or list empty.');
   }
 
   const profile = leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
+  
+  let analyzedCount = 0;
+  let creditsUsed = 0;
+  let aiAssistedCount = 0;
+  let fallbackCount = 0;
+  let failedCount = 0;
+  let skippedExistingCount = 0;
 
-  const result = await prisma.$transaction(async (tx) => {
-    await deductCredits({
-      tx,
-      userId: req.user.id,
-      workspaceId: leadList.workspaceId,
-      amount: items.length,
-      type: 'CREDIT_USED',
-      reason: `Analyzed lead list items: ${leadList.name}`,
-      referenceType: 'LeadList',
-      referenceId: leadList.id,
+  const results = [];
+
+  const AI_ANALYSIS_CONCURRENCY = 2;
+  
+  for (let i = 0; i < items.length; i += AI_ANALYSIS_CONCURRENCY) {
+    const chunk = items.slice(i, i + AI_ANALYSIS_CONCURRENCY);
+    
+    const chunkPromises = chunk.map(async (item) => {
+      const sourceLead = item.lead || item.catalogLead;
+      if (!sourceLead) return { item, status: 'failed', reason: 'no_lead_data' };
+
+      const userCredits = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { creditsBalance: true },
+      });
+      if (!userCredits || userCredits.creditsBalance < ANALYSIS_CREDITS) {
+        return { item, status: 'failed', reason: 'insufficient_credits' };
+      }
+
+      try {
+        const ruleBasedAnalysis = buildRuleBasedAnalysisData({ lead: sourceLead, profile });
+        const aiReview = await runLeadAnalysisAiReview({
+          lead: sourceLead,
+          profile,
+          campaign: leadList.campaign,
+          ruleBasedAnalysis,
+        });
+
+        const finalAnalysisData = enrichAnalysisDataForPersistence({
+          analysisData: aiReview.analysis,
+          aiResult: aiReview.aiResult,
+        });
+        const responseMetadata = buildAnalysisResponseMetadata({
+          analysisData: finalAnalysisData,
+          aiResult: aiReview.aiResult,
+        });
+
+        const result = await prisma.$transaction(async (tx) => {
+          const currentItem = await tx.leadListLead.findFirst({
+            where: { id: item.id },
+            include: { analyses: { select: { id: true } } },
+          });
+
+          if (currentItem.analyses.length > 0 || currentItem.analysisStatus === 'COMPLETED') {
+            return { status: 'skipped' };
+          }
+
+          await deductCredits({
+            tx,
+            userId: req.user.id,
+            workspaceId: leadList.workspaceId,
+            amount: ANALYSIS_CREDITS,
+            type: 'CREDIT_USED',
+            reason: `Analyzed list item in batch: ${sourceLead.businessName}`,
+            referenceType: 'LeadListLead',
+            referenceId: item.id,
+          });
+
+          const analysis = await tx.leadAnalysis.create({
+            data: toLeadAnalysisCreateData({
+              lead: sourceLead,
+              analysisData: finalAnalysisData,
+              userId: req.user.id,
+              workspaceId: leadList.workspaceId,
+              campaignId: leadList.campaignId,
+              leadListLeadId: item.id,
+            }),
+          });
+
+          await tx.leadListLead.update({
+            where: { id: item.id },
+            data: {
+              analysisStatus: 'COMPLETED',
+              analyzedAt: new Date(),
+              score: analysis.opportunityScore,
+            },
+          });
+
+          return { status: 'analyzed', responseMetadata, analysis };
+        });
+
+        return { item, ...result };
+      } catch (err) {
+        console.error(`[Bulk Analysis] Failed for item ${item.id}:`, err);
+        return { item, status: 'failed', reason: 'error' };
+      }
     });
 
-    const analyses = [];
-    for (const item of items) {
-      const sourceLead = item.lead || item.catalogLead;
-      if (!sourceLead) continue;
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
+  }
 
-      const analysis = await runRuleBasedAnalysis({
-        tx,
-        lead: sourceLead,
-        profile,
-        userId: req.user.id,
-        workspaceId: leadList.workspaceId,
-        campaignId: leadList.campaignId,
-        leadListLeadId: item.id,
-      });
+  const scoreDistribution = { GOLD: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  const topOpportunities = [];
 
-      await tx.leadListLead.update({
-        where: { id: item.id },
-        data: {
-          analysisStatus: 'COMPLETED',
-          analyzedAt: new Date(),
-          score: analysis.opportunityScore,
-        },
-      });
-
-      analyses.push(analysis);
+  for (const res of results) {
+    if (res.status === 'skipped') {
+      skippedExistingCount++;
+    } else if (res.status === 'failed') {
+      failedCount++;
+    } else if (res.status === 'analyzed') {
+      analyzedCount++;
+      creditsUsed += ANALYSIS_CREDITS;
+      if (res.responseMetadata.analysisSource === 'AI_ASSISTED') {
+        aiAssistedCount++;
+      } else {
+        fallbackCount++;
+      }
+      
+      const level = res.analysis.scoreLevel;
+      if (scoreDistribution[level] !== undefined) scoreDistribution[level]++;
+      
+      topOpportunities.push(res.analysis);
     }
+  }
 
-    await tx.auditLog.create({
+  // Create audit log for the batch run
+  if (analyzedCount > 0) {
+    await prisma.auditLog.create({
       data: {
         userId: req.user.id,
-        action: 'LEAD_LIST_ANALYZED',
+        action: 'LEAD_LIST_BULK_ANALYZED',
         entityType: 'LeadList',
         entityId: leadList.id,
         metadata: {
           workspaceId: leadList.workspaceId,
-          analyzedCount: analyses.length,
-          creditsUsed: items.length,
+          analyzedCount,
+          creditsUsed,
+          aiAssistedCount,
+          fallbackCount,
         },
       },
     });
+  }
 
-    return analyses;
-  });
+  // Sort top opportunities
+  topOpportunities.sort((a, b) => b.opportunityScore - a.opportunityScore);
 
-  return successResponse(res, { analyzedCount: result.length, creditsUsed: items.length }, 'Lead list analysis completed.');
+  return successResponse(res, {
+    analyzedCount,
+    creditsUsed,
+    aiAssistedCount,
+    fallbackCount,
+    failedCount,
+    skippedExistingCount,
+    scoreDistribution,
+    topOpportunities: topOpportunities.slice(0, 3).map(a => ({
+      id: a.id,
+      leadListLeadId: a.leadListLeadId,
+      score: a.opportunityScore,
+      level: a.scoreLevel,
+      service: a.suggestedService
+    }))
+  }, 'Lead list bulk analysis completed.');
 });
 
 // ═══════════════════════════════════════

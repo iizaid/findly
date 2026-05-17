@@ -1,0 +1,16 @@
+{
+  "service": "Booking System",
+  "goodLeads": [
+    "Salons, barbershops, clinics, and spas.",
+    "Businesses that operate on appointments but only list a phone number.",
+    "High-traffic service businesses with no clear 'Book Now' link."
+  ],
+  "weakerLeads": [
+    "Retail stores or food businesses where walk-ins or deliveries are standard.",
+    "Service businesses with no digital footprint to verify."
+  ],
+  "badLeads": [
+    "Businesses that already use Fresha, Booksy, or similar platforms.",
+    "B2B corporate offices."
+  ]
+}

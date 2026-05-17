@@ -48,6 +48,12 @@ export const normalizeLeadForAnalysis = (input) => {
 export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   let opportunityScore = 0;
   let fitScore = 0;
+  let dataQualityScore = 0;
+  let contactabilityScore = 0;
+  let digitalGapScore = 0;
+  let businessQualityScore = 0;
+  let urgencyScore = 0;
+
   const detectedSignals = [];
   const reasons = [];
 
@@ -56,69 +62,94 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   const serviceType = (profile?.serviceType || '').toLowerCase();
 
   // ═══════════════════════════════════════
-  // SIGNAL DETECTION
+  // SIGNAL DETECTION & DIMENSION SCORING
   // ═══════════════════════════════════════
 
-  // Website signals
+  // Data Quality & Contactability
+  if (normalizedLead.businessName) dataQualityScore += 20;
+  if (normalizedLead.address) dataQualityScore += 10;
+  if (normalizedLead.category) dataQualityScore += 10;
+
+  if (normalizedLead.phone) {
+    detectedSignals.push('HAS_PHONE');
+    detectedSignals.push('CONTACT_AVAILABLE');
+    detectedSignals.push('OUTREACH_READY');
+    contactabilityScore += 50;
+    dataQualityScore += 20;
+    reasons.push('Direct phone number available — outreach is possible.');
+  }
+
+  if (normalizedLead.email) {
+    detectedSignals.push('HAS_EMAIL');
+    contactabilityScore += 30;
+    dataQualityScore += 10;
+  }
+
+  if (normalizedLead.instagramUrl || normalizedLead.facebookUrl) {
+    detectedSignals.push('HAS_SOCIAL');
+    contactabilityScore += 20;
+    dataQualityScore += 10;
+  }
+
+  // Business Quality
+  if (normalizedLead.rating != null) {
+    detectedSignals.push('HAS_GOOGLE_RATING');
+    if (normalizedLead.rating >= 4.2) {
+      detectedSignals.push('HIGH_RATING');
+      businessQualityScore += 40;
+      reasons.push(`Strong reputation with ${normalizedLead.rating}★ rating — established business worth serving.`);
+    } else if (normalizedLead.rating >= 3.0) {
+      businessQualityScore += 20;
+      reasons.push(`Moderate ${normalizedLead.rating}★ rating — business may benefit from reputation improvement.`);
+    } else {
+      businessQualityScore += 5; // Real business, just poor rating
+    }
+  }
+
+  if (normalizedLead.reviewCount != null) {
+    if (normalizedLead.reviewCount >= 100) {
+      detectedSignals.push('HIGH_REVIEW_COUNT');
+      detectedSignals.push('STRONG_LOCAL_PRESENCE');
+      businessQualityScore += 60;
+      reasons.push(`${normalizedLead.reviewCount} reviews indicate a well-established area business.`);
+    } else if (normalizedLead.reviewCount >= 30) {
+      detectedSignals.push('HIGH_REVIEW_COUNT');
+      businessQualityScore += 40;
+      reasons.push(`${normalizedLead.reviewCount} reviews — active customer base.`);
+    } else if (normalizedLead.reviewCount < 10) {
+      detectedSignals.push('LOW_REVIEW_COUNT');
+      businessQualityScore += 10;
+    }
+  }
+
+  // Digital Gap & Opportunity
   if (!normalizedLead.websiteUrl) {
     detectedSignals.push('NO_WEBSITE');
+    digitalGapScore += 70;
     opportunityScore += 30;
+    urgencyScore += 20;
     reasons.push('No website listed — strong opportunity for web development services.');
 
     if (VISUAL_CATEGORIES.some((c) => categoryStr.includes(c))) {
       detectedSignals.push('WEBSITE_MISSING_FOR_VISUAL_BUSINESS');
+      digitalGapScore += 20;
       opportunityScore += 15;
+      urgencyScore += 20;
       reasons.push('Visual business without a website — high-impact opportunity.');
     }
   } else {
     detectedSignals.push('HAS_WEBSITE');
     opportunityScore += 5;
+    dataQualityScore += 20;
 
     // If service is redesign-oriented
     if (serviceType.includes('redesign') || serviceType.includes('seo')) {
       detectedSignals.push('WEBSITE_PRESENT_BUT_WEAK_SIGNAL');
+      digitalGapScore += 40;
       opportunityScore += 10;
+      urgencyScore += 10;
       reasons.push('Has website — potential redesign or SEO improvement target.');
     }
-  }
-
-  // Rating signals
-  if (normalizedLead.rating != null) {
-    detectedSignals.push('HAS_GOOGLE_RATING');
-    if (normalizedLead.rating >= 4.2) {
-      detectedSignals.push('HIGH_RATING');
-      opportunityScore += 15;
-      reasons.push(`Strong reputation with ${normalizedLead.rating}★ rating — established business worth serving.`);
-    } else if (normalizedLead.rating >= 3.0) {
-      opportunityScore += 8;
-      reasons.push(`Moderate ${normalizedLead.rating}★ rating — business may benefit from reputation improvement.`);
-    }
-  }
-
-  // Review signals
-  if (normalizedLead.reviewCount != null) {
-    if (normalizedLead.reviewCount >= 100) {
-      detectedSignals.push('HIGH_REVIEW_COUNT');
-      detectedSignals.push('STRONG_LOCAL_PRESENCE');
-      opportunityScore += 15;
-      reasons.push(`${normalizedLead.reviewCount} reviews indicate a well-established area business.`);
-    } else if (normalizedLead.reviewCount >= 30) {
-      detectedSignals.push('HIGH_REVIEW_COUNT');
-      opportunityScore += 10;
-      reasons.push(`${normalizedLead.reviewCount} reviews — active customer base.`);
-    } else if (normalizedLead.reviewCount < 10) {
-      detectedSignals.push('LOW_REVIEW_COUNT');
-      opportunityScore += 3;
-    }
-  }
-
-  // Phone / contact signals
-  if (normalizedLead.phone) {
-    detectedSignals.push('HAS_PHONE');
-    detectedSignals.push('CONTACT_AVAILABLE');
-    detectedSignals.push('OUTREACH_READY');
-    opportunityScore += 8;
-    reasons.push('Direct phone number available — outreach is possible.');
   }
 
   // Category signals
@@ -128,6 +159,8 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     if (serviceType.includes('menu') || serviceType.includes('booking')) {
       detectedSignals.push('NEEDS_DIGITAL_MENU_POSSIBLE');
       opportunityScore += 12;
+      digitalGapScore += 30;
+      urgencyScore += 15;
       reasons.push('Food/café business — likely candidate for digital menu or ordering system.');
     }
   }
@@ -137,6 +170,8 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     if (BOOKING_CATEGORIES.some((c) => categoryStr.includes(c))) {
       detectedSignals.push('NEEDS_BOOKING_POSSIBLE');
       opportunityScore += 10;
+      digitalGapScore += 30;
+      urgencyScore += 15;
       reasons.push('Service business that likely needs an online booking system.');
     }
   }
@@ -146,7 +181,7 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   }
 
   // ═══════════════════════════════════════
-  // FIT SCORE (how well it matches user's service)
+  // FIT SCORE & DIFFERENTIATION
   // ═══════════════════════════════════════
 
   if (profile?.serviceType) {
@@ -156,17 +191,28 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
 
     if (fitScore >= 60) {
       opportunityScore += 10;
+      urgencyScore += 10;
       reasons.push(`Strong fit for "${profile.serviceType}" — ${matchCount} matching signals.`);
     } else if (fitScore >= 30) {
       opportunityScore += 5;
     }
+  } else {
+    // Default fallback fit based on digital gap
+    fitScore = Math.min(digitalGapScore, 100);
   }
 
-  // ═══════════════════════════════════════
-  // CAP & LEVEL
-  // ═══════════════════════════════════════
-  opportunityScore = Math.max(0, Math.min(opportunityScore, 100));
-  fitScore = Math.max(0, Math.min(fitScore, 100));
+  // Add slight variance to opportunity score based on fine-grained data so scores aren't identical
+  opportunityScore += (businessQualityScore * 0.1);
+  opportunityScore += (contactabilityScore * 0.05);
+
+  // Cap dimensions
+  opportunityScore = Math.max(0, Math.min(Math.round(opportunityScore), 100));
+  fitScore = Math.max(0, Math.min(Math.round(fitScore), 100));
+  dataQualityScore = Math.max(0, Math.min(Math.round(dataQualityScore), 100));
+  contactabilityScore = Math.max(0, Math.min(Math.round(contactabilityScore), 100));
+  digitalGapScore = Math.max(0, Math.min(Math.round(digitalGapScore), 100));
+  businessQualityScore = Math.max(0, Math.min(Math.round(businessQualityScore), 100));
+  urgencyScore = Math.max(0, Math.min(Math.round(urgencyScore), 100));
 
   let scoreLevel = 'LOW';
   if (opportunityScore > 75) scoreLevel = 'GOLD';
@@ -174,7 +220,7 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   else if (opportunityScore > 30) scoreLevel = 'MEDIUM';
 
   // ═══════════════════════════════════════
-  // SUGGESTED SERVICE
+  // SUGGESTED SERVICE & TEXTS
   // ═══════════════════════════════════════
   let suggestedService = profile?.serviceType || 'Digital Presence Improvement';
 
@@ -186,9 +232,6 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     suggestedService = 'Booking System';
   }
 
-  // ═══════════════════════════════════════
-  // OUTREACH ANGLE
-  // ═══════════════════════════════════════
   let outreachAngle;
   if (!normalizedLead.websiteUrl) {
     outreachAngle = `${normalizedLead.businessName} has no website despite ${normalizedLead.reviewCount ? normalizedLead.reviewCount + ' Google reviews' : 'being listed on Google'}. Offer a quick, professional web presence to capture more nearby search traffic.`;
@@ -198,9 +241,6 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     outreachAngle = `${normalizedLead.businessName} is an active business in ${normalizedLead.city || 'the area'}. Position your service as a way to stand out from competitors and attract more customers.`;
   }
 
-  // ═══════════════════════════════════════
-  // MESSAGE DRAFT
-  // ═══════════════════════════════════════
   const greeting = `Hi ${normalizedLead.businessName}`;
   let body;
   if (!normalizedLead.websiteUrl) {
@@ -211,12 +251,9 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   const cta = `I specialize in ${suggestedService.toLowerCase()} for businesses like yours. Would you be open to a quick chat this week?`;
   const messageDraft = `${greeting},\n\n${body}\n\n${cta}\n\nBest regards`;
 
-  // ═══════════════════════════════════════
-  // CONFIDENCE & NEXT ACTION
-  // ═══════════════════════════════════════
   let confidence = 'low';
-  if (detectedSignals.length >= 5 && reasons.length >= 3) confidence = 'high';
-  else if (detectedSignals.length >= 3) confidence = 'medium';
+  if (dataQualityScore >= 80 && detectedSignals.length >= 4) confidence = 'high';
+  else if (dataQualityScore >= 50 && detectedSignals.length >= 2) confidence = 'medium';
 
   let nextBestAction = 'Review lead details';
   if (detectedSignals.includes('OUTREACH_READY') && scoreLevel === 'GOLD') {
@@ -238,6 +275,14 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     messageDraft,
     confidence,
     nextBestAction,
+    dimensionScores: {
+      serviceFit: fitScore,
+      digitalGap: digitalGapScore,
+      businessQuality: businessQualityScore,
+      contactability: contactabilityScore,
+      urgency: urgencyScore,
+      dataQuality: dataQualityScore,
+    },
   };
 };
 

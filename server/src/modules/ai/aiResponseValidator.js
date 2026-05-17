@@ -21,6 +21,31 @@ export const leadAnalysisAiSchema = z.object({
   nextBestAction: boundedString.max(500),
   riskNotes: boundedArray,
   dataQualityNotes: boundedArray,
+  dimensionScores: z.object({
+    serviceFit: z.number().int().min(0).max(100),
+    digitalGap: z.number().int().min(0).max(100),
+    businessQuality: z.number().int().min(0).max(100),
+    contactability: z.number().int().min(0).max(100),
+    urgency: z.number().int().min(0).max(100),
+    dataQuality: z.number().int().min(0).max(100),
+  }),
+  scoreExplanation: boundedString.max(1000),
+  missingDataThatWouldImproveDecision: boundedArray,
+}).superRefine((data, ctx) => {
+  if (data.dimensionScores.dataQuality < 40 && data.confidence === 'high') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Confidence cannot be high if data quality is below 40.',
+      path: ['confidence'],
+    });
+  }
+  if (data.dimensionScores.serviceFit < 35 && data.contactPriority === 'URGENT') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Contact priority cannot be URGENT if service fit is below 35.',
+      path: ['contactPriority'],
+    });
+  }
 });
 
 const taskSchemas = {
