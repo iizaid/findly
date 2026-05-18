@@ -11,6 +11,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Cache-first coverage checks skip SerpAPI when local results are enough.
 - Evidence cache is checked before paid providers. Linked evidence can be reused in lead lists; unlinked evidence is reported but not inserted as a ghost result.
 - Smart query budgeting reduces Serper/SerpAPI calls as local plus linked evidence coverage improves.
+- Admin imports support controlled CSV, XLSX, and JSON ingestion with source policy metadata and optional linked LeadEvidence creation.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -57,6 +58,7 @@ These platforms are target signals now. Findly does not need direct access to th
 - Verify email.
 - Log in.
 - Import a CSV/XLSX dataset as admin.
+- Import a small JSON dataset as admin with source policy metadata.
 - Run a Local Dataset search.
 - Run searches with Instagram, TikTok, Reddit, Yelp, and TripAdvisor signals.
 - Check that results appear in Lead Lists.

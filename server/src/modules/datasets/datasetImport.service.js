@@ -4,11 +4,169 @@ import { env } from '../../config/env.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { listDatasetFiles, resolveDatasetDir, unsupportedDatasetExtensions } from './datasetPaths.js';
 import { readDatasetWorkbook } from './datasetFileReader.js';
-import { buildDatasetDedupeKeys, mapColumns, normalizeDatasetRow } from './datasetImport.mapper.js';
+import { buildDatasetDedupeKeys, mapColumns, normalizeDatasetRow, normalizeUrlForStorage } from './datasetImport.mapper.js';
+import { assertSourceAllowedForStage, getSourcePolicy, STAGES } from '../search/sourceIntelligencePolicy.service.js';
+import { recordLeadEvidence } from '../search/discoveryEvidence.service.js';
 
 const isMeaningfulRow = (values = []) => values.some((value) => value !== null && value !== undefined && String(value).trim() !== '');
 
 const findHeaderRow = (rows) => rows.find((row) => isMeaningfulRow(row.values) && row.values.filter((value) => String(value || '').trim()).length >= 2);
+
+const importPolicyByExtension = {
+  '.csv': 'CSV_IMPORT',
+  '.xlsx': 'XLSX_IMPORT',
+  '.json': 'JSON_IMPORT',
+};
+
+const acquisitionByExtension = {
+  '.csv': 'CSV_UPLOAD',
+  '.xlsx': 'XLSX_UPLOAD',
+  '.json': 'JSON_UPLOAD',
+};
+
+const presetByExtension = {
+  '.csv': 'csv_dataset',
+  '.xlsx': 'xlsx_dataset',
+  '.json': 'generic_json',
+};
+
+const sourceTypeByPolicy = {
+  CSV_IMPORT: 'DATASET_IMPORT',
+  XLSX_IMPORT: 'DATASET_IMPORT',
+  JSON_IMPORT: 'DATASET_IMPORT',
+  GOOGLE_MAPS_SCRAPER_OUTPUT: 'GOOGLE_MAPS_DATASET',
+  COMMON_CRAWL: 'DATASET_IMPORT',
+  HUGGING_FACE_DATASETS: 'DATASET_IMPORT',
+  LOCAL_DATASET: 'LOCAL_DATASET',
+  MANUAL_ADMIN_IMPORT: 'MANUAL_ADMIN',
+};
+
+const sourceTypeByExtension = {
+  '.csv': 'DATASET_IMPORT',
+  '.xlsx': 'DATASET_IMPORT',
+  '.json': 'DATASET_IMPORT',
+};
+
+const cleanNullableText = (value) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+};
+
+const normalizeImportMetadata = ({ extension, importMetadata = null, sourceTypeOverride = null }) => {
+  const sourcePolicyKey = importMetadata?.sourcePolicyKey || importPolicyByExtension[extension] || 'LOCAL_DATASET';
+  const policy = getSourcePolicy(sourcePolicyKey);
+  return {
+    sourceName: cleanNullableText(importMetadata?.sourceName) || policy?.label || sourcePolicyKey,
+    sourceUrl: normalizeUrlForStorage(importMetadata?.sourceUrl),
+    sourcePolicyKey,
+    acquisitionMethod: importMetadata?.acquisitionMethod || acquisitionByExtension[extension] || 'INTERNAL_RESEARCH',
+    commercialUseAllowed: importMetadata?.commercialUseAllowed ?? null,
+    attributionRequired: importMetadata?.attributionRequired ?? false,
+    licenseName: cleanNullableText(importMetadata?.licenseName),
+    licenseUrl: normalizeUrlForStorage(importMetadata?.licenseUrl),
+    importedFromTool: cleanNullableText(importMetadata?.importedFromTool),
+    riskLevel: importMetadata?.riskLevel || policy?.riskLevel || 'LOW',
+    requiresManualReview: importMetadata?.requiresManualReview ?? Boolean(policy?.requiresManualReview),
+    dataFreshness: cleanNullableText(importMetadata?.dataFreshness),
+    importPreset: importMetadata?.importPreset || presetByExtension[extension] || 'generic_business_directory',
+    evidenceCreationMode: importMetadata?.evidenceCreationMode || 'CATALOG_ONLY',
+    promoteToCatalogMode: importMetadata?.promoteToCatalogMode || 'ALL_VALID_ROWS',
+    requestedSourceType: sourceTypeOverride || null,
+  };
+};
+
+const validateImportPolicy = (metadata) => {
+  const policy = getSourcePolicy(metadata.sourcePolicyKey);
+  if (!policy) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `Unknown sourcePolicyKey: ${metadata.sourcePolicyKey}`, 400);
+  }
+
+  const stageCheck = assertSourceAllowedForStage(metadata.sourcePolicyKey, STAGES.ADMIN_IMPORT);
+  if (!stageCheck.allowed) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, stageCheck.reason, 400);
+  }
+
+  if (metadata.evidenceCreationMode === 'EVIDENCE_ONLY') {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'EVIDENCE_ONLY imports are not supported in Phase 4E. Use CATALOG_ONLY or CREATE_EVIDENCE_AND_CATALOG.', 400);
+  }
+
+  if (metadata.riskLevel === 'BLOCKED') {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Blocked import sources cannot be committed.', 400);
+  }
+
+  if (metadata.riskLevel === 'HIGH' && metadata.requiresManualReview !== true) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'High-risk imports require requiresManualReview=true.', 400);
+  }
+
+  if (metadata.commercialUseAllowed === false && metadata.requiresManualReview !== true) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Imports without commercial-use permission require manual review.', 400);
+  }
+
+  if (policy.requiresLicenseReview && metadata.requiresManualReview !== true) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `${policy.label} imports require manual review.`, 400);
+  }
+
+  if (policy.requiresLicenseReview && !metadata.licenseName && !metadata.licenseUrl) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `${policy.label} imports require licenseName or licenseUrl.`, 400);
+  }
+
+  return {
+    sourcePolicyKey: metadata.sourcePolicyKey,
+    allowed: true,
+    stage: STAGES.ADMIN_IMPORT,
+    riskLevel: metadata.riskLevel,
+    requiresManualReview: metadata.requiresManualReview,
+    warnings: [
+      policy.blockedStages.includes(STAGES.LIVE_DISCOVERY) ? 'Blocked from LIVE_DISCOVERY runtime.' : null,
+      metadata.commercialUseAllowed === false ? 'Commercial use not confirmed; manual review required.' : null,
+      policy.requiresLicenseReview ? 'License review required by source policy.' : null,
+    ].filter(Boolean),
+  };
+};
+
+const discoveryMethodForImport = ({ extension, metadata }) => {
+  if (metadata.sourcePolicyKey === 'GOOGLE_MAPS_SCRAPER_OUTPUT') return 'GOOGLE_MAPS_SCRAPER_OUTPUT';
+  if (metadata.sourcePolicyKey === 'COMMON_CRAWL') return 'COMMON_CRAWL_IMPORT';
+  if (metadata.sourcePolicyKey === 'HUGGING_FACE_DATASETS') return 'HUGGING_FACE_DATASET_IMPORT';
+  if (extension === '.json') return 'JSON_IMPORT';
+  if (extension === '.xlsx') return 'XLSX_IMPORT';
+  return 'CSV_IMPORT';
+};
+
+const sourceTypeForEvidence = ({ extension, metadata }) => {
+  if (metadata.sourcePolicyKey === 'GOOGLE_MAPS_SCRAPER_OUTPUT') return 'GOOGLE_MAPS_SCRAPER_OUTPUT_ROW';
+  if (metadata.sourcePolicyKey === 'COMMON_CRAWL') return 'COMMON_CRAWL_EXPORT_ROW';
+  if (metadata.sourcePolicyKey === 'HUGGING_FACE_DATASETS') return 'HUGGING_FACE_DATASET_ROW';
+  if (extension === '.json') return 'JSON_IMPORT_ROW';
+  return 'DATASET_IMPORT_ROW';
+};
+
+const targetSourceForLead = (lead, metadata) => {
+  if (metadata.sourcePolicyKey === 'GOOGLE_MAPS_SCRAPER_OUTPUT' || lead.googleMapsUrl) return 'GOOGLE_MAPS';
+  if (lead.instagramUrl || lead.instagramUsername) return 'INSTAGRAM';
+  if (lead.facebookUrl) return 'FACEBOOK';
+  if (lead.websiteUrl) return 'WEBSITE';
+  return 'LOCAL_DATASET';
+};
+
+const preferredLeadSourceUrl = (lead) =>
+  normalizeUrlForStorage(lead.googleMapsUrl)
+  || normalizeUrlForStorage(lead.instagramUrl)
+  || normalizeUrlForStorage(lead.facebookUrl)
+  || normalizeUrlForStorage(lead.websiteUrl)
+  || normalizeUrlForStorage(lead.rawData?.sourceUrl)
+  || null;
+
+const importEvidenceConfidence = (lead, metadata) => {
+  let score = lead.businessName ? 60 : 45;
+  if (lead.city) score += 5;
+  if (lead.country) score += 5;
+  if (preferredLeadSourceUrl(lead) || lead.phone || lead.email) score += 10;
+  if (metadata.riskLevel === 'HIGH') score -= 10;
+  if (metadata.requiresManualReview) score -= 5;
+  return Math.max(30, Math.min(80, score));
+};
 
 const normalizeSheetRows = ({ fileName, sheet }) => {
   const headerRow = findHeaderRow(sheet.rows);
@@ -63,6 +221,7 @@ const normalizeSheetRows = ({ fileName, sheet }) => {
 
 export const inspectDatasetFile = async (filePath, _customMapping = null) => {
   const workbook = await readDatasetWorkbook(filePath);
+  const extension = path.extname(filePath).toLowerCase();
   const sheets = workbook.sheets.map((sheet) => {
     // If a custom mapping is provided for this sheet, override it.
     // However, during inspection, usually customMapping is null unless we are re-inspecting.
@@ -75,6 +234,7 @@ export const inspectDatasetFile = async (filePath, _customMapping = null) => {
   return {
     fileName: workbook.fileName,
     filePath,
+    detectedFileType: extension.replace('.', ''),
     sourceType,
     sheets,
     rows,
@@ -157,6 +317,11 @@ const emptySummary = (fileName, sourceType = 'LOCAL_DATASET') => ({
   skippedRows: 0,
   duplicateRows: 0,
   errorRows: 0,
+  evidenceCreatedRows: 0,
+  catalogCreatedRows: 0,
+  duplicateCatalogRows: 0,
+  importMetadata: null,
+  policyDecision: null,
   leadListId: null,
   importId: null,
   unmappedColumns: [],
@@ -186,7 +351,7 @@ const summarizeInspection = (inspection) => {
   return summary;
 };
 
-export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappingConfig = null, sourceTypeOverride = null } = {}) => {
+export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappingConfig = null, sourceTypeOverride = null, importMetadata = null } = {}) => {
   const extension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
   if (unsupportedDatasetExtensions.has(extension)) {
@@ -196,6 +361,13 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
       errors: [`${extension} files are not supported yet. Please convert to .xlsx or .csv.`],
     };
   }
+
+  const normalizedImportMetadata = normalizeImportMetadata({ extension, importMetadata, sourceTypeOverride });
+  const policyDecision = validateImportPolicy(normalizedImportMetadata);
+  const effectiveSourceType = sourceTypeOverride
+    || sourceTypeByPolicy[normalizedImportMetadata.sourcePolicyKey]
+    || sourceTypeByExtension[extension]
+    || null;
 
   // If mappingConfig is provided, we need to apply it directly to the workbook rows.
   // Instead of re-writing inspect, let's just get the workbook and normalize using mappingConfig
@@ -233,7 +405,8 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
   const inspection = {
     fileName: workbook.fileName,
     filePath,
-    sourceType: sourceTypeOverride || detectedSourceType,
+    detectedFileType: extension.replace('.', ''),
+    sourceType: effectiveSourceType || detectedSourceType,
     sheets,
     rows,
     mapping: {
@@ -246,10 +419,17 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
     },
   };
 
-  if (dryRun) return summarizeInspection(inspection);
+  if (dryRun) {
+    const drySummary = summarizeInspection(inspection);
+    drySummary.importMetadata = normalizedImportMetadata;
+    drySummary.policyDecision = policyDecision;
+    return drySummary;
+  }
 
   const summary = emptySummary(inspection.fileName, inspection.sourceType);
   summary.unmappedColumns = [...new Set(inspection.sheets.flatMap((sheet) => sheet.unmappedHeaders || []))];
+  summary.importMetadata = normalizedImportMetadata;
+  summary.policyDecision = policyDecision;
 
   await prisma.$transaction(async (tx) => {
     const datasetImport = await tx.datasetImport.create({
@@ -260,7 +440,11 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
         filePath: null,
         sourceType: inspection.sourceType,
         status: 'RUNNING',
-        mapping: inspection.mapping,
+        mapping: {
+          ...inspection.mapping,
+          importMetadata: normalizedImportMetadata,
+          policyDecision,
+        },
       },
     });
     summary.importId = datasetImport.id;
@@ -291,6 +475,7 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
 
       if (duplicate) {
         summary.duplicateRows += 1;
+        summary.duplicateCatalogRows += 1;
         await tx.datasetImportRow.create({
           data: {
             importId: datasetImport.id,
@@ -303,6 +488,31 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
             errorMessage: 'Duplicate lead already exists in this workspace.',
           },
         });
+        if (normalizedImportMetadata.evidenceCreationMode === 'CREATE_EVIDENCE_AND_CATALOG') {
+          await recordLeadEvidence({
+            tx,
+            userId: owner?.userId,
+            workspaceId: owner?.workspaceId,
+            catalogLeadId: duplicate.id,
+            targetSource: targetSourceForLead(row.normalizedData, normalizedImportMetadata),
+            discoveryMethod: discoveryMethodForImport({ extension, metadata: normalizedImportMetadata }),
+            sourceType: sourceTypeForEvidence({ extension, metadata: normalizedImportMetadata }),
+            sourceUrl: preferredLeadSourceUrl(row.normalizedData),
+            externalId: row.normalizedData.sourceId || null,
+            title: row.normalizedData.businessName,
+            snippet: row.normalizedData.category || row.normalizedData.address || null,
+            extractedFields: row.normalizedData,
+            rawMetadata: {
+              importId: datasetImport.id,
+              rowNumber: row.rowNumber,
+              sourcePolicyKey: normalizedImportMetadata.sourcePolicyKey,
+              importPreset: normalizedImportMetadata.importPreset,
+            },
+            confidenceScore: importEvidenceConfidence(row.normalizedData, normalizedImportMetadata),
+            attributionRequired: Boolean(normalizedImportMetadata.attributionRequired),
+          });
+          summary.evidenceCreatedRows += 1;
+        }
         continue;
       }
 
@@ -316,6 +526,7 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
       });
 
       summary.importedRows += 1;
+      summary.catalogCreatedRows += 1;
       await tx.datasetImportRow.create({
         data: {
           importId: datasetImport.id,
@@ -327,6 +538,31 @@ export const importDatasetFile = async ({ filePath, owner, dryRun = false, mappi
           catalogLeadId: lead.id,
         },
       });
+      if (normalizedImportMetadata.evidenceCreationMode === 'CREATE_EVIDENCE_AND_CATALOG') {
+        await recordLeadEvidence({
+          tx,
+          userId: owner?.userId,
+          workspaceId: owner?.workspaceId,
+          catalogLeadId: lead.id,
+          targetSource: targetSourceForLead(row.normalizedData, normalizedImportMetadata),
+          discoveryMethod: discoveryMethodForImport({ extension, metadata: normalizedImportMetadata }),
+          sourceType: sourceTypeForEvidence({ extension, metadata: normalizedImportMetadata }),
+          sourceUrl: preferredLeadSourceUrl(row.normalizedData),
+          externalId: row.normalizedData.sourceId || null,
+          title: row.normalizedData.businessName,
+          snippet: row.normalizedData.category || row.normalizedData.address || null,
+          extractedFields: row.normalizedData,
+          rawMetadata: {
+            importId: datasetImport.id,
+            rowNumber: row.rowNumber,
+            sourcePolicyKey: normalizedImportMetadata.sourcePolicyKey,
+            importPreset: normalizedImportMetadata.importPreset,
+          },
+          confidenceScore: importEvidenceConfidence(row.normalizedData, normalizedImportMetadata),
+          attributionRequired: Boolean(normalizedImportMetadata.attributionRequired),
+        });
+        summary.evidenceCreatedRows += 1;
+      }
     }
 
     await tx.datasetImport.update({

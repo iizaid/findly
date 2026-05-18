@@ -86,4 +86,18 @@ describe('Source Intelligence Policy', () => {
     const cacheCheck = assertSourceAllowedForStage('LEAD_EVIDENCE_CACHE', STAGES.EVIDENCE_REUSE);
     expect(cacheCheck.allowed).toBe(true);
   });
+
+  it('allows controlled admin imports without enabling live runtime scraping', () => {
+    expect(assertSourceAllowedForStage('JSON_IMPORT', STAGES.ADMIN_IMPORT).allowed).toBe(true);
+    expect(assertSourceAllowedForStage('GOOGLE_MAPS_SCRAPER_OUTPUT', STAGES.ADMIN_IMPORT).allowed).toBe(true);
+    expect(assertSourceAllowedForStage('COMMON_CRAWL', STAGES.ADMIN_IMPORT).allowed).toBe(true);
+    expect(assertSourceAllowedForStage('HUGGING_FACE_DATASETS', STAGES.ADMIN_IMPORT).allowed).toBe(true);
+    expect(assertSourceAllowedForStage('GOOGLE_MAPS_SCRAPER_OUTPUT', STAGES.LIVE_DISCOVERY).allowed).toBe(false);
+    expect(assertSourceAllowedForStage('COMMON_CRAWL', STAGES.LIVE_DISCOVERY).allowed).toBe(false);
+    expect(assertSourceAllowedForStage('SPIDERFOOT', STAGES.ADMIN_IMPORT).allowed).toBe(false);
+
+    const hf = getSourcePolicy('HUGGING_FACE_DATASETS');
+    expect(hf.requiresLicenseReview).toBe(true);
+    expect(hf.requiresManualReview).toBe(true);
+  });
 });

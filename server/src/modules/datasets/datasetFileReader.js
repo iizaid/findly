@@ -8,6 +8,9 @@ export const MAX_IMPORT_ROWS = Number(process.env.MAX_IMPORT_ROWS || 25000);
 export const MAX_IMPORT_COLUMNS = Number(process.env.MAX_IMPORT_COLUMNS || 120);
 export const MAX_IMPORT_SHEETS = Number(process.env.MAX_IMPORT_SHEETS || 20);
 export const MAX_XLSX_XML_BYTES = Number(process.env.MAX_XLSX_XML_BYTES || 10 * 1024 * 1024);
+export const MAX_JSON_IMPORT_BYTES = Number(process.env.MAX_JSON_IMPORT_BYTES || 10 * 1024 * 1024);
+
+const DANGEROUS_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -25,6 +28,18 @@ const textOf = (value) => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return value['#text'] ?? '';
   return String(value);
+};
+
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+
+const safeJsonKey = (key) => !DANGEROUS_JSON_KEYS.has(String(key));
+
+const jsonScalarValue = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  return JSON.stringify(value).slice(0, 1000);
 };
 
 const columnIndexFromRef = (ref = '') => {
@@ -168,10 +183,92 @@ export const readCsvWorkbook = async (filePath) => {
   };
 };
 
+const extractJsonRows = (parsed) => {
+  if (Array.isArray(parsed)) return parsed;
+  if (!isPlainObject(parsed)) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'JSON imports must be an array or an object containing leads, businesses, results, or items.', 400);
+  }
+
+  for (const key of ['leads', 'businesses', 'results', 'items']) {
+    if (Array.isArray(parsed[key])) return parsed[key];
+  }
+
+  throw new AppError(errorCodes.VALIDATION_ERROR, 'Unsupported JSON import shape. Expected array, leads, businesses, results, or items.', 400);
+};
+
+const flattenJsonRow = (row, prefix = '', output = {}) => {
+  if (!isPlainObject(row)) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Each JSON import row must be an object.', 400);
+  }
+
+  for (const [key, value] of Object.entries(row)) {
+    if (!safeJsonKey(key)) continue;
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObject(value)) {
+      flattenJsonRow(value, nextKey, output);
+    } else if (Array.isArray(value)) {
+      output[nextKey] = value.map(jsonScalarValue).join(', ');
+    } else {
+      output[nextKey] = jsonScalarValue(value);
+    }
+  }
+  return output;
+};
+
+export const readJsonWorkbook = async (filePath) => {
+  const stat = await fs.stat(filePath);
+  if (stat.size <= 0) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'JSON import file is empty.', 400);
+  }
+  if (stat.size > MAX_JSON_IMPORT_BYTES) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `JSON import files may be at most ${MAX_JSON_IMPORT_BYTES} bytes.`, 400);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse((await fs.readFile(filePath, 'utf8')).replace(/^\uFEFF/, ''));
+  } catch {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'Invalid JSON import file.', 400);
+  }
+
+  const sourceRows = extractJsonRows(parsed);
+  if (sourceRows.length > MAX_IMPORT_ROWS) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_ROWS} rows.`, 400);
+  }
+
+  const flattenedRows = sourceRows.map((row) => flattenJsonRow(row));
+  const headerSet = new Set();
+  for (const row of flattenedRows) {
+    for (const key of Object.keys(row)) {
+      if (safeJsonKey(key)) headerSet.add(key);
+      if (headerSet.size > MAX_IMPORT_COLUMNS) {
+        throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_COLUMNS} columns.`, 400);
+      }
+    }
+  }
+
+  const headers = [...headerSet];
+  return {
+    fileName: path.basename(filePath),
+    detectedFileType: 'json',
+    sheets: [{
+      name: 'JSON',
+      rows: [
+        { rowNumber: 1, values: headers },
+        ...flattenedRows.map((row, index) => ({
+          rowNumber: index + 2,
+          values: headers.map((header) => row[header] ?? ''),
+        })),
+      ],
+    }],
+  };
+};
+
 export const readDatasetWorkbook = async (filePath) => {
   const extension = path.extname(filePath).toLowerCase();
   if (extension === '.xlsx') return readXlsxWorkbook(filePath);
   if (extension === '.csv') return readCsvWorkbook(filePath);
+  if (extension === '.json') return readJsonWorkbook(filePath);
   
   throw new AppError(errorCodes.VALIDATION_ERROR, `Unsupported dataset file extension: ${extension}`, 400);
 };

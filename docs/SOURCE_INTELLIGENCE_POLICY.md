@@ -14,7 +14,7 @@ Findly's discovery engine is governed by the **Source Intelligence Policy**. Thi
 - **Search Metadata:** Compliant SERP APIs for signal gathering (`SERPER`, `SERPAPI`). Paid/Low.
 - **Official APIs:** Direct partner/official APIs (`GOOGLE_PLACES`). Paid/Medium.
 - **Enrichment:** Targeted specific data retrieval (`WEBSITE_METADATA`).
-- **Admin OSINT & Offline Imports:** High-risk, offline or admin-only tools (`SPIDERFOOT`, `COMMON_CRAWL`, `CSV_IMPORT`, `HUGGING_FACE_DATASETS`). Blocked from live user discovery, reserved for backend admin operations or offline data merging.
+- **Admin OSINT & Offline Imports:** High-risk, offline or admin-only tools (`SPIDERFOOT`, `COMMON_CRAWL`, `CSV_IMPORT`, `XLSX_IMPORT`, `JSON_IMPORT`, `HUGGING_FACE_DATASETS`). Blocked from live user discovery, reserved for backend admin operations or offline data merging.
 
 ## Enforcement
 The `assertSourceAllowedForStage` function checks the source policy before a source is used at a specific stage. If a source is not authorized for `LIVE_DISCOVERY` (for example Common Crawl, Hugging Face datasets, SpiderFoot, Google Maps scraper output, CSV/XLSX/JSON imports, website metadata, or Snov.io), it is blocked from live user runtime.
@@ -27,5 +27,7 @@ That does not mean those sources are bad data sources. It means they belong to d
 - Website metadata: enrichment only.
 - Snov.io: future email enrichment only.
 - CSV/XLSX/JSON imports: admin import only.
+
+Phase 4E exposes `JSON_IMPORT` for controlled admin/offline ingestion only. It does not make JSON an end-user runtime discovery source.
 
 Live discovery runtime remains limited to approved search metadata providers such as `SERPER` and `SERPAPI`, with Google Places handled separately as an official local-business API stage.

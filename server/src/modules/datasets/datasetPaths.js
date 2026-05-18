@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..', '..', '..');
 const projectRoot = path.resolve(serverRoot, '..');
 
-export const supportedDatasetExtensions = new Set(['.xlsx', '.csv']);
+export const supportedDatasetExtensions = new Set(['.xlsx', '.csv', '.json']);
 export const unsupportedDatasetExtensions = new Set(['.xls']);
 
 const candidateDirs = () => {

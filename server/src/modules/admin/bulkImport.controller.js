@@ -78,6 +78,7 @@ export const parseImportFile = asyncHandler(async (req, res) => {
       fileName: originalName,
       fileKey,
       sourceType: inspection.sourceType,
+      detectedFileType: inspection.detectedFileType,
       sheets: inspection.sheets.map(sheet => ({
         name: sheet.sheetName || 'Sheet1',
         rowCount: sheet.rows.length,
@@ -96,7 +97,7 @@ export const parseImportFile = asyncHandler(async (req, res) => {
 });
 
 export const commitImportFile = asyncHandler(async (req, res) => {
-  const { fileKey, mappingConfig, sourceType } = req.validated.body;
+  const { fileKey, mappingConfig, sourceType, importMetadata } = req.validated.body;
   const filePath = safeResolveUploadFile(fileKey);
   if (!filePath) throw new AppError(errorCodes.VALIDATION_ERROR, 'Invalid file key.', 400);
 
@@ -115,7 +116,14 @@ export const commitImportFile = asyncHandler(async (req, res) => {
 
   let summary;
   try {
-    summary = await importDatasetFile({ filePath, owner, dryRun: false, mappingConfig: internalMappingConfig, sourceTypeOverride: sourceType });
+    summary = await importDatasetFile({
+      filePath,
+      owner,
+      dryRun: false,
+      mappingConfig: internalMappingConfig,
+      sourceTypeOverride: sourceType,
+      importMetadata,
+    });
 
     await prisma.auditLog.create({
       data: {
@@ -128,6 +136,8 @@ export const commitImportFile = asyncHandler(async (req, res) => {
           fileName: summary.fileName,
           totalRows: summary.totalRows,
           importedRows: summary.importedRows,
+          evidenceCreatedRows: summary.evidenceCreatedRows,
+          policyDecision: summary.policyDecision,
           usedCustomMapping: Boolean(mappingConfig),
         },
         ipAddress: req.ip,

@@ -3,9 +3,11 @@ import fs from 'node:fs/promises';
 import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 
-const ALLOWED_EXTENSIONS = new Set(['.csv', '.xlsx']);
+const ALLOWED_EXTENSIONS = new Set(['.csv', '.xlsx', '.json']);
 const ALLOWED_MIME_TYPES = new Set([
   'text/csv',
+  'text/json',
+  'application/json',
   'application/csv',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -145,12 +147,12 @@ export const cleanupExpiredAdminUploads = async () => {
 export const uploadFileFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) {
-    cb(new Error(`Unsupported file type: ${ext}. Only .csv and .xlsx are allowed.`));
+    cb(new Error(`Unsupported file type: ${ext}. Only .csv, .xlsx, and .json are allowed.`));
     return;
   }
 
   if (file.mimetype && !ALLOWED_MIME_TYPES.has(file.mimetype)) {
-    cb(new Error(`Unsupported file type: ${ext}. Only .csv and .xlsx are allowed.`));
+    cb(new Error(`Unsupported file type: ${ext}. Only .csv, .xlsx, and .json are allowed.`));
     return;
   }
 
@@ -174,6 +176,21 @@ export const validateAdminUploadContent = async (filePath, originalName) => {
     const text = sample.toString('utf8').trimStart().toLowerCase();
     if (text.startsWith('<!doctype html') || text.startsWith('<html') || text.startsWith('<script') || text.startsWith('<?xml')) {
       return false;
+    }
+    if (ext === '.json') {
+      const content = await fs.readFile(filePath, 'utf8');
+      if (!content.trim()) return false;
+      try {
+        const parsed = JSON.parse(content.replace(/^\uFEFF/, ''));
+        if (Array.isArray(parsed)) return parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row));
+        if (parsed && typeof parsed === 'object') {
+          return ['leads', 'businesses', 'results', 'items'].some((key) =>
+            Array.isArray(parsed[key]) && parsed[key].every((row) => row && typeof row === 'object' && !Array.isArray(row)));
+        }
+        return false;
+      } catch {
+        return false;
+      }
     }
     return !sample.includes(0x00);
   } finally {

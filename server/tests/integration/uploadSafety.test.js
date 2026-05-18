@@ -44,12 +44,11 @@ describe('Upload cleanup service', () => {
   it('rejects fileKey with unsupported extension', () => {
     expect(safeResolveUploadFile('file.exe')).toBeNull();
     expect(safeResolveUploadFile('file.js')).toBeNull();
-    expect(safeResolveUploadFile('file.json')).toBeNull();
     expect(safeResolveUploadFile('file.txt')).toBeNull();
     expect(safeResolveUploadFile('file.xls')).toBeNull();
   });
 
-  it('accepts valid .csv and .xlsx fileKeys', () => {
+  it('accepts valid .csv, .xlsx, and .json fileKeys', () => {
     const csvPath = safeResolveUploadFile('abc123.csv');
     expect(csvPath).not.toBeNull();
     expect(csvPath.startsWith(uploadDir)).toBe(true);
@@ -57,6 +56,10 @@ describe('Upload cleanup service', () => {
     const xlsxPath = safeResolveUploadFile('abc123.xlsx');
     expect(xlsxPath).not.toBeNull();
     expect(xlsxPath.startsWith(uploadDir)).toBe(true);
+
+    const jsonPath = safeResolveUploadFile('abc123.json');
+    expect(jsonPath).not.toBeNull();
+    expect(jsonPath.startsWith(uploadDir)).toBe(true);
   });
 
   it('rejects null, empty, and non-string fileKeys', () => {
@@ -123,7 +126,7 @@ describe('Upload cleanup service', () => {
     expect(await removeAdminUploadFile('file.exe')).toBe(false);
   });
 
-  it('uploadFileFilter accepts csv/xlsx and rejects others', () => {
+  it('uploadFileFilter accepts csv/xlsx/json and rejects others', () => {
     const accepted = [];
     const rejected = [];
 
@@ -133,6 +136,9 @@ describe('Upload cleanup service', () => {
     uploadFileFilter(null, { originalname: 'data.xlsx' }, (err, accept) => {
       if (accept) accepted.push('xlsx'); else rejected.push('xlsx');
     });
+    uploadFileFilter(null, { originalname: 'data.json', mimetype: 'application/json' }, (err, accept) => {
+      if (accept) accepted.push('json'); else rejected.push('json');
+    });
     uploadFileFilter(null, { originalname: 'data.exe' }, (err, _accept) => {
       if (err) rejected.push('exe'); else accepted.push('exe');
     });
@@ -140,7 +146,7 @@ describe('Upload cleanup service', () => {
       if (err) rejected.push('txt'); else accepted.push('txt');
     });
 
-    expect(accepted).toEqual(['csv', 'xlsx']);
+    expect(accepted).toEqual(['csv', 'xlsx', 'json']);
     expect(rejected).toContain('exe');
     expect(rejected).toContain('txt');
   });
@@ -168,17 +174,39 @@ describe('Upload cleanup service', () => {
     expect(await validateAdminUploadContent(badXlsxFile, 'bad.xlsx')).toBe(false);
   });
 
+  it('validates admin JSON uploads by content, not just extension', async () => {
+    const validJsonFile = path.join(uploadDir, 'test-cleanup-valid.json');
+    const htmlJsonFile = path.join(uploadDir, 'test-cleanup-html.json');
+    const invalidJsonFile = path.join(uploadDir, 'test-cleanup-invalid.json');
+    const unsupportedJsonFile = path.join(uploadDir, 'test-cleanup-unsupported.json');
+
+    await fs.writeFile(validJsonFile, JSON.stringify([{ businessName: 'Cafe', city: 'Amman' }]));
+    await fs.writeFile(htmlJsonFile, '<script>alert(1)</script>');
+    await fs.writeFile(invalidJsonFile, '{"businessName":');
+    await fs.writeFile(unsupportedJsonFile, JSON.stringify({ meta: { count: 1 } }));
+
+    expect(await validateAdminUploadContent(validJsonFile, 'valid.json')).toBe(true);
+    expect(await validateAdminUploadContent(htmlJsonFile, 'html.json')).toBe(false);
+    expect(await validateAdminUploadContent(invalidJsonFile, 'invalid.json')).toBe(false);
+    expect(await validateAdminUploadContent(unsupportedJsonFile, 'unsupported.json')).toBe(false);
+
+    await fs.unlink(validJsonFile).catch(() => {});
+    await fs.unlink(htmlJsonFile).catch(() => {});
+    await fs.unlink(invalidJsonFile).catch(() => {});
+    await fs.unlink(unsupportedJsonFile).catch(() => {});
+  });
+
   it('static uploads are served with nosniff headers and admin temp files are not public', async () => {
     const publicUploadDir = path.join(process.cwd(), 'public', 'uploads');
     const publicFile = path.join(publicUploadDir, 'test-cleanup-public.txt');
-    const adminFile = path.join(uploadDir, 'test-cleanup-private.csv');
+    const adminFile = path.join(uploadDir, 'test-cleanup-private.json');
     await fs.writeFile(publicFile, 'public');
     await fs.writeFile(adminFile, 'private');
 
     const publicRes = await request(createApp()).get('/uploads/test-cleanup-public.txt').expect(200);
     expect(publicRes.headers['x-content-type-options']).toBe('nosniff');
 
-    await request(createApp()).get('/uploads/test-cleanup-private.csv').expect(404);
+    await request(createApp()).get('/uploads/test-cleanup-private.json').expect(404);
 
     await fs.unlink(publicFile).catch(() => {});
     await fs.unlink(adminFile).catch(() => {});

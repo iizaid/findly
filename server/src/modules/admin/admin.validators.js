@@ -4,8 +4,14 @@ import { paginationQuerySchema } from '../../utils/pagination.js';
 const datasetSourceTypeSchema = z.enum([
   'LOCAL_DATASET',
   'DATASET_IMPORT',
+  'JSON_IMPORT',
+  'CSV_IMPORT',
+  'XLSX_IMPORT',
   'INSTAGRAM_DATASET',
   'GOOGLE_MAPS_DATASET',
+  'GOOGLE_MAPS_SCRAPER_OUTPUT',
+  'COMMON_CRAWL',
+  'HUGGING_FACE_DATASETS',
   'MANUAL_ADMIN',
 ]);
 
@@ -64,7 +70,7 @@ export const ALLOWED_TARGET_FIELDS = new Set([
   'businessName', 'category', 'country', 'governorate', 'city', 'address',
   'phone', 'whatsappNumber', 'email',
   'websiteUrl', 'instagramUrl', 'instagramUsername', 'facebookUrl', 'googleMapsUrl',
-  'rating', 'reviewCount', 'notes', 'sourceUrl', 'sourceType',
+  'rating', 'reviewCount', 'latitude', 'longitude', 'notes', 'source', 'sourceUrl', 'sourceType',
 ]);
 
 
@@ -108,6 +114,62 @@ export const commitImportSchema = z.object({
     mappingConfig: z.object({
       sheets: z.array(mappingSheetSchema).min(1),
     }).optional().nullable(),
+    importMetadata: z.object({
+      sourceName: z.string().trim().min(1).max(200).optional(),
+      sourceUrl: z.union([z.literal(''), z.string().url()]).optional().nullable(),
+      sourcePolicyKey: z.enum([
+        'LOCAL_DATASET',
+        'CSV_IMPORT',
+        'XLSX_IMPORT',
+        'JSON_IMPORT',
+        'MANUAL_ADMIN_IMPORT',
+        'GOOGLE_MAPS_SCRAPER_OUTPUT',
+        'COMMON_CRAWL',
+        'HUGGING_FACE_DATASETS',
+        'SPIDERFOOT',
+      ]).optional(),
+      acquisitionMethod: z.enum([
+        'MANUAL_ADMIN_ENTRY',
+        'CSV_UPLOAD',
+        'XLSX_UPLOAD',
+        'JSON_UPLOAD',
+        'OFFLINE_TOOL_EXPORT',
+        'OFFLINE_CORPUS_EXPORT',
+        'LICENSED_DATASET_EXPORT',
+        'INTERNAL_RESEARCH',
+      ]).optional(),
+      commercialUseAllowed: z.boolean().optional().nullable(),
+      attributionRequired: z.boolean().optional().nullable(),
+      licenseName: z.string().trim().max(200).optional().nullable(),
+      licenseUrl: z.union([z.literal(''), z.string().url()]).optional().nullable(),
+      importedFromTool: z.string().trim().max(200).optional().nullable(),
+      riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH', 'BLOCKED']).optional(),
+      requiresManualReview: z.boolean().optional(),
+      dataFreshness: z.string().trim().max(80).optional().nullable(),
+      importPreset: z.enum([
+        'generic_json',
+        'google_maps_scraper_json',
+        'google_maps_scraper_csv',
+        'common_crawl_export_json',
+        'hugging_face_dataset_export_json',
+        'manual_admin_dataset',
+        'generic_business_directory',
+        'csv_dataset',
+        'xlsx_dataset',
+      ]).optional(),
+      evidenceCreationMode: z.enum([
+        'CATALOG_ONLY',
+        'EVIDENCE_ONLY',
+        'CREATE_EVIDENCE_AND_CATALOG',
+        'NONE',
+      ]).optional(),
+      promoteToCatalogMode: z.enum([
+        'ALL_VALID_ROWS',
+        'HIGH_CONFIDENCE_ONLY',
+        'MANUAL_REVIEW_REQUIRED',
+        'NONE',
+      ]).optional(),
+    }).strict().optional().nullable(),
   }),
 });
 
