@@ -12,6 +12,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Evidence cache is checked before paid providers. Linked evidence can be reused in lead lists; unlinked evidence is reported but not inserted as a ghost result.
 - Smart query budgeting reduces Serper/SerpAPI calls as local plus linked evidence coverage improves.
 - Admin imports support controlled CSV, XLSX, and JSON ingestion with source policy metadata and optional linked LeadEvidence creation.
+- Existing leads can be enriched with safe homepage website metadata. This records conversion-path and digital-presence signals as `LeadEvidence` without crawling or storing raw HTML.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -32,6 +33,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 6. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
 7. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
 8. Website metadata remains enrichment for existing leads, not a standalone scraper.
+9. Website enrichment checks recent `WEBSITE_METADATA` evidence before refetching the same normalized URL.
 
 ## API Keys Needed Later
 
@@ -84,7 +86,8 @@ These platforms are target signals now. Findly does not need direct access to th
 - Social scraping.
 - Google Maps scraping inside SaaS runtime.
 - Browser automation, login automation, and proxy scraping.
+- Full website crawling and JavaScript browser rendering.
 
 ## Next Phase
 
-Phase 5: Website metadata plus robots and sitemap upgrade.
+Phase 5B: Website intelligence UI and background enrichment jobs.

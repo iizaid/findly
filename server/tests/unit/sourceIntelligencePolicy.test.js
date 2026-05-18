@@ -87,6 +87,19 @@ describe('Source Intelligence Policy', () => {
     expect(cacheCheck.allowed).toBe(true);
   });
 
+  it('scopes WEBSITE_METADATA to enrichment only', () => {
+    const policy = getSourcePolicy('WEBSITE_METADATA');
+    expect(policy).toBeDefined();
+    expect(policy.allowedStages).toContain(STAGES.WEBSITE_ENRICHMENT);
+    expect(policy.blockedStages).toContain(STAGES.LIVE_DISCOVERY);
+    expect(policy.userCampaignAllowed).toBe(false);
+    expect(policy.canRunForUserCampaign).toBe(false);
+    expect(policy.canCreateEvidence).toBe(true);
+    expect(policy.canPromoteToCatalog).toBe(false);
+    expect(assertSourceAllowedForStage('WEBSITE_METADATA', STAGES.WEBSITE_ENRICHMENT).allowed).toBe(true);
+    expect(assertSourceAllowedForStage('WEBSITE_METADATA', STAGES.LIVE_DISCOVERY).allowed).toBe(false);
+  });
+
   it('allows controlled admin imports without enabling live runtime scraping', () => {
     expect(assertSourceAllowedForStage('JSON_IMPORT', STAGES.ADMIN_IMPORT).allowed).toBe(true);
     expect(assertSourceAllowedForStage('GOOGLE_MAPS_SCRAPER_OUTPUT', STAGES.ADMIN_IMPORT).allowed).toBe(true);

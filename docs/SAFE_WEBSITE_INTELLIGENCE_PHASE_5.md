@@ -1,0 +1,150 @@
+# Phase 5: Safe Website Intelligence
+
+## What Phase 5 Adds
+
+Phase 5 adds a safe website metadata enrichment foundation for existing leads. It analyzes only a lead's public homepage URL and extracts small, structured metadata that can explain digital-presence opportunity gaps.
+
+It can detect:
+
+- Website reachable or unreachable.
+- Redirected, non-HTML, timed out, or truncated responses.
+- Title and meta description quality.
+- Contact, menu, booking/reservation, WhatsApp, email, and phone links.
+- Instagram, Facebook, TikTok/X-style social links.
+- Google Maps links.
+- JSON-LD structured data.
+- Local business schema, opening hours, aggregate rating, and address signals.
+- Possible placeholder or sparse sites.
+- Strong or weak conversion paths.
+
+## What Phase 5 Does Not Add
+
+Phase 5 does not add crawling, scraping, browser automation, Playwright, Puppeteer, proxy use, social scraping, direct social APIs, Snov.io, Common Crawl runtime, SpiderFoot runtime, Google Maps scraper runtime, payments, or outreach generation.
+
+## Why This Is Not Scraping
+
+The service performs a single controlled homepage metadata fetch for an existing lead's website URL. It does not crawl the site, follow arbitrary page graphs, log into platforms, bypass protections, render JavaScript, or collect raw page content for storage.
+
+## Safe Fetch Rules
+
+Website enrichment uses the existing SSRF-aware safe fetch utility:
+
+- Only `http` and `https` URLs are allowed.
+- Localhost, loopback, link-local, private, multicast, and reserved IP ranges are blocked.
+- URL credentials are rejected.
+- Redirects are limited and every redirect is revalidated.
+- Requests use a timeout.
+- Response bytes are capped.
+- Non-HTML responses are treated as metadata-limited and do not get parsed as HTML.
+- Raw HTML is not returned or stored.
+
+Default limits:
+
+- `WEBSITE_FETCH_TIMEOUT_MS=5000`
+- `WEBSITE_FETCH_MAX_BYTES=512000`
+- `WEBSITE_FETCH_MAX_REDIRECTS=3`
+- `WEBSITE_ENRICHMENT_TTL_DAYS=30`
+
+## Metadata Extracted
+
+The service extracts:
+
+- `title`
+- `meta description`
+- canonical URL
+- Open Graph title, description, and URL
+- language
+- robots meta
+- categorized link summaries
+- JSON-LD schema presence and schema types
+- local business schema indicators
+- page size and placeholder indicators
+
+Link summaries are capped by category and include only normalized support fields, not the full link graph.
+
+## Opportunity Signals
+
+Signals are deterministic objects with:
+
+- `key`
+- `severity`
+- `confidence`
+- `reason`
+- optional support metadata
+
+Current signal keys include:
+
+- `WEBSITE_REACHABLE`
+- `WEBSITE_UNREACHABLE`
+- `WEBSITE_TIMEOUT`
+- `WEBSITE_NON_HTML`
+- `WEBSITE_REDIRECTED`
+- `HAS_TITLE`
+- `WEAK_TITLE`
+- `HAS_META_DESCRIPTION`
+- `WEAK_META_DESCRIPTION`
+- `MISSING_CONTACT_LINK`
+- `HAS_CONTACT_LINK`
+- `HAS_MENU_LINK`
+- `MISSING_MENU_LINK`
+- `HAS_BOOKING_LINK`
+- `MISSING_BOOKING_LINK`
+- `HAS_WHATSAPP_LINK`
+- `HAS_EMAIL_LINK`
+- `HAS_PHONE_LINK`
+- `HAS_SOCIAL_LINKS`
+- `HAS_INSTAGRAM_LINK`
+- `HAS_FACEBOOK_LINK`
+- `HAS_GOOGLE_MAPS_LINK`
+- `HAS_SCHEMA_ORG`
+- `HAS_LOCAL_BUSINESS_SCHEMA`
+- `POSSIBLE_PLACEHOLDER_SITE`
+- `STRONG_CONVERSION_PATH`
+- `WEAK_CONVERSION_PATH`
+
+## Evidence Storage
+
+Website enrichment records `LeadEvidence` with:
+
+- `targetSource = WEBSITE`
+- `discoveryMethod = WEBSITE_METADATA`
+- `sourceType = WEBSITE_METADATA`
+- `sourceUrl = normalized website URL`
+- `extractedFields = metadata and signals`
+- `rawMetadata = status, final URL, fetch timing, warnings, and limits`
+
+Raw HTML is never stored. Snippets are hashed by the existing evidence service.
+
+## Cache / TTL Behavior
+
+Before fetching, the service checks for recent `WEBSITE_METADATA` evidence for the same lead/catalog lead and normalized URL. If evidence is within `WEBSITE_ENRICHMENT_TTL_DAYS`, it returns the cached summary unless `forceRefresh` is used.
+
+## Limitations
+
+- Homepage only.
+- No sitemap or robots.txt logic yet.
+- No JavaScript rendering.
+- No deep page extraction.
+- No UI display in this phase.
+- No background job scheduling in this phase.
+
+## Future Work
+
+- Phase 5B: admin/UI display for website intelligence signals.
+- Background job scheduling and rate controls.
+- Robots and sitemap-aware improvements.
+- Optional deeper page analysis with strict page limits.
+- Outreach and recommendation generation after signals are proven useful.
+
+## Validation Commands
+
+Run:
+
+```bash
+npm run build
+cd server
+npm test
+npm run lint
+npx prisma validate
+npx prisma migrate status
+```

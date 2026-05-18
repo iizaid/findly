@@ -30,4 +30,6 @@ That does not mean those sources are bad data sources. It means they belong to d
 
 Phase 4E exposes `JSON_IMPORT` for controlled admin/offline ingestion only. It does not make JSON an end-user runtime discovery source.
 
+Phase 5 activates `WEBSITE_METADATA` only for the `WEBSITE_ENRICHMENT` stage. It can enrich an existing lead by safely fetching a single homepage and recording metadata evidence, but it remains blocked from `LIVE_DISCOVERY` and cannot create new leads by itself.
+
 Live discovery runtime remains limited to approved search metadata providers such as `SERPER` and `SERPAPI`, with Google Places handled separately as an official local-business API stage.

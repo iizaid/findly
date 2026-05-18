@@ -219,9 +219,9 @@ const safeHttpGetText = (parsedUrl, safeIp, options) => {
 };
 
 export const safeFetchTextWithLimit = async (url, options = {}, redirectCount = 0) => {
-  const MAX_REDIRECTS = 5;
+  const maxRedirects = options.maxRedirects ?? 5;
 
-  if (redirectCount > MAX_REDIRECTS) {
+  if (redirectCount > maxRedirects) {
     throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Too many redirects.', 400);
   }
 
@@ -230,6 +230,10 @@ export const safeFetchTextWithLimit = async (url, options = {}, redirectCount = 
   const response = await safeHttpGetText(parsedUrl, safeIp, options);
 
   if (response.isRedirect) {
+    if (redirectCount >= maxRedirects) {
+      throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Too many redirects.', 400);
+    }
+
     const location = response.headers.location;
     if (!location) {
       throw new AppError(errorCodes.SOURCE_UNAVAILABLE, 'Redirect location missing.', 400);
@@ -247,5 +251,9 @@ export const safeFetchTextWithLimit = async (url, options = {}, redirectCount = 
     return safeFetchTextWithLimit(redirectUrl, options, redirectCount + 1);
   }
 
-  return response;
+  return {
+    ...response,
+    finalUrl: parsedUrl.toString(),
+    redirectsFollowed: redirectCount,
+  };
 };

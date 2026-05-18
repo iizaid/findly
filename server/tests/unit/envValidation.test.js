@@ -30,6 +30,10 @@ describe('production env validation', () => {
 
     expect(parsed.NODE_ENV).toBe('test');
     expect(parsed.CLIENT_ORIGINS).toEqual(['http://localhost:5173']);
+    expect(parsed.WEBSITE_FETCH_TIMEOUT_MS).toBe(5000);
+    expect(parsed.WEBSITE_FETCH_MAX_BYTES).toBe(512000);
+    expect(parsed.WEBSITE_FETCH_MAX_REDIRECTS).toBe(3);
+    expect(parsed.WEBSITE_ENRICHMENT_TTL_DAYS).toBe(30);
   });
 
   it('rejects localhost client origins in production', () => {

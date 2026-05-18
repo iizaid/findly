@@ -36,6 +36,17 @@ The brain dynamically adjusts the max allowed external queries based on the **co
 
 Coverage for skipping paid providers is based on local results plus linked reusable evidence. Unlinked evidence is useful context, but it does not count as direct lead-list coverage unless it has already been safely promoted or linked.
 
+## 3. Website Metadata Evidence
+
+Phase 5 records safe website intelligence as `LeadEvidence` with `discoveryMethod = WEBSITE_METADATA`. This evidence is enrichment-only: it helps explain opportunity gaps for an existing lead, but it is not a standalone discovery source and does not promote new catalog leads.
+
+Website metadata evidence stores only a small sanitized summary:
+- reachable status, status code, final URL, fetch timing, and warnings
+- title/meta/schema/link indicators
+- deterministic opportunity signals
+
+Raw HTML is not stored. Recent website metadata evidence can be reused for the same lead/catalog lead and normalized URL within the configured TTL so Findly does not refetch the same homepage unnecessarily.
+
 ### Decision Transparency
 To provide maximum clarity to developers and auditors, the engine surfaces precise `skippedReasons` such as:
 - `LOCAL_COVERAGE_SUFFICIENT`
