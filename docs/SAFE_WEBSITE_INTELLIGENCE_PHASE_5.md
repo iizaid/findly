@@ -167,7 +167,7 @@ Operational controls:
 
 - Default max job size is `WEBSITE_ENRICHMENT_JOB_MAX_ITEMS=25`.
 - Hard cap is 100 items through environment validation.
-- Default concurrency is `WEBSITE_ENRICHMENT_JOB_CONCURRENCY=1`.
+- `WEBSITE_ENRICHMENT_JOB_CONCURRENCY=1` is reserved for future worker hardening; Phase 5C processes one item at a time.
 - Default inter-item delay is `WEBSITE_ENRICHMENT_JOB_ITEM_DELAY_MS=250`.
 - Job creation and processing are admin-only, CSRF-protected for POST requests, and guarded by `WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_WINDOW_MS` / `WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_MAX`.
 

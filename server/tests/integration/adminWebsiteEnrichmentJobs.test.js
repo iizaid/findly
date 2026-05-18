@@ -16,6 +16,7 @@ let catalogLead;
 let noWebsiteLead;
 let unsafeLead;
 let secondLead;
+let lockLead;
 let createWebsiteEnrichmentJob;
 let processWebsiteEnrichmentJob;
 
@@ -129,10 +130,19 @@ beforeAll(async () => {
       websiteUrl: 'http://127.0.0.1/private',
     },
   });
+  lockLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5C Lock ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5c-lock-${unique}`,
+      normalizedFingerprint: `phase-5c-lock-${unique}`,
+      websiteUrl: `https://phase5c-lock-${unique}.example.com`,
+    },
+  });
 });
 
 afterAll(async () => {
-  const leadIds = [catalogLead?.id, secondLead?.id, noWebsiteLead?.id, unsafeLead?.id].filter(Boolean);
+  const leadIds = [catalogLead?.id, secondLead?.id, noWebsiteLead?.id, unsafeLead?.id, lockLead?.id].filter(Boolean);
   await prisma.job.deleteMany({ where: { type: 'WEBSITE_ENRICHMENT_RUN', userId: adminUser?.id } }).catch(() => {});
   await prisma.leadEvidence.deleteMany({ where: { catalogLeadId: { in: leadIds } } }).catch(() => {});
   await prisma.leadListLead.deleteMany({ where: { catalogLeadId: { in: leadIds } } }).catch(() => {});
@@ -200,6 +210,14 @@ describe('admin website enrichment jobs', () => {
     await expect(createWebsiteEnrichmentJob({
       requestedByUserId: adminUser.id,
       workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id, `missing-${unique}`],
+    })).rejects.toThrow('Catalog lead IDs not found:');
+
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
       targetType: 'LEAD',
       mode: 'EXPLICIT_IDS',
       catalogLeadIds: [catalogLead.id],
@@ -258,6 +276,53 @@ describe('admin website enrichment jobs', () => {
     expect(JSON.stringify(evidence)).not.toContain('<html');
     expect(await prisma.leadCatalog.count()).toBe(catalogCountBefore);
     expect(await prisma.leadListLead.count()).toBe(listRowsBefore);
+  });
+
+  it('prevents concurrent process calls from processing the same queued item twice', async () => {
+    let releaseFetch;
+    const slowFetcher = vi.fn((url) => new Promise((resolve) => {
+      releaseFetch = () => resolve({
+        ok: true,
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        text: html,
+        truncated: false,
+        finalUrl: url,
+        redirectsFollowed: 0,
+      });
+    }));
+
+    const job = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [lockLead.id],
+      forceRefresh: true,
+    });
+
+    const firstRun = processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher });
+    await vi.waitFor(() => expect(slowFetcher).toHaveBeenCalledTimes(1));
+
+    await expect(processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher }))
+      .rejects
+      .toMatchObject({ code: 'JOB_ALREADY_RUNNING' });
+
+    releaseFetch();
+    const processed = await firstRun;
+
+    expect(processed.status).toBe('COMPLETED');
+    expect(processed.succeededItems).toBe(1);
+    expect(slowFetcher).toHaveBeenCalledTimes(1);
+
+    const evidenceCount = await prisma.leadEvidence.count({
+      where: {
+        catalogLeadId: lockLead.id,
+        discoveryMethod: 'WEBSITE_METADATA',
+        sourceType: 'WEBSITE_METADATA',
+      },
+    });
+    expect(evidenceCount).toBe(1);
   });
 
   it('reuses recent evidence when forceRefresh is false and refetches when forceRefresh is true', async () => {

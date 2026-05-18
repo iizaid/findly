@@ -17,7 +17,7 @@ export const processJob = async (job) => {
     }
 
     if (job.type === WEBSITE_ENRICHMENT_JOB_TYPE) {
-      return processWebsiteEnrichmentJob({ jobId: job.id });
+      return processWebsiteEnrichmentJob({ jobId: job.id, useExistingLock: true });
     }
 
     throw new AppError(errorCodes.VALIDATION_ERROR, `Unsupported job type: ${job.type}.`, 400);

@@ -15,6 +15,8 @@ const nowIso = () => new Date().toISOString();
 
 const maxItemsLimit = () => Math.min(100, env.WEBSITE_ENRICHMENT_JOB_MAX_ITEMS || 25);
 
+const lockStaleBefore = () => new Date(Date.now() - (env.JOB_STALE_TIMEOUT_MINUTES * 60 * 1000));
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const uniqueIds = (ids = []) => {
@@ -209,6 +211,13 @@ const loadCatalogLeadsForJob = async ({ mode, catalogLeadIds, limit }) => {
       where: { id: { in: ids } },
       select: { id: true, businessName: true, websiteUrl: true },
       orderBy: { createdAt: 'desc' },
+    }).then((leads) => {
+      const found = new Set(leads.map((lead) => lead.id));
+      const missing = ids.filter((id) => !found.has(id));
+      if (missing.length) {
+        throw new AppError(errorCodes.VALIDATION_ERROR, `Catalog lead IDs not found: ${missing.join(', ')}`, 400);
+      }
+      return leads;
     });
   }
 
@@ -327,18 +336,76 @@ const persistJobItems = async ({ jobId, items, status, startedAt = null, complet
       failedAt: null,
       errorCode: null,
       errorMessage: null,
+      lockedAt: null,
+      lockedBy: null,
+      lastHeartbeatAt: null,
     },
   });
 };
 
-export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher } = {}) => {
+const acquireProcessingLock = async ({ jobId, useExistingLock = false }) => {
   const job = await prisma.job.findFirst({
     where: { id: jobId, type: WEBSITE_ENRICHMENT_JOB_TYPE },
   });
   if (!job) throw new AppError(errorCodes.NOT_FOUND, 'Website enrichment job not found.', 404);
   if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
-    return buildWebsiteEnrichmentJobDto(job, { includeItems: true });
+    return { job, lockOwner: job.lockedBy || null, acquired: false };
   }
+
+  if (useExistingLock) {
+    return { job, lockOwner: job.lockedBy || 'existing-worker-lock', acquired: true };
+  }
+
+  const lockOwner = `website-enrichment:${process.pid}:${crypto.randomUUID()}`;
+  const now = new Date();
+  const result = await prisma.job.updateMany({
+    where: {
+      id: jobId,
+      type: WEBSITE_ENRICHMENT_JOB_TYPE,
+      status: { in: ['QUEUED', 'RUNNING'] },
+      OR: [
+        { lockedAt: null },
+        { lockedAt: { lt: lockStaleBefore() } },
+      ],
+    },
+    data: {
+      status: 'RUNNING',
+      lockedAt: now,
+      lockedBy: lockOwner,
+      lastHeartbeatAt: now,
+      startedAt: job.startedAt || now,
+    },
+  });
+
+  if (result.count !== 1) {
+    const current = await prisma.job.findFirst({
+      where: { id: jobId, type: WEBSITE_ENRICHMENT_JOB_TYPE },
+    });
+    if (current?.status === 'COMPLETED' || current?.status === 'FAILED' || current?.status === 'CANCELLED') {
+      return { job: current, lockOwner: current.lockedBy || null, acquired: false };
+    }
+    throw new AppError(errorCodes.JOB_ALREADY_RUNNING, 'Website enrichment job is already running.', 409);
+  }
+
+  const lockedJob = await prisma.job.findFirst({
+    where: { id: jobId, type: WEBSITE_ENRICHMENT_JOB_TYPE },
+  });
+  return { job: lockedJob, lockOwner, acquired: true };
+};
+
+export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, useExistingLock = false } = {}) => {
+  const { job, lockOwner, acquired } = await acquireProcessingLock({ jobId, useExistingLock });
+  if (!acquired) return buildWebsiteEnrichmentJobDto(job, { includeItems: true });
+
+  const heartbeat = () => prisma.job.updateMany({
+    where: {
+      id: job.id,
+      type: WEBSITE_ENRICHMENT_JOB_TYPE,
+      status: 'RUNNING',
+      ...(useExistingLock ? {} : { lockedBy: lockOwner }),
+    },
+    data: { lastHeartbeatAt: new Date() },
+  });
 
   const payload = job.payload || {};
   const items = Array.isArray(payload.items) ? payload.items.map((item) => ({ ...item })) : [];
@@ -367,15 +434,11 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher } =
     return buildWebsiteEnrichmentJobDto(updated, { includeItems: true });
   }
 
-  await prisma.job.update({
-    where: { id: job.id },
-    data: { status: 'RUNNING', startedAt: job.startedAt || new Date(startedAt) },
-  });
-
   let processed = 0;
   for (const { item, index } of queuedIndexes) {
     const itemStartedAt = nowIso();
     items[index] = { ...item, status: 'RUNNING', startedAt: itemStartedAt, updatedAt: itemStartedAt };
+    await heartbeat();
 
     try {
       const result = await enrichLeadWebsite({
@@ -428,7 +491,7 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher } =
   const updated = await persistJobItems({
     jobId,
     items,
-    status: remainingQueued ? 'RUNNING' : 'COMPLETED',
+    status: remainingQueued ? 'QUEUED' : 'COMPLETED',
     startedAt,
     completedAt,
     summary: {
@@ -438,7 +501,7 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher } =
       lastProcessedAt: nowIso(),
       processedItemsLastRun: processed,
       delayMs: env.WEBSITE_ENRICHMENT_JOB_ITEM_DELAY_MS,
-      concurrency: env.WEBSITE_ENRICHMENT_JOB_CONCURRENCY,
+      concurrencyReserved: env.WEBSITE_ENRICHMENT_JOB_CONCURRENCY,
     },
   });
 
