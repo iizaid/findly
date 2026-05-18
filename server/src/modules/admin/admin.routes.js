@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin, requireAuth, requireRoot, requireVerifiedEmail } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
-import { aiProviderTestRateLimiter } from '../../middleware/rateLimit.middleware.js';
+import { aiProviderTestRateLimiter, websiteEnrichmentRateLimiter } from '../../middleware/rateLimit.middleware.js';
 import * as ctrl from './admin.controller.js';
 import * as v from './admin.validators.js';
 
@@ -28,6 +28,10 @@ adminRouter.post('/discovery/providers/:provider/test', requireRoot, aiProviderT
 adminRouter.get('/catalog/stats', ctrl.getCatalogStats);
 adminRouter.get('/catalog/leads', validate(v.adminCatalogLeadsQuerySchema), ctrl.getCatalogLeads);
 adminRouter.post('/catalog/leads', validate(v.adminCreateLeadSchema), ctrl.createCatalogLead);
+adminRouter.get('/catalog-leads/:id/website-intelligence', validate(v.adminWebsiteIntelligenceParamSchema), ctrl.getCatalogLeadWebsiteIntelligence);
+adminRouter.post('/catalog-leads/:id/enrich-website', websiteEnrichmentRateLimiter, validate(v.adminWebsiteEnrichmentSchema), ctrl.enrichCatalogLeadWebsite);
+adminRouter.get('/leads/:id/website-intelligence', validate(v.adminWebsiteIntelligenceParamSchema), ctrl.getLeadWebsiteIntelligence);
+adminRouter.post('/leads/:id/enrich-website', websiteEnrichmentRateLimiter, validate(v.adminWebsiteEnrichmentSchema), ctrl.enrichLeadWebsiteIntelligence);
 adminRouter.get('/imports', validate(v.adminPaginationSchema), ctrl.getAdminImports);
 adminRouter.get('/campaigns', validate(v.adminPaginationSchema), ctrl.getAdminCampaigns);
 adminRouter.get('/security/events', validate(v.adminPaginationSchema), ctrl.getSecurityEvents);

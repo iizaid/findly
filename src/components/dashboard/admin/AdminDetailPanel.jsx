@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { X, Copy, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Copy, CheckCircle2, ChevronDown, ChevronUp, Globe2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { enrichCatalogLeadWebsite, getCatalogLeadWebsiteIntelligence } from '../../../lib/api';
 import { fullDate, actionLabel, sourceLabel, campaignStatusStyle, importStatusStyle, severityStyle } from './admin.utils';
 
 /**
@@ -147,6 +148,149 @@ const TechnicalSection = ({ data }) => {
   );
 };
 
+const signalGroupLabels = {
+  OPPORTUNITY: 'Opportunities',
+  WARNING: 'Warnings',
+  ERROR: 'Issues',
+  POSITIVE: 'Strengths',
+  INFO: 'Info',
+};
+
+const signalBadgeClass = {
+  OPPORTUNITY: 'bg-amber-50 text-amber-700',
+  WARNING: 'bg-orange-50 text-orange-700',
+  ERROR: 'bg-red-50 text-red-700',
+  POSITIVE: 'bg-emerald-50 text-emerald-700',
+  INFO: 'bg-blue-50 text-blue-700',
+};
+
+const WebsiteIntelligenceCard = ({ lead }) => {
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(Boolean(lead?.websiteUrl));
+  const [intelligence, setIntelligence] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setError('');
+    setIntelligence(null);
+    if (!lead?.id || !lead?.websiteUrl) {
+      setInitialLoading(false);
+      return () => { active = false; };
+    }
+    setInitialLoading(true);
+    getCatalogLeadWebsiteIntelligence(lead.id)
+      .then((response) => {
+        if (!active) return;
+        setIntelligence(response.data?.intelligence || null);
+      })
+      .catch(() => {
+        if (active) setError('Website intelligence could not be loaded.');
+      })
+      .finally(() => {
+        if (active) setInitialLoading(false);
+      });
+    return () => { active = false; };
+  }, [lead?.id, lead?.websiteUrl]);
+
+  const groupedSignals = useMemo(() => {
+    const groups = { OPPORTUNITY: [], WARNING: [], ERROR: [], POSITIVE: [], INFO: [] };
+    for (const signal of intelligence?.signals || []) {
+      const severity = groups[signal.severity] ? signal.severity : 'INFO';
+      groups[severity].push(signal);
+    }
+    return groups;
+  }, [intelligence]);
+
+  const handleAnalyze = async () => {
+    if (!lead?.id || !lead?.websiteUrl) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await enrichCatalogLeadWebsite(lead.id, {
+        forceRefresh: Boolean(intelligence),
+      });
+      setIntelligence(response.data || null);
+    } catch {
+      setError('Website intelligence could not be generated.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 rounded-[16px] border border-black/[0.05] bg-[#FAFAF9] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Globe2 size={15} className="text-black/45" />
+            <p className="text-[11px] font-bold uppercase tracking-wider text-secondary">Website Intelligence</p>
+          </div>
+          <p className="mt-1 text-[12px] font-semibold text-black/65">
+            {lead?.websiteUrl ? 'Safe homepage metadata review for this existing catalog lead.' : 'No website URL available for this lead.'}
+          </p>
+        </div>
+        {lead?.websiteUrl && (
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={loading || initialLoading}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-black px-3 py-2 text-[11px] font-bold text-white transition-opacity disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            {intelligence ? 'Refresh' : 'Analyze'}
+          </button>
+        )}
+      </div>
+
+      {initialLoading && <p className="mt-4 text-[12px] font-semibold text-secondary">Loading website intelligence...</p>}
+      {loading && <p className="mt-4 text-[12px] font-semibold text-secondary">Analyzing website safely...</p>}
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded-[12px] bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
+      {!initialLoading && lead?.websiteUrl && !intelligence && !error && (
+        <p className="mt-4 text-[12px] font-semibold text-secondary">Website intelligence has not been generated yet.</p>
+      )}
+
+      {intelligence && (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Pill
+              label={intelligence.reachable ? 'Reachable' : 'Unreachable'}
+              className={intelligence.reachable ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}
+            />
+            {intelligence.cached && <Pill label="Cached" className="bg-blue-50 text-blue-700" />}
+          </div>
+          {intelligence.finalUrl && <Row label="Final URL"><span className="font-mono text-[11px]">{intelligence.finalUrl}</span></Row>}
+          {intelligence.observedAt && <Row label="Checked">{fullDate(intelligence.observedAt)}</Row>}
+          {intelligence.metadata?.title && <Row label="Title">{intelligence.metadata.title}</Row>}
+
+          {Object.entries(groupedSignals).map(([severity, signals]) => (
+            signals.length > 0 && (
+              <div key={severity} className="rounded-[12px] border border-black/[0.04] bg-white px-3 py-2">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-secondary">{signalGroupLabels[severity]}</p>
+                <div className="space-y-2">
+                  {signals.slice(0, 5).map((signal) => (
+                    <div key={`${signal.key}-${signal.reason}`} className="text-[12px] leading-relaxed">
+                      <span className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${signalBadgeClass[severity]}`}>
+                        {signal.key.replace(/_/g, ' ')}
+                      </span>
+                      <span className="font-semibold text-black/65">{signal.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ---- Type-specific details ---- */
 const UserDetail = ({ r }) => (
   <>
@@ -261,6 +405,7 @@ const CatalogDetail = ({ r }) => (
     {r.email && <Row label="Email">{r.email}</Row>}
     <Row label="Added">{fullDate(r.importedAt || r.createdAt)}</Row>
     <Row label="ID"><CopyField value={r.id} /></Row>
+    <WebsiteIntelligenceCard lead={r} />
   </>
 );
 

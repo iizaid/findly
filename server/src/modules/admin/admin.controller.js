@@ -24,6 +24,11 @@ import {
 } from '../search/discoveryProviderSecretsVault.service.js';
 import { getSearchMetadataProviderStatus } from '../search/metadataProviders/searchMetadataProviderRegistry.js';
 import { getResolvedDiscoveryProviderConfig } from '../search/metadataProviders/searchMetadataProviderConfig.service.js';
+import {
+  enrichLeadWebsite,
+  getLatestWebsiteIntelligenceEvidence,
+} from '../search/websiteMetadata.service.js';
+import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { canManageRole, formatRole } from '../auth/roles.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
@@ -768,6 +773,155 @@ export const createCatalogLead = asyncHandler(async (req, res) => {
   });
 
   return successResponse(res, { lead }, 'Manual lead added to catalog successfully.', 201);
+});
+
+const loadCatalogLeadForWebsiteIntelligence = async (id) => {
+  const lead = await prisma.leadCatalog.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      businessName: true,
+      websiteUrl: true,
+    },
+  });
+  if (!lead) throw new AppError(errorCodes.NOT_FOUND, 'Catalog lead not found.', 404);
+  return lead;
+};
+
+const loadLeadForWebsiteIntelligence = async (id) => {
+  const lead = await prisma.lead.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      businessName: true,
+      websiteUrl: true,
+      workspaceId: true,
+      userId: true,
+    },
+  });
+  if (!lead) throw new AppError(errorCodes.NOT_FOUND, 'Lead not found.', 404);
+  return lead;
+};
+
+const catalogWorkspaceForAdmin = async (userId) => {
+  const workspace = await getDefaultWorkspace(userId);
+  if (!workspace) throw new AppError(errorCodes.NOT_FOUND, 'Default workspace not found for this admin user.', 404);
+  return workspace;
+};
+
+const latestWebsiteEvidence = async ({ leadId = null, catalogLeadId = null }) => getLatestWebsiteIntelligenceEvidence({
+  leadId,
+  catalogLeadId,
+});
+
+const websiteIntelligenceFromResult = ({ result, leadId = null, catalogLeadId = null }) => ({
+  leadId,
+  catalogLeadId,
+  websiteUrl: result.websiteUrl || null,
+  finalUrl: result.finalUrl || result.websiteUrl || null,
+  reachable: Boolean(result.reachable),
+  statusCode: result.statusCode || null,
+  cached: Boolean(result.cached),
+  observedAt: result.observedAt || new Date(),
+  evidenceId: result.evidenceId || null,
+  metadata: result.metadata || null,
+  signals: result.signals || [],
+  warnings: result.warnings || [],
+});
+
+export const getCatalogLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
+  const lead = await loadCatalogLeadForWebsiteIntelligence(req.validated.params.id);
+  const intelligence = await latestWebsiteEvidence({ catalogLeadId: lead.id });
+  return successResponse(res, {
+    leadId: null,
+    catalogLeadId: lead.id,
+    websiteUrl: lead.websiteUrl || intelligence?.websiteUrl || null,
+    intelligence,
+  }, intelligence ? 'Website intelligence loaded.' : 'Website intelligence has not been generated yet.');
+});
+
+export const getLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
+  const lead = await loadLeadForWebsiteIntelligence(req.validated.params.id);
+  const intelligence = await latestWebsiteEvidence({ leadId: lead.id });
+  return successResponse(res, {
+    leadId: lead.id,
+    catalogLeadId: null,
+    websiteUrl: lead.websiteUrl || intelligence?.websiteUrl || null,
+    intelligence,
+  }, intelligence ? 'Website intelligence loaded.' : 'Website intelligence has not been generated yet.');
+});
+
+export const enrichCatalogLeadWebsite = asyncHandler(async (req, res) => {
+  const lead = await loadCatalogLeadForWebsiteIntelligence(req.validated.params.id);
+  const websiteUrl = req.validated.body?.websiteUrl || lead.websiteUrl;
+  if (!websiteUrl) throw new AppError(errorCodes.VALIDATION_ERROR, 'Lead does not have a website URL to enrich.', 400);
+  const workspace = await catalogWorkspaceForAdmin(req.user.id);
+  const result = await enrichLeadWebsite({
+    catalogLeadId: lead.id,
+    websiteUrl,
+    requestedByUserId: req.user.id,
+    workspaceId: workspace.id,
+    forceRefresh: Boolean(req.validated.body?.forceRefresh),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'ADMIN_WEBSITE_INTELLIGENCE_ENRICHED',
+      entityType: 'LeadCatalog',
+      entityId: lead.id,
+      metadata: {
+        catalogLeadId: lead.id,
+        evidenceId: result.evidenceId,
+        cached: result.cached,
+        reachable: result.reachable,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(
+    res,
+    websiteIntelligenceFromResult({ result, catalogLeadId: lead.id }),
+    result.cached ? 'Cached website intelligence loaded.' : 'Website intelligence generated.',
+  );
+});
+
+export const enrichLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
+  const lead = await loadLeadForWebsiteIntelligence(req.validated.params.id);
+  const websiteUrl = req.validated.body?.websiteUrl || lead.websiteUrl;
+  if (!websiteUrl) throw new AppError(errorCodes.VALIDATION_ERROR, 'Lead does not have a website URL to enrich.', 400);
+  const result = await enrichLeadWebsite({
+    leadId: lead.id,
+    websiteUrl,
+    requestedByUserId: req.user.id,
+    workspaceId: lead.workspaceId,
+    forceRefresh: Boolean(req.validated.body?.forceRefresh),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'ADMIN_WEBSITE_INTELLIGENCE_ENRICHED',
+      entityType: 'Lead',
+      entityId: lead.id,
+      metadata: {
+        leadId: lead.id,
+        evidenceId: result.evidenceId,
+        cached: result.cached,
+        reachable: result.reachable,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(
+    res,
+    websiteIntelligenceFromResult({ result, leadId: lead.id }),
+    result.cached ? 'Cached website intelligence loaded.' : 'Website intelligence generated.',
+  );
 });
 
 export const getSystemStatus = asyncHandler(async (_req, res) => {

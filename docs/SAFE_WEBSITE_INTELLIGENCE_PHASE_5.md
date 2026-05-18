@@ -119,18 +119,40 @@ Raw HTML is never stored. Snippets are hashed by the existing evidence service.
 
 Before fetching, the service checks for recent `WEBSITE_METADATA` evidence for the same lead/catalog lead and normalized URL. If evidence is within `WEBSITE_ENRICHMENT_TTL_DAYS`, it returns the cached summary unless `forceRefresh` is used.
 
+## Phase 5B Admin Review Workflow
+
+Phase 5B exposes the existing website intelligence service to admins in a controlled review workflow.
+
+Admin API endpoints:
+
+- `GET /api/admin/catalog-leads/:id/website-intelligence`
+- `POST /api/admin/catalog-leads/:id/enrich-website`
+- `GET /api/admin/leads/:id/website-intelligence`
+- `POST /api/admin/leads/:id/enrich-website`
+
+All endpoints require an authenticated, verified admin account. Mutating enrichment requests also require CSRF protection and are rate-limited. Normal users cannot trigger website enrichment from these admin routes.
+
+The admin catalog detail panel now includes a Website Intelligence card. It can:
+
+- Show an empty state when no website intelligence exists.
+- Trigger a single-lead safe website analysis.
+- Show cached versus freshly generated results.
+- Display reachable/unreachable status, final URL, last checked time, title, and grouped opportunity signals.
+- Keep raw HTML and raw provider/evidence internals out of the UI.
+
+The UI does not crawl, follow links, render JavaScript, or create new leads. It only displays sanitized metadata and deterministic signals from `WEBSITE_METADATA` evidence.
+
 ## Limitations
 
 - Homepage only.
 - No sitemap or robots.txt logic yet.
 - No JavaScript rendering.
 - No deep page extraction.
-- No UI display in this phase.
+- Admin-only UI display is available for catalog lead review.
 - No background job scheduling in this phase.
 
 ## Future Work
 
-- Phase 5B: admin/UI display for website intelligence signals.
 - Background job scheduling and rate controls.
 - Robots and sitemap-aware improvements.
 - Optional deeper page analysis with strict page limits.

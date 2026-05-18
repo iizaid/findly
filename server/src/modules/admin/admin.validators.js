@@ -64,6 +64,22 @@ export const adminCreateLeadSchema = z.object({
   }),
 });
 
+export const adminWebsiteIntelligenceParamSchema = z.object({
+  params: z.object({
+    id: z.string().min(1).max(120),
+  }),
+});
+
+export const adminWebsiteEnrichmentSchema = z.object({
+  params: z.object({
+    id: z.string().min(1).max(120),
+  }),
+  body: z.object({
+    websiteUrl: z.string().trim().min(1).max(2000).optional(),
+    forceRefresh: z.boolean().optional(),
+  }).strict().optional().default({}),
+});
+
 // Fields an admin can map a source column to
 export const ALLOWED_TARGET_FIELDS = new Set([
   'ignore',

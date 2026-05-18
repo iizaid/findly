@@ -107,3 +107,11 @@ export const aiProviderTestRateLimiter = makeRateLimit({
   keyGenerator: (req) => req.user?.id || 'guest',
   message: 'Too many AI provider tests. Please try again later.',
 });
+
+export const websiteEnrichmentRateLimiter = makeRateLimit({
+  name: 'website-enrichment',
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => req.user?.id || 'guest',
+  message: 'Too many website enrichment requests. Please try again later.',
+});

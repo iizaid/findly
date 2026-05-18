@@ -93,6 +93,18 @@ const apiRequestInternal = async (path, options = {}, retryState = { csrfRetried
 
 export const apiRequest = (path, options = {}) => apiRequestInternal(path, options);
 
+export const getCatalogLeadWebsiteIntelligence = (catalogLeadId) => apiRequest(
+  `/api/admin/catalog-leads/${encodeURIComponent(catalogLeadId)}/website-intelligence`,
+);
+
+export const enrichCatalogLeadWebsite = (catalogLeadId, body = {}) => apiRequest(
+  `/api/admin/catalog-leads/${encodeURIComponent(catalogLeadId)}/enrich-website`,
+  {
+    method: 'POST',
+    body: JSON.stringify(body),
+  },
+);
+
 export const getCsrfToken = async () => {
   csrfTokenPromise ??= fetch(`${getApiBaseUrl()}/api/csrf-token`, {
     credentials: 'include',

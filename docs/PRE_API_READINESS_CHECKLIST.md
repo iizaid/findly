@@ -13,6 +13,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Smart query budgeting reduces Serper/SerpAPI calls as local plus linked evidence coverage improves.
 - Admin imports support controlled CSV, XLSX, and JSON ingestion with source policy metadata and optional linked LeadEvidence creation.
 - Existing leads can be enriched with safe homepage website metadata. This records conversion-path and digital-presence signals as `LeadEvidence` without crawling or storing raw HTML.
+- Admins can view and refresh website intelligence from the catalog lead detail panel. The workflow is admin-only, CSRF-protected for refreshes, and returns sanitized metadata/signals only.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -64,6 +65,7 @@ These platforms are target signals now. Findly does not need direct access to th
 - Run a Local Dataset search.
 - Run searches with Instagram, TikTok, Reddit, Yelp, and TripAdvisor signals.
 - Check that results appear in Lead Lists.
+- As admin, open a catalog lead with a website URL and run Website Intelligence from the detail panel.
 - Analyze one lead and confirm AI fallback is safe if providers are unavailable.
 - Reset password and confirm old sessions are revoked.
 - Log out.
@@ -90,4 +92,4 @@ These platforms are target signals now. Findly does not need direct access to th
 
 ## Next Phase
 
-Phase 5B: Website intelligence UI and background enrichment jobs.
+Phase 5C: background website enrichment jobs and operational rate controls.

@@ -349,9 +349,28 @@ const buildCachedResult = (evidence) => ({
   metadata: evidence.extractedFields?.metadata || null,
   signals: evidence.extractedFields?.signals || [],
   evidenceId: evidence.id,
+  observedAt: evidence.observedAt,
   warnings: ['CACHE_HIT'],
   cached: true,
 });
+
+export const formatWebsiteIntelligenceEvidence = (evidence, { cached = false } = {}) => {
+  if (!evidence) return null;
+  return {
+    leadId: evidence.leadId || null,
+    catalogLeadId: evidence.catalogLeadId || null,
+    websiteUrl: evidence.sourceUrl,
+    finalUrl: evidence.rawMetadata?.finalUrl || evidence.sourceUrl,
+    reachable: Boolean(evidence.rawMetadata?.reachable),
+    statusCode: evidence.rawMetadata?.statusCode || null,
+    cached,
+    observedAt: evidence.observedAt,
+    evidenceId: evidence.id,
+    metadata: evidence.extractedFields?.metadata || null,
+    signals: evidence.extractedFields?.signals || [],
+    warnings: evidence.rawMetadata?.warnings || [],
+  };
+};
 
 export const findRecentWebsiteMetadataEvidence = async ({ leadId = null, catalogLeadId = null, websiteUrl }) => {
   const normalizedUrl = normalizeWebsiteUrl(websiteUrl);
@@ -366,6 +385,22 @@ export const findRecentWebsiteMetadataEvidence = async ({ leadId = null, catalog
     },
     orderBy: { observedAt: 'desc' },
   });
+};
+
+export const getLatestWebsiteIntelligenceEvidence = async ({ leadId = null, catalogLeadId = null } = {}) => {
+  if (!leadId && !catalogLeadId) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'leadId or catalogLeadId is required.', 400);
+  }
+  const evidence = await prisma.leadEvidence.findFirst({
+    where: {
+      leadId: leadId || undefined,
+      catalogLeadId: catalogLeadId || undefined,
+      discoveryMethod: 'WEBSITE_METADATA',
+      sourceType: 'WEBSITE_METADATA',
+    },
+    orderBy: { observedAt: 'desc' },
+  });
+  return formatWebsiteIntelligenceEvidence(evidence);
 };
 
 export const analyzeWebsiteMetadata = async ({ websiteUrl, fetcher = safeFetchTextWithLimit } = {}) => {
@@ -481,6 +516,7 @@ export const enrichLeadWebsite = async ({
   return {
     ...analysis,
     evidenceId: evidence.id,
+    observedAt: evidence.observedAt,
     cached: false,
   };
 };
