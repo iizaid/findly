@@ -14,7 +14,6 @@ let prisma;
 let agent;
 let csrfToken;
 let uploadDir;
-let userId;
 
 const unique = Date.now().toString(36);
 const adminEmail = `admin.json.${unique}@findly.local`;
@@ -54,11 +53,10 @@ beforeAll(async () => {
     email: adminEmail,
     password: 'Secure12345@#$',
   });
-  const user = await prisma.user.update({
+  await prisma.user.update({
     where: { email: adminEmail },
     data: { emailVerified: true, role: 'ADMIN' },
   });
-  userId = user.id;
   await agent.post('/api/auth/login').send({ email: adminEmail, password: 'Secure12345@#$' });
   csrfToken = await getCsrfToken(agent);
 });
