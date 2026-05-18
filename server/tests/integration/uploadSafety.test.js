@@ -179,21 +179,29 @@ describe('Upload cleanup service', () => {
     const htmlJsonFile = path.join(uploadDir, 'test-cleanup-html.json');
     const invalidJsonFile = path.join(uploadDir, 'test-cleanup-invalid.json');
     const unsupportedJsonFile = path.join(uploadDir, 'test-cleanup-unsupported.json');
+    const emptyArrayJsonFile = path.join(uploadDir, 'test-cleanup-empty-array.json');
+    const emptyLeadsJsonFile = path.join(uploadDir, 'test-cleanup-empty-leads.json');
 
     await fs.writeFile(validJsonFile, JSON.stringify([{ businessName: 'Cafe', city: 'Amman' }]));
     await fs.writeFile(htmlJsonFile, '<script>alert(1)</script>');
     await fs.writeFile(invalidJsonFile, '{"businessName":');
     await fs.writeFile(unsupportedJsonFile, JSON.stringify({ meta: { count: 1 } }));
+    await fs.writeFile(emptyArrayJsonFile, JSON.stringify([]));
+    await fs.writeFile(emptyLeadsJsonFile, JSON.stringify({ leads: [] }));
 
     expect(await validateAdminUploadContent(validJsonFile, 'valid.json')).toBe(true);
     expect(await validateAdminUploadContent(htmlJsonFile, 'html.json')).toBe(false);
     expect(await validateAdminUploadContent(invalidJsonFile, 'invalid.json')).toBe(false);
     expect(await validateAdminUploadContent(unsupportedJsonFile, 'unsupported.json')).toBe(false);
+    expect(await validateAdminUploadContent(emptyArrayJsonFile, 'empty-array.json')).toBe(false);
+    expect(await validateAdminUploadContent(emptyLeadsJsonFile, 'empty-leads.json')).toBe(false);
 
     await fs.unlink(validJsonFile).catch(() => {});
     await fs.unlink(htmlJsonFile).catch(() => {});
     await fs.unlink(invalidJsonFile).catch(() => {});
     await fs.unlink(unsupportedJsonFile).catch(() => {});
+    await fs.unlink(emptyArrayJsonFile).catch(() => {});
+    await fs.unlink(emptyLeadsJsonFile).catch(() => {});
   });
 
   it('static uploads are served with nosniff headers and admin temp files are not public', async () => {

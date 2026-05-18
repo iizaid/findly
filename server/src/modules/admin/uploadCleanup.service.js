@@ -182,10 +182,14 @@ export const validateAdminUploadContent = async (filePath, originalName) => {
       if (!content.trim()) return false;
       try {
         const parsed = JSON.parse(content.replace(/^\uFEFF/, ''));
-        if (Array.isArray(parsed)) return parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row));
+        if (Array.isArray(parsed)) {
+          return parsed.length > 0 && parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row));
+        }
         if (parsed && typeof parsed === 'object') {
           return ['leads', 'businesses', 'results', 'items'].some((key) =>
-            Array.isArray(parsed[key]) && parsed[key].every((row) => row && typeof row === 'object' && !Array.isArray(row)));
+            Array.isArray(parsed[key])
+            && parsed[key].length > 0
+            && parsed[key].every((row) => row && typeof row === 'object' && !Array.isArray(row)));
         }
         return false;
       } catch {

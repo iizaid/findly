@@ -43,6 +43,11 @@ describe('JSON dataset reader', () => {
     await expect(readJsonWorkbook(await writeJson('shape.json', { meta: { count: 1 } }))).rejects.toThrow(/Unsupported JSON import shape/);
   });
 
+  it('rejects empty JSON row arrays', async () => {
+    await expect(readJsonWorkbook(await writeJson('empty-array.json', []))).rejects.toThrow(/at least one row/);
+    await expect(readJsonWorkbook(await writeJson('empty-leads.json', { leads: [] }))).rejects.toThrow(/at least one row/);
+  });
+
   it('rejects row-level non-objects', async () => {
     await expect(readJsonWorkbook(await writeJson('rows.json', ['Cafe', 'Other']))).rejects.toThrow(/Each JSON import row must be an object/);
   });

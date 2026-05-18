@@ -184,13 +184,20 @@ export const readCsvWorkbook = async (filePath) => {
 };
 
 const extractJsonRows = (parsed) => {
-  if (Array.isArray(parsed)) return parsed;
+  const requireNonEmptyRows = (rows) => {
+    if (rows.length === 0) {
+      throw new AppError(errorCodes.VALIDATION_ERROR, 'JSON import must contain at least one row.', 400);
+    }
+    return rows;
+  };
+
+  if (Array.isArray(parsed)) return requireNonEmptyRows(parsed);
   if (!isPlainObject(parsed)) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'JSON imports must be an array or an object containing leads, businesses, results, or items.', 400);
   }
 
   for (const key of ['leads', 'businesses', 'results', 'items']) {
-    if (Array.isArray(parsed[key])) return parsed[key];
+    if (Array.isArray(parsed[key])) return requireNonEmptyRows(parsed[key]);
   }
 
   throw new AppError(errorCodes.VALIDATION_ERROR, 'Unsupported JSON import shape. Expected array, leads, businesses, results, or items.', 400);
@@ -232,6 +239,9 @@ export const readJsonWorkbook = async (filePath) => {
   }
 
   const sourceRows = extractJsonRows(parsed);
+  if (sourceRows.length === 0) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, 'JSON import must contain at least one row.', 400);
+  }
   if (sourceRows.length > MAX_IMPORT_ROWS) {
     throw new AppError(errorCodes.VALIDATION_ERROR, `Import files may contain at most ${MAX_IMPORT_ROWS} rows.`, 400);
   }

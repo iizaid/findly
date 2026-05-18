@@ -47,6 +47,34 @@ const sourceTypeByExtension = {
   '.json': 'DATASET_IMPORT',
 };
 
+const riskRank = {
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+  BLOCKED: 4,
+};
+
+const supportedPromoteToCatalogModes = new Set(['ALL_VALID_ROWS']);
+
+const compatibleSourceTypesByPolicy = {
+  LOCAL_DATASET: new Set(['LOCAL_DATASET']),
+  CSV_IMPORT: new Set(['DATASET_IMPORT', 'CSV_IMPORT']),
+  XLSX_IMPORT: new Set(['DATASET_IMPORT', 'XLSX_IMPORT']),
+  JSON_IMPORT: new Set(['DATASET_IMPORT', 'JSON_IMPORT']),
+  MANUAL_ADMIN_IMPORT: new Set(['MANUAL_ADMIN']),
+  GOOGLE_MAPS_SCRAPER_OUTPUT: new Set(['GOOGLE_MAPS_DATASET', 'GOOGLE_MAPS_SCRAPER_OUTPUT']),
+  COMMON_CRAWL: new Set(['DATASET_IMPORT', 'COMMON_CRAWL']),
+  HUGGING_FACE_DATASETS: new Set(['DATASET_IMPORT', 'HUGGING_FACE_DATASETS']),
+};
+
+const strongerRiskLevel = (policyRisk = 'LOW', requestedRisk = null) => {
+  const normalizedPolicyRisk = riskRank[policyRisk] ? policyRisk : 'LOW';
+  const normalizedRequestedRisk = riskRank[requestedRisk] ? requestedRisk : normalizedPolicyRisk;
+  return riskRank[normalizedRequestedRisk] > riskRank[normalizedPolicyRisk]
+    ? normalizedRequestedRisk
+    : normalizedPolicyRisk;
+};
+
 const cleanNullableText = (value) => {
   if (value === null || value === undefined) return null;
   const text = String(value).trim();
@@ -54,8 +82,18 @@ const cleanNullableText = (value) => {
 };
 
 const normalizeImportMetadata = ({ extension, importMetadata = null, sourceTypeOverride = null }) => {
-  const sourcePolicyKey = importMetadata?.sourcePolicyKey || importPolicyByExtension[extension] || 'LOCAL_DATASET';
+  const sourcePolicyKey = importMetadata?.sourcePolicyKey
+    || (sourceTypeOverride === 'LOCAL_DATASET' ? 'LOCAL_DATASET' : importPolicyByExtension[extension])
+    || 'LOCAL_DATASET';
   const policy = getSourcePolicy(sourcePolicyKey);
+  const riskLevel = strongerRiskLevel(policy?.riskLevel, importMetadata?.riskLevel);
+  const requiresManualReview = Boolean(
+    importMetadata?.requiresManualReview
+    || policy?.requiresManualReview
+    || policy?.requiresLicenseReview
+    || riskLevel === 'HIGH'
+    || importMetadata?.commercialUseAllowed === false,
+  );
   return {
     sourceName: cleanNullableText(importMetadata?.sourceName) || policy?.label || sourcePolicyKey,
     sourceUrl: normalizeUrlForStorage(importMetadata?.sourceUrl),
@@ -66,13 +104,15 @@ const normalizeImportMetadata = ({ extension, importMetadata = null, sourceTypeO
     licenseName: cleanNullableText(importMetadata?.licenseName),
     licenseUrl: normalizeUrlForStorage(importMetadata?.licenseUrl),
     importedFromTool: cleanNullableText(importMetadata?.importedFromTool),
-    riskLevel: importMetadata?.riskLevel || policy?.riskLevel || 'LOW',
-    requiresManualReview: importMetadata?.requiresManualReview ?? Boolean(policy?.requiresManualReview),
+    riskLevel,
+    requiresManualReview,
     dataFreshness: cleanNullableText(importMetadata?.dataFreshness),
     importPreset: importMetadata?.importPreset || presetByExtension[extension] || 'generic_business_directory',
     evidenceCreationMode: importMetadata?.evidenceCreationMode || 'CATALOG_ONLY',
     promoteToCatalogMode: importMetadata?.promoteToCatalogMode || 'ALL_VALID_ROWS',
     requestedSourceType: sourceTypeOverride || null,
+    requestedRiskLevel: importMetadata?.riskLevel || null,
+    requestedRequiresManualReview: importMetadata?.requiresManualReview ?? null,
   };
 };
 
@@ -91,8 +131,36 @@ const validateImportPolicy = (metadata) => {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'EVIDENCE_ONLY imports are not supported in Phase 4E. Use CATALOG_ONLY or CREATE_EVIDENCE_AND_CATALOG.', 400);
   }
 
+  if (!supportedPromoteToCatalogModes.has(metadata.promoteToCatalogMode)) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `${metadata.promoteToCatalogMode} promoteToCatalogMode is not supported in Phase 4E. Use ALL_VALID_ROWS.`, 400);
+  }
+
+  if (metadata.requestedSourceType) {
+    const compatibleSourceTypes = compatibleSourceTypesByPolicy[metadata.sourcePolicyKey] || new Set(
+      [sourceTypeByPolicy[metadata.sourcePolicyKey]].filter(Boolean),
+    );
+    if (!compatibleSourceTypes.has(metadata.requestedSourceType)) {
+      throw new AppError(
+        errorCodes.VALIDATION_ERROR,
+        `sourceType ${metadata.requestedSourceType} is not compatible with sourcePolicyKey ${metadata.sourcePolicyKey}.`,
+        400,
+      );
+    }
+  }
+
   if (metadata.riskLevel === 'BLOCKED') {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Blocked import sources cannot be committed.', 400);
+  }
+
+  if (metadata.requestedRiskLevel && riskRank[metadata.requestedRiskLevel] < riskRank[policy.riskLevel]) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `${policy.label} imports cannot downgrade policy riskLevel ${policy.riskLevel}.`, 400);
+  }
+
+  if (
+    metadata.requestedRequiresManualReview === false
+    && (policy.requiresManualReview || policy.requiresLicenseReview || policy.riskLevel === 'HIGH')
+  ) {
+    throw new AppError(errorCodes.VALIDATION_ERROR, `${policy.label} imports require requiresManualReview=true.`, 400);
   }
 
   if (metadata.riskLevel === 'HIGH' && metadata.requiresManualReview !== true) {
@@ -211,6 +279,7 @@ const normalizeSheetRows = ({ fileName, sheet }) => {
   }));
 
   return {
+    name: sheet.name,
     headers,
     mapping,
     unmappedHeaders,

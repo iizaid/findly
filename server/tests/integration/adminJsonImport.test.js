@@ -88,7 +88,7 @@ describe('Admin JSON import', () => {
     });
 
     expect(parsed.detectedFileType).toBe('json');
-    expect(parsed.sheets[0].name).toBe('Sheet1');
+    expect(parsed.sheets[0].name).toBe('JSON');
     expect(parsed.sheets[0].headers).toEqual(expect.arrayContaining(['name', 'city', 'country']));
   });
 
@@ -158,7 +158,7 @@ describe('Admin JSON import', () => {
           sourcePolicyKey: 'JSON_IMPORT',
           acquisitionMethod: 'JSON_UPLOAD',
           commercialUseAllowed: true,
-          riskLevel: 'LOW',
+          riskLevel: 'MEDIUM',
           evidenceCreationMode: 'CATALOG_ONLY',
         },
       })
@@ -189,7 +189,7 @@ describe('Admin JSON import', () => {
           sourcePolicyKey: 'JSON_IMPORT',
           acquisitionMethod: 'JSON_UPLOAD',
           commercialUseAllowed: true,
-          riskLevel: 'LOW',
+          riskLevel: 'MEDIUM',
           evidenceCreationMode: 'CREATE_EVIDENCE_AND_CATALOG',
         },
       })
@@ -204,7 +204,7 @@ describe('Admin JSON import', () => {
           sourcePolicyKey: 'JSON_IMPORT',
           acquisitionMethod: 'JSON_UPLOAD',
           commercialUseAllowed: true,
-          riskLevel: 'LOW',
+          riskLevel: 'MEDIUM',
           evidenceCreationMode: 'CREATE_EVIDENCE_AND_CATALOG',
         },
       })
@@ -248,6 +248,21 @@ describe('Admin JSON import', () => {
       })
       .expect(400);
 
+    const parsedDowngrade = await uploadJson('risk-downgrade', [{ businessName: `Risk Downgrade Cafe ${unique}`, city: 'Amman' }]);
+    const downgradeResponse = await agent.post('/api/admin/imports/commit')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        fileKey: parsedDowngrade.fileKey,
+        importMetadata: {
+          sourcePolicyKey: 'GOOGLE_MAPS_SCRAPER_OUTPUT',
+          acquisitionMethod: 'OFFLINE_TOOL_EXPORT',
+          riskLevel: 'LOW',
+          requiresManualReview: false,
+        },
+      })
+      .expect(400);
+    expect(downgradeResponse.body.error.message).toMatch(/downgrade|requiresManualReview/i);
+
     const parsedLicense = await uploadJson('license', [{ businessName: `License Cafe ${unique}`, city: 'Amman' }]);
     await agent.post('/api/admin/imports/commit')
       .set('X-CSRF-Token', csrfToken)
@@ -264,6 +279,69 @@ describe('Admin JSON import', () => {
       .expect(400);
   });
 
+  it('rejects attempts to bypass policy manual review requirements', async () => {
+    const parsed = await uploadJson('manual-review-bypass', [{ businessName: `Manual Review Bypass Cafe ${unique}`, city: 'Amman' }]);
+    const response = await agent.post('/api/admin/imports/commit')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        fileKey: parsed.fileKey,
+        importMetadata: {
+          sourcePolicyKey: 'HUGGING_FACE_DATASETS',
+          acquisitionMethod: 'LICENSED_DATASET_EXPORT',
+          riskLevel: 'MEDIUM',
+          requiresManualReview: false,
+          licenseName: 'Reviewed Test License',
+          evidenceCreationMode: 'CATALOG_ONLY',
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toContain('requiresManualReview=true');
+  });
+
+  it('rejects sourceType and sourcePolicyKey mismatches', async () => {
+    const parsed = await uploadJson('source-policy-mismatch', [{ businessName: `Mismatch Cafe ${unique}`, city: 'Amman' }]);
+    const response = await agent.post('/api/admin/imports/commit')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        fileKey: parsed.fileKey,
+        sourceType: 'LOCAL_DATASET',
+        importMetadata: {
+          sourcePolicyKey: 'GOOGLE_MAPS_SCRAPER_OUTPUT',
+          acquisitionMethod: 'OFFLINE_TOOL_EXPORT',
+          riskLevel: 'HIGH',
+          requiresManualReview: true,
+          evidenceCreationMode: 'CATALOG_ONLY',
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toContain('not compatible');
+  });
+
+  it('rejects unsupported promoteToCatalogMode values without creating catalog rows', async () => {
+    const businessName = `No Promote JSON Cafe ${unique}`;
+    const parsed = await uploadJson('promote-none', [{ businessName, city: 'Amman', country: 'Jordan' }]);
+    const response = await agent.post('/api/admin/imports/commit')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        fileKey: parsed.fileKey,
+        importMetadata: {
+          sourcePolicyKey: 'JSON_IMPORT',
+          acquisitionMethod: 'JSON_UPLOAD',
+          commercialUseAllowed: true,
+          riskLevel: 'MEDIUM',
+          evidenceCreationMode: 'CATALOG_ONLY',
+          promoteToCatalogMode: 'NONE',
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error.message).toContain('promoteToCatalogMode');
+    const imported = await prisma.leadCatalog.findFirst({ where: { businessName } });
+    expect(imported).toBeNull();
+  });
+
   it('rejects unsupported EVIDENCE_ONLY mode safely', async () => {
     const parsed = await uploadJson('evidence-only', [{ businessName: `Evidence Only Cafe ${unique}`, city: 'Amman' }]);
     const response = await agent.post('/api/admin/imports/commit')
@@ -273,7 +351,7 @@ describe('Admin JSON import', () => {
         importMetadata: {
           sourcePolicyKey: 'JSON_IMPORT',
           acquisitionMethod: 'JSON_UPLOAD',
-          riskLevel: 'LOW',
+          riskLevel: 'MEDIUM',
           evidenceCreationMode: 'EVIDENCE_ONLY',
         },
       })

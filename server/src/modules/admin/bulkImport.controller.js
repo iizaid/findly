@@ -70,7 +70,7 @@ export const parseImportFile = asyncHandler(async (req, res) => {
   try {
     const safeContent = await validateAdminUploadContent(filePath, originalName);
     if (!safeContent) {
-      throw new AppError(errorCodes.VALIDATION_ERROR, 'Uploaded file content does not match an allowed CSV or XLSX file.', 400);
+      throw new AppError(errorCodes.VALIDATION_ERROR, 'Uploaded file content does not match an allowed CSV, XLSX, or JSON file.', 400);
     }
 
     const inspection = await inspectDatasetFile(filePath);
@@ -80,7 +80,7 @@ export const parseImportFile = asyncHandler(async (req, res) => {
       sourceType: inspection.sourceType,
       detectedFileType: inspection.detectedFileType,
       sheets: inspection.sheets.map(sheet => ({
-        name: sheet.sheetName || 'Sheet1',
+        name: sheet.sheetName || sheet.name || 'Sheet1',
         rowCount: sheet.rows.length,
         headers: sheet.headers,
         mapping: sheet.mapping,
