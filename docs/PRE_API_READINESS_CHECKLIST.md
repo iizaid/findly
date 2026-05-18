@@ -14,6 +14,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Admin imports support controlled CSV, XLSX, and JSON ingestion with source policy metadata and optional linked LeadEvidence creation.
 - Existing leads can be enriched with safe homepage website metadata. This records conversion-path and digital-presence signals as `LeadEvidence` without crawling or storing raw HTML.
 - Admins can view and refresh website intelligence from the catalog lead detail panel. The workflow is admin-only, CSRF-protected for refreshes, and returns sanitized metadata/signals only.
+- Admins can create controlled website enrichment jobs for small capped batches of existing catalog leads. Jobs reuse recent `WEBSITE_METADATA` evidence, expose only safe progress summaries, and do not create new leads.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -35,6 +36,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 7. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
 8. Website metadata remains enrichment for existing leads, not a standalone scraper.
 9. Website enrichment checks recent `WEBSITE_METADATA` evidence before refetching the same normalized URL.
+10. Website enrichment jobs process one capped batch of existing catalog leads at a time and store status in durable job records.
 
 ## API Keys Needed Later
 
@@ -66,6 +68,7 @@ These platforms are target signals now. Findly does not need direct access to th
 - Run searches with Instagram, TikTok, Reddit, Yelp, and TripAdvisor signals.
 - Check that results appear in Lead Lists.
 - As admin, open a catalog lead with a website URL and run Website Intelligence from the detail panel.
+- As admin, create a Website Jobs run for recent catalog leads, process the next batch, and confirm only safe status/signals are shown.
 - Analyze one lead and confirm AI fallback is safe if providers are unavailable.
 - Reset password and confirm old sessions are revoked.
 - Log out.
@@ -92,4 +95,4 @@ These platforms are target signals now. Findly does not need direct access to th
 
 ## Next Phase
 
-Phase 5C: background website enrichment jobs and operational rate controls.
+Phase 5D: opportunity recommendation polish and private-beta operational monitoring.

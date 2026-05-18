@@ -80,6 +80,49 @@ export const adminWebsiteEnrichmentSchema = z.object({
   }).strict().optional().default({}),
 });
 
+const websiteEnrichmentJobModeSchema = z.enum(['EXPLICIT_IDS', 'RECENT_CATALOG_LEADS_WITH_WEBSITE']);
+
+export const adminWebsiteEnrichmentJobCreateSchema = z.object({
+  body: z.object({
+    targetType: z.enum(['CATALOG_LEAD']),
+    mode: websiteEnrichmentJobModeSchema.default('EXPLICIT_IDS'),
+    catalogLeadIds: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    forceRefresh: z.boolean().optional(),
+  }).strict().superRefine((data, ctx) => {
+    if (data.mode === 'EXPLICIT_IDS') {
+      if (!data.catalogLeadIds?.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['catalogLeadIds'],
+          message: 'At least one catalog lead ID is required.',
+        });
+      }
+      const seen = new Set();
+      data.catalogLeadIds?.forEach((id, index) => {
+        if (seen.has(id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['catalogLeadIds', index],
+            message: 'Duplicate catalog lead IDs are not allowed.',
+          });
+        }
+        seen.add(id);
+      });
+    }
+  }),
+});
+
+export const adminWebsiteEnrichmentJobListSchema = z.object({
+  query: paginationQuerySchema,
+});
+
+export const adminWebsiteEnrichmentJobParamSchema = z.object({
+  params: z.object({
+    id: z.string().min(1).max(120),
+  }),
+});
+
 // Fields an admin can map a source column to
 export const ALLOWED_TARGET_FIELDS = new Set([
   'ignore',

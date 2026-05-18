@@ -1,0 +1,294 @@
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+process.env.NODE_ENV = 'test';
+process.env.PORT ??= '4135';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
+
+let createApp;
+let prisma;
+let agentAdmin;
+let agentUser;
+let agentGuest;
+let adminUser;
+let workspace;
+let catalogLead;
+let noWebsiteLead;
+let unsafeLead;
+let secondLead;
+let createWebsiteEnrichmentJob;
+let processWebsiteEnrichmentJob;
+
+const unique = Date.now().toString(36);
+const adminEmail = `admin.website.jobs.${unique}@findly.local`;
+const userEmail = `user.website.jobs.${unique}@findly.local`;
+
+const csrfFor = async (agent) => {
+  const response = await agent.get('/api/csrf-token').expect(200);
+  return response.body.data.csrfToken;
+};
+
+const html = `
+  <html>
+    <head>
+      <title>Phase 5C Cafe ${unique}</title>
+      <meta name="description" content="A local cafe website with contact and menu paths for testing." />
+    </head>
+    <body>
+      <a href="/contact">Contact</a>
+      <a href="/menu">Menu</a>
+      <a href="https://wa.me/962790000000">WhatsApp</a>
+    </body>
+  </html>
+`;
+
+const fetcher = vi.fn(async (url) => ({
+  ok: true,
+  status: 200,
+  contentType: 'text/html; charset=utf-8',
+  text: html,
+  truncated: false,
+  finalUrl: url,
+  redirectsFollowed: 0,
+}));
+
+beforeAll(async () => {
+  ({ createApp } = await import('../../src/app.js'));
+  ({ prisma } = await import('../../src/db/prisma.js'));
+  ({ createWebsiteEnrichmentJob, processWebsiteEnrichmentJob } = await import('../../src/modules/search/websiteEnrichmentJob.service.js'));
+
+  const app = createApp();
+  agentAdmin = request.agent(app);
+  agentUser = request.agent(app);
+  agentGuest = request.agent(app);
+
+  await prisma.user.deleteMany({ where: { email: { in: [adminEmail, userEmail] } } }).catch(() => {});
+
+  await agentAdmin.post('/api/auth/register').send({
+    name: 'Website Jobs Admin',
+    email: adminEmail,
+    password: 'Secure12345@#$',
+  }).expect(201);
+  await agentUser.post('/api/auth/register').send({
+    name: 'Website Jobs User',
+    email: userEmail,
+    password: 'Secure12345@#$',
+  }).expect(201);
+
+  await prisma.user.updateMany({
+    where: { email: { in: [adminEmail, userEmail] } },
+    data: { emailVerified: true },
+  });
+  adminUser = await prisma.user.update({
+    where: { email: adminEmail },
+    data: { role: 'ADMIN' },
+  });
+
+  workspace = await prisma.workspace.findFirst({ where: { ownerId: adminUser.id } });
+  if (!workspace) {
+    workspace = await prisma.workspace.create({
+      data: { ownerId: adminUser.id, name: `Website Jobs Workspace ${unique}` },
+    });
+  }
+
+  await agentAdmin.post('/api/auth/login').send({ email: adminEmail, password: 'Secure12345@#$' }).expect(200);
+  await agentUser.post('/api/auth/login').send({ email: userEmail, password: 'Secure12345@#$' }).expect(200);
+
+  catalogLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5C Cafe ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5c-${unique}`,
+      normalizedFingerprint: `phase-5c-${unique}`,
+      websiteUrl: `https://phase5c-${unique}.example.com`,
+    },
+  });
+  secondLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5C Bakery ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5c-second-${unique}`,
+      normalizedFingerprint: `phase-5c-second-${unique}`,
+      websiteUrl: `https://phase5c-second-${unique}.example.com`,
+    },
+  });
+  noWebsiteLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5C No Website ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5c-no-website-${unique}`,
+      normalizedFingerprint: `phase-5c-no-website-${unique}`,
+    },
+  });
+  unsafeLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5C Unsafe ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5c-unsafe-${unique}`,
+      normalizedFingerprint: `phase-5c-unsafe-${unique}`,
+      websiteUrl: 'http://127.0.0.1/private',
+    },
+  });
+});
+
+afterAll(async () => {
+  const leadIds = [catalogLead?.id, secondLead?.id, noWebsiteLead?.id, unsafeLead?.id].filter(Boolean);
+  await prisma.job.deleteMany({ where: { type: 'WEBSITE_ENRICHMENT_RUN', userId: adminUser?.id } }).catch(() => {});
+  await prisma.leadEvidence.deleteMany({ where: { catalogLeadId: { in: leadIds } } }).catch(() => {});
+  await prisma.leadListLead.deleteMany({ where: { catalogLeadId: { in: leadIds } } }).catch(() => {});
+  await prisma.leadCatalog.deleteMany({ where: { id: { in: leadIds } } }).catch(() => {});
+  await prisma.user.deleteMany({ where: { email: { in: [adminEmail, userEmail] } } }).catch(() => {});
+  await prisma.$disconnect();
+});
+
+describe('admin website enrichment jobs', () => {
+  it('protects job creation and reads with admin auth and CSRF', async () => {
+    await agentGuest.post('/api/admin/website-intelligence/jobs').send({}).expect(403);
+    const userCsrf = await csrfFor(agentUser);
+    await agentUser
+      .post('/api/admin/website-intelligence/jobs')
+      .set('X-CSRF-Token', userCsrf)
+      .send({ targetType: 'CATALOG_LEAD', mode: 'EXPLICIT_IDS', catalogLeadIds: [catalogLead.id] })
+      .expect(403);
+    await agentAdmin
+      .post('/api/admin/website-intelligence/jobs')
+      .send({ targetType: 'CATALOG_LEAD', mode: 'EXPLICIT_IDS', catalogLeadIds: [catalogLead.id] })
+      .expect(403);
+
+    await agentGuest.get('/api/admin/website-intelligence/jobs').expect(401);
+    await agentUser.get('/api/admin/website-intelligence/jobs').expect(403);
+  });
+
+  it('lets admins create and view a safe website enrichment job', async () => {
+    const token = await csrfFor(agentAdmin);
+    const response = await agentAdmin
+      .post('/api/admin/website-intelligence/jobs')
+      .set('X-CSRF-Token', token)
+      .send({ targetType: 'CATALOG_LEAD', mode: 'EXPLICIT_IDS', catalogLeadIds: [catalogLead.id, noWebsiteLead.id] })
+      .expect(201);
+
+    expect(response.body.data.job.status).toBe('QUEUED');
+    expect(response.body.data.job.totalItems).toBe(2);
+    expect(response.body.data.job.skippedItems).toBe(1);
+    expect(JSON.stringify(response.body)).not.toContain('<html');
+    expect(JSON.stringify(response.body)).not.toContain('rawMetadata');
+
+    const detail = await agentAdmin
+      .get(`/api/admin/website-intelligence/jobs/${response.body.data.job.id}`)
+      .expect(200);
+    expect(detail.body.data.job.items).toHaveLength(2);
+    expect(detail.body.data.job.items.find((item) => item.catalogLeadId === noWebsiteLead.id).status).toBe('SKIPPED');
+  });
+
+  it('rejects invalid job requests safely', async () => {
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [],
+    })).rejects.toThrow('At least one catalog lead ID is required.');
+
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id, catalogLead.id],
+    })).rejects.toThrow('Duplicate catalog lead IDs are not allowed.');
+
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id],
+    })).rejects.toThrow('Unsupported website enrichment job targetType.');
+
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'UNKNOWN',
+      catalogLeadIds: [catalogLead.id],
+    })).rejects.toThrow('Unsupported website enrichment job mode.');
+  });
+
+  it('enforces the configured item cap', async () => {
+    const ids = Array.from({ length: 26 }, (_, index) => `missing-${index}-${unique}`);
+    await expect(createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: ids,
+    })).rejects.toThrow('Website enrichment jobs are limited to 25 items.');
+  });
+
+  it('processes queued items, creates WEBSITE_METADATA evidence, and updates counters without creating leads or list rows', async () => {
+    fetcher.mockClear();
+    const catalogCountBefore = await prisma.leadCatalog.count();
+    const listRowsBefore = await prisma.leadListLead.count();
+    const job = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id, secondLead.id, unsafeLead.id],
+      forceRefresh: true,
+    });
+
+    const processed = await processWebsiteEnrichmentJob({ jobId: job.id, fetcher });
+
+    expect(processed.status).toBe('COMPLETED');
+    expect(processed.succeededItems).toBe(2);
+    expect(processed.failedItems).toBe(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(processed.items.find((item) => item.catalogLeadId === unsafeLead.id).errorCode).toBe('UNSAFE_WEBSITE_URL');
+    expect(processed.items.find((item) => item.catalogLeadId === catalogLead.id).evidenceId).toBeTruthy();
+
+    const evidence = await prisma.leadEvidence.findMany({
+      where: {
+        catalogLeadId: { in: [catalogLead.id, secondLead.id] },
+        discoveryMethod: 'WEBSITE_METADATA',
+        sourceType: 'WEBSITE_METADATA',
+      },
+    });
+    expect(evidence.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(evidence)).not.toContain('<html');
+    expect(await prisma.leadCatalog.count()).toBe(catalogCountBefore);
+    expect(await prisma.leadListLead.count()).toBe(listRowsBefore);
+  });
+
+  it('reuses recent evidence when forceRefresh is false and refetches when forceRefresh is true', async () => {
+    const cachedJob = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id],
+      forceRefresh: false,
+    });
+    const cachedFetcher = vi.fn(async () => {
+      throw new Error('Fetcher should not run when recent evidence exists.');
+    });
+    const cached = await processWebsiteEnrichmentJob({ jobId: cachedJob.id, fetcher: cachedFetcher });
+    expect(cached.succeededItems).toBe(1);
+    expect(cached.items[0].cached).toBe(true);
+    expect(cachedFetcher).not.toHaveBeenCalled();
+
+    const refreshFetcher = vi.fn(fetcher.getMockImplementation());
+    const refreshJob = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id],
+      forceRefresh: true,
+    });
+    const refreshed = await processWebsiteEnrichmentJob({ jobId: refreshJob.id, fetcher: refreshFetcher });
+    expect(refreshed.succeededItems).toBe(1);
+    expect(refreshed.items[0].cached).toBe(false);
+    expect(refreshFetcher).toHaveBeenCalledTimes(1);
+  });
+});

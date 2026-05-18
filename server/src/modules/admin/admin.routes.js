@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { requireAdmin, requireAuth, requireRoot, requireVerifiedEmail } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
-import { aiProviderTestRateLimiter, websiteEnrichmentRateLimiter } from '../../middleware/rateLimit.middleware.js';
+import {
+  aiProviderTestRateLimiter,
+  websiteEnrichmentJobRateLimiter,
+  websiteEnrichmentRateLimiter,
+} from '../../middleware/rateLimit.middleware.js';
 import * as ctrl from './admin.controller.js';
 import * as v from './admin.validators.js';
 
@@ -32,6 +36,10 @@ adminRouter.get('/catalog-leads/:id/website-intelligence', validate(v.adminWebsi
 adminRouter.post('/catalog-leads/:id/enrich-website', websiteEnrichmentRateLimiter, validate(v.adminWebsiteEnrichmentSchema), ctrl.enrichCatalogLeadWebsite);
 adminRouter.get('/leads/:id/website-intelligence', validate(v.adminWebsiteIntelligenceParamSchema), ctrl.getLeadWebsiteIntelligence);
 adminRouter.post('/leads/:id/enrich-website', websiteEnrichmentRateLimiter, validate(v.adminWebsiteEnrichmentSchema), ctrl.enrichLeadWebsiteIntelligence);
+adminRouter.post('/website-intelligence/jobs', websiteEnrichmentJobRateLimiter, validate(v.adminWebsiteEnrichmentJobCreateSchema), ctrl.createAdminWebsiteEnrichmentJob);
+adminRouter.get('/website-intelligence/jobs', validate(v.adminWebsiteEnrichmentJobListSchema), ctrl.listAdminWebsiteEnrichmentJobs);
+adminRouter.get('/website-intelligence/jobs/:id', validate(v.adminWebsiteEnrichmentJobParamSchema), ctrl.getAdminWebsiteEnrichmentJob);
+adminRouter.post('/website-intelligence/jobs/:id/process-next', websiteEnrichmentJobRateLimiter, validate(v.adminWebsiteEnrichmentJobParamSchema), ctrl.processAdminWebsiteEnrichmentJob);
 adminRouter.get('/imports', validate(v.adminPaginationSchema), ctrl.getAdminImports);
 adminRouter.get('/campaigns', validate(v.adminPaginationSchema), ctrl.getAdminCampaigns);
 adminRouter.get('/security/events', validate(v.adminPaginationSchema), ctrl.getSecurityEvents);

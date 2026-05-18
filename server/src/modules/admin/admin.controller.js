@@ -28,6 +28,12 @@ import {
   enrichLeadWebsite,
   getLatestWebsiteIntelligenceEvidence,
 } from '../search/websiteMetadata.service.js';
+import {
+  createWebsiteEnrichmentJob,
+  getWebsiteEnrichmentJob,
+  listWebsiteEnrichmentJobs,
+  processWebsiteEnrichmentJob,
+} from '../search/websiteEnrichmentJob.service.js';
 import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { canManageRole, formatRole } from '../auth/roles.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
@@ -927,6 +933,75 @@ export const enrichLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
     websiteIntelligenceFromResult({ result, leadId: lead.id }),
     result.cached ? 'Cached website intelligence loaded.' : 'Website intelligence generated.',
   );
+});
+
+export const createAdminWebsiteEnrichmentJob = asyncHandler(async (req, res) => {
+  const workspace = await catalogWorkspaceForAdmin(req.user.id);
+  const job = await createWebsiteEnrichmentJob({
+    requestedByUserId: req.user.id,
+    workspaceId: workspace.id,
+    targetType: req.validated.body.targetType,
+    mode: req.validated.body.mode,
+    catalogLeadIds: req.validated.body.catalogLeadIds || [],
+    limit: req.validated.body.limit,
+    forceRefresh: Boolean(req.validated.body.forceRefresh),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'ADMIN_WEBSITE_ENRICHMENT_JOB_CREATED',
+      entityType: 'Job',
+      entityId: job.id,
+      metadata: {
+        jobId: job.id,
+        targetType: job.targetType,
+        mode: job.mode,
+        totalItems: job.totalItems,
+        forceRefresh: job.forceRefresh,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { job }, 'Website enrichment job created.', 201);
+});
+
+export const listAdminWebsiteEnrichmentJobs = asyncHandler(async (req, res) => {
+  const pagination = toPagination(req.validated.query);
+  const result = await listWebsiteEnrichmentJobs({ page: pagination.page, limit: pagination.limit });
+  return successResponse(res, result, 'Website enrichment jobs loaded.');
+});
+
+export const getAdminWebsiteEnrichmentJob = asyncHandler(async (req, res) => {
+  const job = await getWebsiteEnrichmentJob({ jobId: req.validated.params.id, includeItems: true });
+  return successResponse(res, { job }, 'Website enrichment job loaded.');
+});
+
+export const processAdminWebsiteEnrichmentJob = asyncHandler(async (req, res) => {
+  const job = await processWebsiteEnrichmentJob({ jobId: req.validated.params.id });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'ADMIN_WEBSITE_ENRICHMENT_JOB_PROCESSED',
+      entityType: 'Job',
+      entityId: job.id,
+      metadata: {
+        jobId: job.id,
+        status: job.status,
+        totalItems: job.totalItems,
+        succeededItems: job.succeededItems,
+        failedItems: job.failedItems,
+        skippedItems: job.skippedItems,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+    },
+  });
+
+  return successResponse(res, { job }, 'Website enrichment job processed.');
 });
 
 export const getSystemStatus = asyncHandler(async (_req, res) => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard, Radio, Database, Upload, PenLine, Users, Rocket,
   FolderInput, ShieldAlert, Bug, RefreshCw, ShieldCheck, AlertCircle,
-  KeyRound, Search,
+  KeyRound, Search, Globe2,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '../../../lib/api';
 import DashboardCard from '../DashboardCard';
@@ -19,6 +19,7 @@ import AdminLiveActivityPanel from '../admin/panels/AdminLiveActivityPanel';
 import AdminManualEntryPanel from '../admin/panels/AdminManualEntryPanel';
 import AdminAiProvidersPanel from '../admin/panels/AdminAiProvidersPanel';
 import AdminDiscoveryProvidersPanel from '../admin/panels/AdminDiscoveryProvidersPanel';
+import AdminWebsiteJobsPanel from '../admin/panels/AdminWebsiteJobsPanel';
 import AdminDetailPanel from '../admin/AdminDetailPanel';
 import BulkImportCenter from './BulkImportCenter';
 
@@ -40,6 +41,7 @@ const TABS = [
   { id: 'errors',      label: 'Errors',         icon: Bug },
   { id: 'ai',          label: 'AI Providers',   icon: KeyRound, rootOnly: true },
   { id: 'discovery',   label: 'Discovery Providers', icon: Search, rootOnly: true },
+  { id: 'website_jobs', label: 'Website Jobs',  icon: Globe2 },
 ];
 
 /* ============================================================== */
@@ -222,6 +224,8 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
         return <AdminAiProvidersPanel currentUser={user} />;
       case 'discovery':
         return <AdminDiscoveryProvidersPanel currentUser={user} />;
+      case 'website_jobs':
+        return <AdminWebsiteJobsPanel />;
       default:
         return null;
     }

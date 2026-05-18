@@ -149,11 +149,47 @@ The UI does not crawl, follow links, render JavaScript, or create new leads. It 
 - No JavaScript rendering.
 - No deep page extraction.
 - Admin-only UI display is available for catalog lead review.
-- No background job scheduling in this phase.
+
+## Phase 5C Background/Admin Jobs
+
+Phase 5C adds a controlled admin-only job workflow for safe homepage metadata enrichment on small batches of existing catalog leads.
+
+Admin API endpoints:
+
+- `POST /api/admin/website-intelligence/jobs`
+- `GET /api/admin/website-intelligence/jobs`
+- `GET /api/admin/website-intelligence/jobs/:id`
+- `POST /api/admin/website-intelligence/jobs/:id/process-next`
+
+The implementation reuses the existing durable `Job` table with `type = WEBSITE_ENRICHMENT_RUN`. Job payloads contain only safe item summaries, counters, sanitized errors, cache flags, and signal counts. No raw HTML, raw metadata object, full evidence object, or provider details are returned.
+
+Operational controls:
+
+- Default max job size is `WEBSITE_ENRICHMENT_JOB_MAX_ITEMS=25`.
+- Hard cap is 100 items through environment validation.
+- Default concurrency is `WEBSITE_ENRICHMENT_JOB_CONCURRENCY=1`.
+- Default inter-item delay is `WEBSITE_ENRICHMENT_JOB_ITEM_DELAY_MS=250`.
+- Job creation and processing are admin-only, CSRF-protected for POST requests, and guarded by `WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_WINDOW_MS` / `WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_MAX`.
+
+Processing behavior:
+
+- Jobs target existing catalog leads only.
+- Items without a website URL are skipped safely.
+- Unsafe website URLs are marked failed safely.
+- Recent `WEBSITE_METADATA` evidence is reused when `forceRefresh=false`.
+- `forceRefresh=true` still uses the same safe homepage-only fetch rules.
+- Per-item failures do not fail the whole job.
+- Website jobs create `LeadEvidence` only; they do not create `LeadCatalog` rows, `LeadListLead` rows, or discovery results.
+- The admin UI exposes a compact Website Jobs panel with job creation for recent catalog leads, job progress, and safe per-item summaries.
+
+Recovery limitation:
+
+Phase 5C uses durable DB records and explicit `process-next` processing. It does not add Redis, BullMQ, cron, or an unbounded worker loop. If a process stops mid-job, admins can retry processing the same job after restart.
 
 ## Future Work
 
-- Background job scheduling and rate controls.
+- Queue hardening if needed for higher scale.
+- Richer job selection UI.
 - Robots and sitemap-aware improvements.
 - Optional deeper page analysis with strict page limits.
 - Outreach and recommendation generation after signals are proven useful.

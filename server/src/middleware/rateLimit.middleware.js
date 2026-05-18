@@ -115,3 +115,11 @@ export const websiteEnrichmentRateLimiter = makeRateLimit({
   keyGenerator: (req) => req.user?.id || 'guest',
   message: 'Too many website enrichment requests. Please try again later.',
 });
+
+export const websiteEnrichmentJobRateLimiter = makeRateLimit({
+  name: 'website-enrichment-job',
+  windowMs: env.WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_WINDOW_MS,
+  limit: env.WEBSITE_ENRICHMENT_JOB_RATE_LIMIT_MAX,
+  keyGenerator: (req) => req.user?.id || 'guest',
+  message: 'Too many website enrichment job requests. Please try again later.',
+});

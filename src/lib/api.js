@@ -105,6 +105,31 @@ export const enrichCatalogLeadWebsite = (catalogLeadId, body = {}) => apiRequest
   },
 );
 
+export const createWebsiteEnrichmentJob = (body = {}) => apiRequest(
+  '/api/admin/website-intelligence/jobs',
+  {
+    method: 'POST',
+    body: JSON.stringify(body),
+  },
+);
+
+export const getWebsiteEnrichmentJobs = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest(`/api/admin/website-intelligence/jobs${suffix}`);
+};
+
+export const getWebsiteEnrichmentJob = (jobId) => apiRequest(
+  `/api/admin/website-intelligence/jobs/${encodeURIComponent(jobId)}`,
+);
+
+export const processWebsiteEnrichmentJob = (jobId) => apiRequest(
+  `/api/admin/website-intelligence/jobs/${encodeURIComponent(jobId)}/process-next`,
+  { method: 'POST', body: JSON.stringify({}) },
+);
+
 export const getCsrfToken = async () => {
   csrfTokenPromise ??= fetch(`${getApiBaseUrl()}/api/csrf-token`, {
     credentials: 'include',

@@ -1,6 +1,7 @@
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { logger } from '../../utils/logger.js';
 import { runCampaign } from '../search/search.service.js';
+import { processWebsiteEnrichmentJob, WEBSITE_ENRICHMENT_JOB_TYPE } from '../search/websiteEnrichmentJob.service.js';
 import { claimNextJob, markJobCompleted, markJobFailed } from './jobQueue.service.js';
 
 export const processJob = async (job) => {
@@ -13,6 +14,10 @@ export const processJob = async (job) => {
       }
 
       return runCampaign(job.campaignId, job.userId, { jobId: job.id });
+    }
+
+    if (job.type === WEBSITE_ENRICHMENT_JOB_TYPE) {
+      return processWebsiteEnrichmentJob({ jobId: job.id });
     }
 
     throw new AppError(errorCodes.VALIDATION_ERROR, `Unsupported job type: ${job.type}.`, 400);
@@ -36,7 +41,7 @@ export const runNextJob = async ({ workerId = 'db-worker', type = null } = {}) =
   if (!job) return null;
 
   const result = await processJob(job);
-  if (job.type !== 'SEARCH_CAMPAIGN_RUN') {
+  if (job.type !== 'SEARCH_CAMPAIGN_RUN' && job.type !== WEBSITE_ENRICHMENT_JOB_TYPE) {
     await markJobCompleted({ jobId: job.id, payload: { result: true } });
   }
 
