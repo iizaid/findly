@@ -13,19 +13,14 @@ export const findReusableEvidenceCandidates = async ({ campaign, targetSources =
     ]
   });
 
-  const exactMatchOrs = [];
   if (campaign.city) {
-    exactMatchOrs.push({ extractedFields: { path: ['city'], equals: campaign.city } });
+    andConditions.push({ extractedFields: { path: ['city'], equals: campaign.city } });
   }
   if (campaign.country) {
-    exactMatchOrs.push({ extractedFields: { path: ['country'], equals: campaign.country } });
+    andConditions.push({ extractedFields: { path: ['country'], equals: campaign.country } });
   }
   if (campaign.businessTypes && campaign.businessTypes.length > 0) {
-    exactMatchOrs.push({ extractedFields: { path: ['category'], equals: campaign.businessTypes[0] } });
-  }
-
-  if (exactMatchOrs.length > 0) {
-    andConditions.push({ OR: exactMatchOrs });
+    andConditions.push({ extractedFields: { path: ['category'], equals: campaign.businessTypes[0] } });
   }
 
   andConditions.push({ confidenceScore: { gte: DEFAULT_MIN_CONFIDENCE } });

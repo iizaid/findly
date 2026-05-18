@@ -80,9 +80,11 @@ describe('Evidence Cache Brain', () => {
     const storeUntilCondition = callArgs.where.AND.find(c => c.OR && c.OR.some(o => o.storeUntil === null));
     expect(storeUntilCondition).toBeDefined();
     
-    // Check exact matches (city, country, businessTypes)
-    const exactMatchCondition = callArgs.where.AND.find(c => c.OR && c.OR.some(o => o.extractedFields?.path?.includes('city')));
-    expect(exactMatchCondition).toBeDefined();
+    // Check exact matches (city, country, businessTypes) are now strictly ANDed
+    const exactMatchCityCondition = callArgs.where.AND.find(c => c.extractedFields?.path?.includes('city'));
+    expect(exactMatchCityCondition).toBeDefined();
+    const exactMatchCountryCondition = callArgs.where.AND.find(c => c.extractedFields?.path?.includes('country'));
+    expect(exactMatchCountryCondition).toBeDefined();
   });
   
   it('filters out invalid evidence records', async () => {

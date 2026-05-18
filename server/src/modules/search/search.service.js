@@ -162,6 +162,8 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, _localResults, _evidence
         logger.warn('campaign.search_metadata.discovery.skipped', {
           campaignId: campaign.id,
           reason: metadata.externalDiscoverySkippedReason,
+          errorCode: error?.code,
+          errorMessage: error?.message,
         });
       }
     }

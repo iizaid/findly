@@ -103,30 +103,29 @@ const needsStrictThreshold = (evidence) => {
 
 const findDuplicateCatalogLead = async ({ tx, lead }) => {
   const fingerprint = buildLeadFingerprint(lead);
-  const or = [];
+  const exactOr = [];
+  const fuzzyOr = [];
 
-  if (lead.source && lead.sourceId) or.push({ source: lead.source, sourceId: lead.sourceId });
-  if (lead.normalizedFingerprint) or.push({ normalizedFingerprint: lead.normalizedFingerprint });
-  if (lead.instagramUsername) or.push({ instagramUsername: { equals: lead.instagramUsername, mode: 'insensitive' } });
+  if (lead.source && lead.sourceId) exactOr.push({ source: lead.source, sourceId: lead.sourceId });
+  if (lead.normalizedFingerprint) exactOr.push({ normalizedFingerprint: lead.normalizedFingerprint });
+  if (lead.instagramUsername) exactOr.push({ instagramUsername: { equals: lead.instagramUsername, mode: 'insensitive' } });
   if (lead.websiteUrl) {
     const websiteKey = normalizeUrl(lead.websiteUrl);
-    if (websiteKey) or.push({ websiteUrl: { contains: websiteKey.split('/')[0], mode: 'insensitive' } });
+    if (websiteKey) fuzzyOr.push({ websiteUrl: { contains: websiteKey.split('/')[0], mode: 'insensitive' } });
   }
   const phoneKey = normalizePhone(lead.phone);
-  if (phoneKey) or.push({ phone: { contains: phoneKey.slice(-7) } });
+  if (phoneKey) exactOr.push({ phone: { contains: phoneKey.slice(-7) } });
   const instagramKey = normalizeInstagramUsername(lead.instagramUsername);
-  if (instagramKey) or.push({ instagramUsername: { equals: instagramKey, mode: 'insensitive' } });
+  if (instagramKey) exactOr.push({ instagramUsername: { equals: instagramKey, mode: 'insensitive' } });
   const normalizedName = normalizeBusinessName(lead.businessName);
   if (normalizedName && lead.city) {
-    or.push({
+    fuzzyOr.push({
       businessName: { contains: normalizedName.split(' ')[0], mode: 'insensitive' },
       city: { equals: lead.city, mode: 'insensitive' },
     });
   }
 
-  if (or.length === 0) return null;
-  const candidates = await tx.leadCatalog.findMany({ where: { OR: or }, take: 20 });
-  return candidates.find((candidate) => {
+  const matchesFingerprint = (candidate) => {
     const candidateFingerprint = buildLeadFingerprint(candidate);
     return Boolean(
       (fingerprint.sourceKey && fingerprint.sourceKey === candidateFingerprint.sourceKey)
@@ -137,7 +136,17 @@ const findDuplicateCatalogLead = async ({ tx, lead }) => {
       || (fingerprint.nameCityKey && fingerprint.nameCityKey === candidateFingerprint.nameCityKey)
       || (fingerprint.addressKey && fingerprint.addressKey === candidateFingerprint.addressKey)
     );
-  }) || null;
+  };
+
+  if (exactOr.length > 0) {
+    const exactCandidates = await tx.leadCatalog.findMany({ where: { OR: exactOr }, take: 20 });
+    const exactMatch = exactCandidates.find(matchesFingerprint);
+    if (exactMatch) return exactMatch;
+  }
+
+  if (fuzzyOr.length === 0) return null;
+  const fuzzyCandidates = await tx.leadCatalog.findMany({ where: { OR: fuzzyOr }, take: 50 });
+  return fuzzyCandidates.find(matchesFingerprint) || null;
 };
 
 const recordPromotionEvent = ({ tx, evidence, campaign, result, catalogLeadId = null, rationale }) => recordValidationEvent({
