@@ -809,9 +809,10 @@ const catalogWorkspaceForAdmin = async (userId) => {
   return workspace;
 };
 
-const latestWebsiteEvidence = async ({ leadId = null, catalogLeadId = null }) => getLatestWebsiteIntelligenceEvidence({
+const latestWebsiteEvidence = async ({ leadId = null, catalogLeadId = null, websiteUrl = null }) => getLatestWebsiteIntelligenceEvidence({
   leadId,
   catalogLeadId,
+  websiteUrl,
 });
 
 const websiteIntelligenceFromResult = ({ result, leadId = null, catalogLeadId = null }) => ({
@@ -831,7 +832,9 @@ const websiteIntelligenceFromResult = ({ result, leadId = null, catalogLeadId = 
 
 export const getCatalogLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
   const lead = await loadCatalogLeadForWebsiteIntelligence(req.validated.params.id);
-  const intelligence = await latestWebsiteEvidence({ catalogLeadId: lead.id });
+  const intelligence = lead.websiteUrl
+    ? await latestWebsiteEvidence({ catalogLeadId: lead.id, websiteUrl: lead.websiteUrl })
+    : null;
   return successResponse(res, {
     leadId: null,
     catalogLeadId: lead.id,
@@ -842,7 +845,9 @@ export const getCatalogLeadWebsiteIntelligence = asyncHandler(async (req, res) =
 
 export const getLeadWebsiteIntelligence = asyncHandler(async (req, res) => {
   const lead = await loadLeadForWebsiteIntelligence(req.validated.params.id);
-  const intelligence = await latestWebsiteEvidence({ leadId: lead.id });
+  const intelligence = lead.websiteUrl
+    ? await latestWebsiteEvidence({ leadId: lead.id, websiteUrl: lead.websiteUrl })
+    : null;
   return successResponse(res, {
     leadId: lead.id,
     catalogLeadId: null,

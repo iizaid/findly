@@ -26,6 +26,7 @@ let adminUser;
 let workspace;
 let catalogLead;
 let noWebsiteLead;
+let changedWebsiteLead;
 
 const unique = Date.now().toString(36);
 const adminEmail = `admin.website.${unique}@findly.local`;
@@ -143,6 +144,15 @@ beforeAll(async () => {
       normalizedFingerprint: `phase-5b-no-website-${unique}`,
     },
   });
+  changedWebsiteLead = await prisma.leadCatalog.create({
+    data: {
+      businessName: `Phase 5B Changed Website ${unique}`,
+      source: 'LOCAL_DATASET',
+      sourceId: `phase-5b-changed-website-${unique}`,
+      normalizedFingerprint: `phase-5b-changed-website-${unique}`,
+      websiteUrl: `https://current-phase5b-${unique}.example.com`,
+    },
+  });
 });
 
 beforeEach(() => {
@@ -152,10 +162,10 @@ beforeEach(() => {
 afterAll(async () => {
   await prisma.auditLog.deleteMany({ where: { action: 'ADMIN_WEBSITE_INTELLIGENCE_ENRICHED' } }).catch(() => {});
   await prisma.leadEvidence.deleteMany({
-    where: { catalogLeadId: { in: [catalogLead?.id, noWebsiteLead?.id].filter(Boolean) } },
+    where: { catalogLeadId: { in: [catalogLead?.id, noWebsiteLead?.id, changedWebsiteLead?.id].filter(Boolean) } },
   }).catch(() => {});
   await prisma.leadCatalog.deleteMany({
-    where: { id: { in: [catalogLead?.id, noWebsiteLead?.id].filter(Boolean) } },
+    where: { id: { in: [catalogLead?.id, noWebsiteLead?.id, changedWebsiteLead?.id].filter(Boolean) } },
   }).catch(() => {});
   await prisma.user.deleteMany({ where: { email: { in: [adminEmail, userEmail] } } }).catch(() => {});
   await prisma.$disconnect();
@@ -268,6 +278,40 @@ describe('admin website intelligence workflow', () => {
     expect(response.body.data.intelligence.metadata.title).toContain(unique);
     expect(JSON.stringify(response.body)).not.toContain('<html');
     expect(JSON.stringify(response.body)).not.toContain('rawMetadata');
+  });
+
+  it('does not show stale website intelligence when the lead website URL changed', async () => {
+    await prisma.leadEvidence.create({
+      data: {
+        userId: adminUser.id,
+        workspaceId: workspace.id,
+        catalogLeadId: changedWebsiteLead.id,
+        targetSource: 'WEBSITE',
+        discoveryMethod: 'WEBSITE_METADATA',
+        sourceType: 'WEBSITE_METADATA',
+        sourceUrl: `https://old-phase5b-${unique}.example.com/`,
+        title: `Old Phase 5B Website ${unique}`,
+        snippetHash: 'b'.repeat(64),
+        confidenceScore: 80,
+        extractedFields: {
+          metadata: sampleIntelligence({ websiteUrl: `https://old-phase5b-${unique}.example.com/` }).metadata,
+          signals: sampleIntelligence().signals,
+        },
+        rawMetadata: {
+          reachable: true,
+          statusCode: 200,
+          finalUrl: `https://old-phase5b-${unique}.example.com/`,
+          warnings: [],
+        },
+      },
+    });
+
+    const response = await agentAdmin
+      .get(`/api/admin/catalog-leads/${changedWebsiteLead.id}/website-intelligence`)
+      .expect(200);
+
+    expect(response.body.data.websiteUrl).toBe(changedWebsiteLead.websiteUrl);
+    expect(response.body.data.intelligence).toBeNull();
   });
 
   it('returns a safe 400 when a catalog lead has no website URL', async () => {

@@ -387,9 +387,17 @@ export const findRecentWebsiteMetadataEvidence = async ({ leadId = null, catalog
   });
 };
 
-export const getLatestWebsiteIntelligenceEvidence = async ({ leadId = null, catalogLeadId = null } = {}) => {
+export const getLatestWebsiteIntelligenceEvidence = async ({ leadId = null, catalogLeadId = null, websiteUrl = null } = {}) => {
   if (!leadId && !catalogLeadId) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'leadId or catalogLeadId is required.', 400);
+  }
+  let normalizedUrl = null;
+  if (websiteUrl) {
+    try {
+      normalizedUrl = normalizeWebsiteUrl(websiteUrl);
+    } catch {
+      return null;
+    }
   }
   const evidence = await prisma.leadEvidence.findFirst({
     where: {
@@ -397,6 +405,7 @@ export const getLatestWebsiteIntelligenceEvidence = async ({ leadId = null, cata
       catalogLeadId: catalogLeadId || undefined,
       discoveryMethod: 'WEBSITE_METADATA',
       sourceType: 'WEBSITE_METADATA',
+      sourceUrl: normalizedUrl || undefined,
     },
     orderBy: { observedAt: 'desc' },
   });
