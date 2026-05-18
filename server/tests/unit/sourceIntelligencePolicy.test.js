@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getSourcePolicy,
   listRuntimeAllowedSources,
+  listBlockedRuntimeSources,
   assertSourceAllowedForStage,
   STAGES,
   RISK_LEVELS,
@@ -39,6 +40,14 @@ describe('Source Intelligence Policy', () => {
     expect(allowed.some(p => p.key === 'GOOGLE_PLACES')).toBe(true);
     expect(allowed.some(p => p.key === 'CSV_IMPORT')).toBe(false);
     expect(allowed.some(p => p.key === 'SPIDERFOOT')).toBe(false);
+  });
+
+  it('lists blocked runtime sources accurately', () => {
+    const blocked = listBlockedRuntimeSources();
+    expect(blocked.some(p => p.key === 'COMMON_CRAWL')).toBe(true);
+    expect(blocked.some(p => p.key === 'SPIDERFOOT')).toBe(true);
+    expect(blocked.some(p => p.key === 'CSV_IMPORT')).toBe(true);
+    expect(blocked.some(p => p.key === 'SERPER')).toBe(false);
   });
 
   it('enforces stage assertions', () => {

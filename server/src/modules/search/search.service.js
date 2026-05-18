@@ -739,13 +739,15 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         lastStep: 'Saving lead list',
       });
 
-      const combinedLocalAndEvidence = [...matchedLeads, ...evidenceCandidates].slice(0, campaign.requestedLimit || 20);
+      const linkedEvidenceCandidates = evidenceCandidates.filter(e => e.catalogLeadId);
+      const unlinkedEvidenceCandidates = evidenceCandidates.filter(e => !e.catalogLeadId);
+      const combinedLocalAndEvidence = [...matchedLeads, ...linkedEvidenceCandidates].slice(0, campaign.requestedLimit || 20);
       const catalogIds = new Set();
       if (combinedLocalAndEvidence.length > 0) {
         await tx.leadListLead.createMany({
           data: combinedLocalAndEvidence.map((lead, index) => ({
             leadListId: createdList.id,
-            catalogLeadId: lead.isReusableEvidence && lead.catalogLeadId ? lead.catalogLeadId : (lead.isReusableEvidence ? null : lead.id),
+            catalogLeadId: lead.isReusableEvidence ? lead.catalogLeadId : lead.id,
             rank: index + 1,
             score: lead.localDatasetScore || null,
             metadata: {
@@ -787,23 +789,29 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       let evidenceCreatedCount = 0;
       let promotedToCatalogCount = 0;
       let linkedDuplicateCount = 0;
-      if (externalDiscovery.candidates.length > 0) {
-        const externalDiscoveryQuery = await createDiscoveryQuery({
-          tx,
-          userId,
-          workspaceId: campaign.workspaceId,
-          campaignId: campaign.id,
-          seedQuery: campaign.query,
-          expandedQuery: discoveryPlan?.expandedQuery,
-          geography: discoveryPlan?.geography || [campaign.city, campaign.country].filter(Boolean).join(', ') || null,
-          targetSources: discoveryPlan?.targetSources || platformsRequested,
-          discoveryMethod: externalDiscovery.metadata.externalProvider === 'GOOGLE_PLACES' ? 'GOOGLE_PLACES' : 'SERPAPI_DISCOVERY',
-          adapter: externalDiscovery.metadata.externalProvider || 'EXTERNAL_DISCOVERY',
-          costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
-          status: 'COMPLETED',
-        });
+      const unlinkedEvidenceIds = new Set(unlinkedEvidenceCandidates.map(e => e.originalEvidenceId));
+      const unlinkedEvidenceRecordsToPromote = evidenceRecords.filter(e => unlinkedEvidenceIds.has(e.id));
 
-        const evidences = [];
+      if (externalDiscovery.candidates.length > 0 || unlinkedEvidenceRecordsToPromote.length > 0) {
+        let externalDiscoveryQuery = null;
+        if (externalDiscovery.candidates.length > 0) {
+          externalDiscoveryQuery = await createDiscoveryQuery({
+            tx,
+            userId,
+            workspaceId: campaign.workspaceId,
+            campaignId: campaign.id,
+            seedQuery: campaign.query,
+            expandedQuery: discoveryPlan?.expandedQuery,
+            geography: discoveryPlan?.geography || [campaign.city, campaign.country].filter(Boolean).join(', ') || null,
+            targetSources: discoveryPlan?.targetSources || platformsRequested,
+            discoveryMethod: externalDiscovery.metadata.externalProvider === 'GOOGLE_PLACES' ? 'GOOGLE_PLACES' : 'SERPAPI_DISCOVERY',
+            adapter: externalDiscovery.metadata.externalProvider || 'EXTERNAL_DISCOVERY',
+            costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
+            status: 'COMPLETED',
+          });
+        }
+
+        const evidences = [...unlinkedEvidenceRecordsToPromote];
         for (const candidate of externalDiscovery.candidates) {
           evidences.push(await recordLeadEvidence({
             tx,
@@ -814,16 +822,16 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             ...candidate,
           }));
         }
-        evidenceCreatedCount = evidences.length;
+        evidenceCreatedCount = externalDiscovery.candidates.length;
 
         const promotionResults = await promoteHighConfidenceEvidenceBatch({
           tx,
           evidences,
           campaign,
-          limit: Math.min(externalDiscovery.candidates.length, campaign.requestedLimit || 20),
+          limit: Math.min(evidences.length, campaign.requestedLimit || 20),
         });
 
-        let rank = matchedLeads.length + 1;
+        let rank = matchedLeads.length + linkedEvidenceCandidates.length + 1;
         for (const promotion of promotionResults) {
           if (!promotion.catalogLead?.id || catalogIds.has(promotion.catalogLead.id)) continue;
           catalogIds.add(promotion.catalogLead.id);

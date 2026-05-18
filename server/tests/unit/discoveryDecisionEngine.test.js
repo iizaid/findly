@@ -68,4 +68,14 @@ describe('Discovery Decision Engine', () => {
 
     expect(plan.enrichmentPlan.websiteMetadataAllowed).toBe(true);
   });
+
+  it('adjusts max queries based on coverage ratio', () => {
+    // 60% coverage
+    const localResults = Array.from({ length: 12 }).map(() => ({ localDatasetScore: 80 }));
+    const plan = buildDiscoveryPlan({ campaign, localResults, evidenceCandidates: [] });
+
+    expect(plan.stageDecision).toBe('LIVE_DISCOVERY');
+    expect(plan.searchMetadataPlan.maxQueriesAllowed).toBeLessThan(5);
+    expect(plan.searchMetadataPlan.maxQueriesAllowed).toBe(2);
+  });
 });

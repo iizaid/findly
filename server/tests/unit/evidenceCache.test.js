@@ -1,9 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   evaluateEvidenceReuseCoverage,
   shouldSkipPaidProvidersDueToEvidenceCache,
   convertEvidenceToReusableLeadCandidates,
+  findReusableEvidenceCandidates,
 } from '../../src/modules/search/evidenceCache.service.js';
+
+vi.mock('../../src/db/prisma.js', () => ({
+  prisma: {
+    leadEvidence: {
+      findMany: vi.fn(),
+    },
+  },
+}));
+
+import { prisma } from '../../src/db/prisma.js';
 
 describe('Evidence Cache Brain', () => {
   const campaign = {
@@ -57,5 +68,33 @@ describe('Evidence Cache Brain', () => {
     
     const shouldSkip = shouldSkipPaidProvidersDueToEvidenceCache({ campaign, localResults, evidenceCandidates });
     expect(shouldSkip).toBe(false);
+  });
+
+  it('findReusableEvidenceCandidates uses correct filters for storeUntil', async () => {
+    prisma.leadEvidence.findMany.mockResolvedValue([]);
+    await findReusableEvidenceCandidates({ campaign, targetSources: ['INSTAGRAM'], limit: 10 });
+    
+    const callArgs = prisma.leadEvidence.findMany.mock.calls[0][0];
+    
+    // Check storeUntil OR condition
+    const storeUntilCondition = callArgs.where.AND.find(c => c.OR && c.OR.some(o => o.storeUntil === null));
+    expect(storeUntilCondition).toBeDefined();
+    
+    // Check exact matches (city, country, businessTypes)
+    const exactMatchCondition = callArgs.where.AND.find(c => c.OR && c.OR.some(o => o.extractedFields?.path?.includes('city')));
+    expect(exactMatchCondition).toBeDefined();
+  });
+  
+  it('filters out invalid evidence records', async () => {
+    prisma.leadEvidence.findMany.mockResolvedValue([
+      { id: '1', title: 'Valid Name', sourceUrl: 'http://valid.com', confidenceScore: 80 },
+      { id: '2', title: '', sourceUrl: 'http://valid.com', confidenceScore: 80 }, // empty title
+      { id: '3', title: 'Valid Name', sourceUrl: null, confidenceScore: 80 }, // no url
+      { id: '4', title: 'Ab', sourceUrl: 'http://valid.com', confidenceScore: 80 }, // too short title
+    ]);
+    
+    const results = await findReusableEvidenceCandidates({ campaign, limit: 10 });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('1');
   });
 });

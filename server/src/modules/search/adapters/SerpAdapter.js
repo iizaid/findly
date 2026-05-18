@@ -25,7 +25,9 @@ export class SerpAdapter extends BaseAdapter {
   static isConfigured() {
     if (isTestRuntime()
       && process.env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED !== 'true'
-      && process.env.LIVE_SERP_DISCOVERY_ENABLED !== 'true') return false;
+      && process.env.LIVE_SERP_DISCOVERY_ENABLED !== 'true'
+      && !env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED
+      && !env.LIVE_SERP_DISCOVERY_ENABLED) return false;
     return getSearchMetadataProviderStatus().runnable;
   }
 

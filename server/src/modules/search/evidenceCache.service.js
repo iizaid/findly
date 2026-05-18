@@ -3,20 +3,40 @@ import { prisma } from '../../db/prisma.js';
 const DEFAULT_MIN_CONFIDENCE = 65;
 
 export const findReusableEvidenceCandidates = async ({ campaign, targetSources = [], limit = 20 }) => {
-  const orConditions = [];
+  const andConditions = [];
 
+  // storeUntil null OR future
+  andConditions.push({
+    OR: [
+      { storeUntil: null },
+      { storeUntil: { gt: new Date() } }
+    ]
+  });
+
+  const exactMatchOrs = [];
   if (campaign.city) {
-    orConditions.push({ extractedFields: { path: ['city'], equals: campaign.city } });
+    exactMatchOrs.push({ extractedFields: { path: ['city'], equals: campaign.city } });
+  }
+  if (campaign.country) {
+    exactMatchOrs.push({ extractedFields: { path: ['country'], equals: campaign.country } });
+  }
+  if (campaign.businessTypes && campaign.businessTypes.length > 0) {
+    exactMatchOrs.push({ extractedFields: { path: ['category'], equals: campaign.businessTypes[0] } });
+  }
+
+  if (exactMatchOrs.length > 0) {
+    andConditions.push({ OR: exactMatchOrs });
+  }
+
+  andConditions.push({ confidenceScore: { gte: DEFAULT_MIN_CONFIDENCE } });
+
+  if (targetSources.length > 0) {
+    andConditions.push({ targetSource: { in: targetSources } });
   }
 
   // Find evidence that matches target sources or is just generally high confidence in this city/country
   const evidenceRecords = await prisma.leadEvidence.findMany({
-    where: {
-      confidenceScore: { gte: DEFAULT_MIN_CONFIDENCE },
-      targetSource: targetSources.length > 0 ? { in: targetSources } : undefined,
-      storeUntil: { gt: new Date() },
-      OR: orConditions.length > 0 ? orConditions : undefined,
-    },
+    where: { AND: andConditions },
     take: limit * 2, // Grab more so we can filter
     orderBy: { confidenceScore: 'desc' },
   });

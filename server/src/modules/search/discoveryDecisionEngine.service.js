@@ -33,6 +33,9 @@ export const buildDiscoveryPlan = ({ campaign, localResults = [], evidenceCandid
   // ── Layer 3: Policy warnings ──
   const sourcePolicyWarnings = getPolicyWarningsForCampaign(campaign);
 
+  const totalCovered = localResults.length + evidenceCandidates.length;
+  const coverageRatio = requestedLimit > 0 ? totalCovered / requestedLimit : 1;
+
   // Missing count respects forceLiveDiscovery via the cacheFirstDiscovery module
   const missingFromLocal = calculateMissingResultCount({ campaign, localResults });
   // If evidence fills the gap, reduce the missing count
@@ -64,28 +67,56 @@ export const buildDiscoveryPlan = ({ campaign, localResults = [], evidenceCandid
 
   if (searchMetadataRequested && shouldGoExternal) {
     searchMetadataPlan.enabled = true;
-    searchMetadataPlan.maxQueriesAllowed = budget.maxSerpQueries;
+    
+    let smartMaxQueries = budget.maxSerpQueries;
+    const forceLive = campaign?.filters?.discovery?.forceLiveDiscovery === true;
+    
+    if (!forceLive) {
+      // Full local count satisfies the limit — no need for external regardless of score
+      const hasFullLocalCount = localCoverage.enoughCount;
+      if (hasFullLocalCount || (coverageRatio >= 0.7 && localCoverage.averageLocalScore >= localCoverage.minimumAverageScore)) {
+        smartMaxQueries = 0;
+        shouldGoExternal = false;
+      } else if (coverageRatio >= 0.5) {
+        smartMaxQueries = Math.min(2, budget.maxSerpQueries);
+      } else if (coverageRatio >= 0.3) {
+        smartMaxQueries = Math.min(3, budget.maxSerpQueries);
+      }
+    }
+    
+    searchMetadataPlan.maxQueriesAllowed = smartMaxQueries;
 
-    // Budget guard: check estimated cost
-    const estimatedSerpCost = estimateExternalCostMicrousd({
-      discoveryMethod: 'SERPAPI_DISCOVERY',
-      count: budget.maxSerpQueries,
-    });
-
-    if (estimatedSerpCost > budget.maxEstimatedExternalCostMicrousd) {
-      searchMetadataPlan.reason = 'BUDGET_LIMIT';
-      skippedReasons.push('BUDGET_LIMIT');
-    } else if (budget.maxSerpQueries > 0) {
-      runPaidSearchMetadata = true;
-      searchMetadataPlan.reason = `Running paid search. Missing ${missingCount} results.`;
+    if (smartMaxQueries === 0 && !forceLive) {
+      const reason = evidenceCandidates.length > 0 ? 'EVIDENCE_COVERAGE_SUFFICIENT' : 'LOCAL_COVERAGE_SUFFICIENT';
+      searchMetadataPlan.reason = reason;
+      skippedReasons.push(reason);
     } else {
-      searchMetadataPlan.reason = 'maxSerpQueries is 0';
-      skippedReasons.push(searchMetadataPlan.reason);
+      // Budget guard: check estimated cost
+      const estimatedSerpCost = estimateExternalCostMicrousd({
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        count: smartMaxQueries,
+      });
+
+      if (estimatedSerpCost > budget.maxEstimatedExternalCostMicrousd) {
+        searchMetadataPlan.reason = 'BUDGET_LIMIT';
+        skippedReasons.push('BUDGET_LIMIT');
+      } else if (smartMaxQueries > 0) {
+        runPaidSearchMetadata = true;
+        searchMetadataPlan.reason = `Running paid search. Missing ${missingCount} results.`;
+      } else {
+        searchMetadataPlan.reason = 'BUDGET_LIMIT';
+        skippedReasons.push('BUDGET_LIMIT');
+      }
     }
   } else if (searchMetadataRequested && !shouldGoExternal) {
     searchMetadataPlan.enabled = true;
-    searchMetadataPlan.reason = localCoverage.reason || 'Sufficient local/evidence coverage';
-    skippedReasons.push(localCoverage.reason || 'LOCAL_COVERAGE_SUFFICIENT');
+    let reason = 'LOCAL_COVERAGE_SUFFICIENT';
+    if (localCoverage.reason === 'LIVE_DISCOVERY_DISABLED') reason = 'LIVE_DISCOVERY_DISABLED';
+    else if (localCoverage.reason === 'LOCAL_ONLY_SOURCE_SELECTED') reason = 'LOCAL_DATASET_ONLY';
+    else if (coverageRatio >= 0.7 && evidenceCandidates.length > 0) reason = 'EVIDENCE_COVERAGE_SUFFICIENT';
+
+    searchMetadataPlan.reason = reason;
+    skippedReasons.push(reason);
   }
 
   // ── Google Places Plan ──
@@ -133,7 +164,11 @@ export const buildDiscoveryPlan = ({ campaign, localResults = [], evidenceCandid
 
   // If local coverage said USE_LOCAL_ONLY, surface that reason
   if (stageDecision === 'LOCAL_DATASET_ONLY' && skippedReasons.length === 0) {
-    skippedReasons.push(localCoverage.reason || 'LOCAL_COVERAGE_SUFFICIENT');
+    let reason = 'LOCAL_COVERAGE_SUFFICIENT';
+    if (localCoverage.reason === 'LIVE_DISCOVERY_DISABLED') reason = 'LIVE_DISCOVERY_DISABLED';
+    else if (localCoverage.reason === 'LOCAL_ONLY_SOURCE_SELECTED') reason = 'LOCAL_DATASET_ONLY';
+    else if (coverageRatio >= 0.7 && evidenceCandidates.length > 0) reason = 'EVIDENCE_COVERAGE_SUFFICIENT';
+    skippedReasons.push(reason);
   }
 
   // ── Cost estimate ──
