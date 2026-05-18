@@ -143,6 +143,46 @@ npx prisma validate
 npx prisma migrate status
 ```
 
+## Import Size Limits
+
+All imports are subject to these configurable limits:
+
+| Limit                   | Default        | Env Variable           |
+|-------------------------|----------------|------------------------|
+| Max rows per file       | 25,000         | `MAX_IMPORT_ROWS`      |
+| Max columns per file    | 120            | `MAX_IMPORT_COLUMNS`   |
+| Max sheets per XLSX     | 20             | `MAX_IMPORT_SHEETS`    |
+| Max XLSX XML bytes      | 10 MB          | `MAX_XLSX_XML_BYTES`   |
+| Max JSON file bytes     | 10 MB          | `MAX_JSON_IMPORT_BYTES`|
+| Max upload file size    | 50 MB          | Multer hard limit      |
+| Upload file TTL         | 60 min         | `IMPORT_UPLOAD_TTL_MINUTES` |
+
+Import parsing currently runs synchronously on the main Node.js event loop. Very large files (near the 10 MB / 25,000 row limits) may temporarily block the server from serving other requests. For production deployments with heavy import usage, consider moving parsing to a background worker in a future phase.
+
+## Deployment: Upload Storage Warning
+
+The admin import parse/commit flow uses a **two-step process**:
+1. `POST /api/admin/imports/parse` uploads the file to a local temporary directory.
+2. `POST /api/admin/imports/commit` reads the previously-uploaded file and processes the import.
+
+**The file must persist on disk between these two requests.**
+
+By default, files are stored in `<process.cwd()>/uploads`. This works on VPS, dedicated servers, and Render instances with persistent disks.
+
+**On serverless or ephemeral hosting (Vercel Serverless Functions, AWS Lambda, Heroku free dynos)**, the filesystem is wiped between requests. The uploaded file will be lost before the commit step, causing the import to fail.
+
+### Recommended production configuration
+
+Set the `ADMIN_UPLOAD_DIR` environment variable to point to a persistent mounted volume:
+
+```bash
+ADMIN_UPLOAD_DIR=/mnt/data/findly-uploads
+```
+
+If `ADMIN_UPLOAD_DIR` is not set, the default `<cwd>/uploads` directory is used.
+
+A future phase should migrate upload storage to an object store (S3, R2, GCS) for full serverless compatibility.
+
 ## Not Production Complete
 
 Phase 4E is a controlled ingestion foundation. It still needs production monitoring, load testing, legal pages, real-user validation, and payment implementation in later phases.

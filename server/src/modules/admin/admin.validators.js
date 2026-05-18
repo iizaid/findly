@@ -211,6 +211,51 @@ export const adminGrantCreditsSchema = z.object({
 const aiProviderSchema = z.enum(['gemini', 'openai', 'anthropic', 'deepseek', 'kimi', 'qwen']);
 const discoveryProviderSchema = z.enum(['serper', 'serpapi', 'google_places', 'dataforseo', 'brave', 'searchapi']);
 
+const isPublicHttpUrl = (urlStr) => {
+  if (!urlStr) return true;
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    
+    const hostname = parsed.hostname.toLowerCase();
+    
+    const isTestOrDev = process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
+    if ((hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') && isTestOrDev) {
+      return true;
+    }
+
+    if (
+      hostname === 'localhost' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      hostname.startsWith('127.') ||
+      hostname.startsWith('169.254.') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.')
+    ) {
+      return false;
+    }
+
+    if (hostname.startsWith('172.')) {
+      const parts = hostname.split('.');
+      if (parts.length === 4) {
+        const second = parseInt(parts[1], 10);
+        if (second >= 16 && second <= 31) return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const safeUrlSchema = z.union([
+  z.literal(''),
+  z.string().url('Base URL must be valid.').refine(isPublicHttpUrl, { message: 'Base URL must be a public HTTPS or HTTP address.' })
+]);
+
 export const adminAiProviderParamSchema = z.object({
   params: z.object({
     provider: aiProviderSchema,
@@ -224,7 +269,7 @@ export const adminAiProviderSecretUpsertSchema = z.object({
   body: z.object({
     apiKey: z.string().trim().min(8, 'API key is required.').max(4000),
     model: z.string().trim().max(120).optional().nullable(),
-    baseUrl: z.union([z.literal(''), z.string().url('Base URL must be valid.')]).optional().nullable(),
+    baseUrl: safeUrlSchema.optional().nullable(),
     confirmProvider: aiProviderSchema,
     reason: z.string().trim().min(8, 'Reason must be at least 8 characters.').max(500),
   }),
@@ -255,7 +300,7 @@ export const adminDiscoveryProviderSecretUpsertSchema = z.object({
   }),
   body: z.object({
     apiKey: z.string().trim().min(8, 'API key is required.').max(4000),
-    baseUrl: z.union([z.literal(''), z.string().url('Base URL must be valid.')]).optional().nullable(),
+    baseUrl: safeUrlSchema.optional().nullable(),
     role: z.enum(['SEARCH_METADATA', 'LOCAL_BUSINESS']).optional(),
     priority: z.number().int().min(1).max(1000).optional(),
     isPrimaryCandidate: z.boolean().optional(),

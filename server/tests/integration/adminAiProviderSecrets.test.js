@@ -244,17 +244,25 @@ describe('Admin AI provider secret management', () => {
     process.env.NODE_ENV = 'production';
     const token = await csrf(rootAgent);
     try {
-      await rootAgent
-        .put('/api/admin/ai/providers/deepseek/secret')
-        .set('x-csrf-token', token)
-        .send({
-          apiKey: 'deepseek-dashboard-secret',
-          model: 'deepseek-test',
-          baseUrl: 'http://localhost:11434/v1',
-          confirmProvider: 'deepseek',
-          reason: 'unsafe url test',
-        })
-        .expect(400);
+      for (const badUrl of [
+        'http://localhost:11434/v1',
+        'http://127.0.0.1:5432',
+        'http://169.254.169.254/latest/meta-data',
+        'http://192.168.1.10/admin',
+      ]) {
+        const res = await rootAgent
+          .put('/api/admin/ai/providers/deepseek/secret')
+          .set('x-csrf-token', token)
+          .send({
+            apiKey: 'deepseek-dashboard-secret',
+            model: 'deepseek-test',
+            baseUrl: badUrl,
+            confirmProvider: 'deepseek',
+            reason: 'unsafe url test',
+          });
+        expect(res.status).toBe(400);
+        expect(res.body.error.message).toContain('public HTTPS or HTTP address');
+      }
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
     }

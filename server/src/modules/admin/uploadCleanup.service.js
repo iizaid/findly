@@ -17,9 +17,15 @@ const ALLOWED_MIME_TYPES = new Set([
 
 /**
  * Returns the absolute path to the admin upload directory.
- * Always resolves relative to process.cwd().
+ * If ADMIN_UPLOAD_DIR is set, uses that (useful for persistent storage mounts).
+ * Otherwise resolves relative to process.cwd() as 'uploads' (warn: ephemeral).
  */
-export const getAdminUploadDir = () => path.resolve(process.cwd(), 'uploads');
+export const getAdminUploadDir = () => {
+  if (env.ADMIN_UPLOAD_DIR) {
+    return path.resolve(env.ADMIN_UPLOAD_DIR);
+  }
+  return path.resolve(process.cwd(), 'uploads');
+};
 
 /**
  * Ensures the upload directory exists (creates it if missing).
