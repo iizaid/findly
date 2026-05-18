@@ -61,6 +61,9 @@ export const getDiscoveryReadinessSummary = async () => {
     listDiscoveryProviderSecretStatuses(),
   ]);
   const dashboardByProvider = new Map(dashboardStatuses.map((status) => [status.provider, status]));
+  const serperReady = Boolean(searchMetadata.liveEnabled && serperConfig.apiKey);
+  const serpApiReady = Boolean((searchMetadata.legacySerpEnabled || searchMetadata.liveEnabled) && serpApiConfig.apiKey);
+  const googlePlacesReady = Boolean(googlePlacesConfig.apiKey && googlePlaces.available);
   const safeProvider = (provider, config) => {
     const dashboard = dashboardByProvider.get(provider);
     return {
@@ -116,27 +119,27 @@ export const getDiscoveryReadinessSummary = async () => {
         configured: Boolean(googlePlacesConfig.apiKey || googlePlaces.configured),
         source: googlePlacesConfig.source,
         fingerprint: dashboardByProvider.get(DISCOVERY_PROVIDERS.GOOGLE_PLACES)?.fingerprint || null,
-        runnable: Boolean(googlePlacesConfig.apiKey && googlePlaces.available),
+        runnable: googlePlacesReady,
         requiresApiKey: true,
-        status: googlePlacesConfig.apiKey ? 'ready' : 'not_configured',
+        status: googlePlacesReady ? 'ready' : 'not_configured',
       },
       serpApi: {
         configured: Boolean(serpApiConfig.apiKey || serpApi.configured),
         source: serpApiConfig.source,
         fingerprint: dashboardByProvider.get(DISCOVERY_PROVIDERS.SERPAPI)?.fingerprint || null,
-        runnable: searchMetadata.legacySerpEnabled && Boolean(serpApiConfig.apiKey),
+        runnable: serpApiReady,
         liveEnabled: Boolean(env.LIVE_SERP_DISCOVERY_ENABLED),
         requiresApiKey: true,
         plannedForPhase: 'Phase 4',
-        status: env.LIVE_SERP_DISCOVERY_ENABLED && env.SERPAPI_API_KEY ? 'ready_cache_first' : 'prepared_disabled',
+        status: serpApiReady ? 'ready_cache_first' : 'prepared_disabled',
       },
       serper: {
         configured: Boolean(serperConfig.apiKey),
         source: serperConfig.source,
         fingerprint: dashboardByProvider.get(DISCOVERY_PROVIDERS.SERPER)?.fingerprint || null,
-        runnable: Boolean(searchMetadata.liveEnabled && serperConfig.apiKey),
+        runnable: serperReady,
         requiresApiKey: true,
-        status: searchMetadata.liveEnabled && env.SERPER_API_KEY ? 'ready_cache_first' : 'missing_or_disabled',
+        status: serperReady ? 'ready_cache_first' : 'missing_or_disabled',
       },
       searchMetadata: {
         liveEnabled: searchMetadata.liveEnabled,
