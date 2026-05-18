@@ -13,8 +13,15 @@ The cache looks for candidates that:
 - Possess a valid `sourceUrl` and `title`
 - Have a `storeUntil` that is either `null` (permanent) or in the future.
 
-### Promotion Flow
-When evidence is deemed highly relevant but is unlinked to a catalog lead (`catalogLeadId` is missing), the system intercepts it during campaign processing and securely promotes it to the `LeadCatalog`. This prevents the creation of ghost records while ensuring new high-confidence signals continuously feed the local dataset.
+### Linked vs. Unlinked Evidence
+Linked evidence (`catalogLeadId` present) can be reused directly in lead lists because it points to a real `LeadCatalog` record.
+
+Unlinked evidence (`catalogLeadId` missing) is never inserted directly into `LeadListLead`. Phase 4D.2 keeps it as evidence metadata and reports it through:
+- `unlinkedEvidenceCandidatesCount`
+- `evidenceSkippedUnlinkedCount`
+- `UNLINKED_EVIDENCE_NOT_DIRECTLY_REUSABLE`
+
+This prevents ghost lead-list rows where both `leadId` and `catalogLeadId` are null. Promotion of unlinked evidence remains handled only by explicit safe promotion flows for newly recorded external evidence, not by automatic evidence-cache reuse.
 
 ## 2. Discovery Decision Engine (`discoveryDecisionEngine.service.js`)
 This engine determines *if* and *how much* external API budget to spend based on coverage.
@@ -22,10 +29,12 @@ This engine determines *if* and *how much* external API budget to spend based on
 ### Smart Query Budgeting
 The brain dynamically adjusts the max allowed external queries based on the **coverage ratio** (Local Results + Reusable Evidence vs. Requested Limit):
 
-- **≥ 70% Coverage & Acceptable Score:** `maxQueriesAllowed = 0` (Skips paid API entirely)
+- **≥ 70% Reusable Coverage & Acceptable Score:** `maxQueriesAllowed = 0` (skips paid API entirely)
 - **50% – 70% Coverage:** `maxQueriesAllowed = min(2, maxSerpQueries)`
 - **30% – 50% Coverage:** `maxQueriesAllowed = min(3, maxSerpQueries)`
 - **< 30% Coverage:** Proceeds with full configured max.
+
+Coverage for skipping paid providers is based on local results plus linked reusable evidence. Unlinked evidence is useful context, but it does not count as direct lead-list coverage unless it has already been safely promoted or linked.
 
 ### Decision Transparency
 To provide maximum clarity to developers and auditors, the engine surfaces precise `skippedReasons` such as:

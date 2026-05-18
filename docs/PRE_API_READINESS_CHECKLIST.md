@@ -9,6 +9,8 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Search metadata discovery can run only when explicitly enabled and a provider key is configured. Serper.dev is the preferred primary provider; SerpAPI remains fallback.
 - Serper, SerpAPI, and Google Places keys can be managed from the ROOT Discovery Providers dashboard when encrypted discovery secret management is enabled. Server env keys still work as fallback.
 - Cache-first coverage checks skip SerpAPI when local results are enough.
+- Evidence cache is checked before paid providers. Linked evidence can be reused in lead lists; unlinked evidence is reported but not inserted as a ghost result.
+- Smart query budgeting reduces Serper/SerpAPI calls as local plus linked evidence coverage improves.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -23,11 +25,12 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 
 1. User chooses signal targets such as Instagram, TikTok, Reddit, Yelp, Google Maps, Website, or Local Dataset.
 2. For platform and directory signals, Findly searches the local LeadCatalog first.
-3. If local coverage is enough, Findly returns local results and skips external calls.
-4. If local coverage is not enough, the search metadata provider layer can fill missing results when the Phase 4B flag, provider key, quality gate, and budget allow it.
-5. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
-6. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
-7. Website metadata remains enrichment for existing leads, not a standalone scraper.
+3. Findly checks reusable LeadEvidence before paid providers.
+4. If local plus linked evidence coverage is enough, Findly returns those results and skips external calls.
+5. If coverage is not enough, the search metadata provider layer can fill missing results when the Phase 4B flag, provider key, quality gate, source policy, and budget allow it.
+6. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
+7. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
+8. Website metadata remains enrichment for existing leads, not a standalone scraper.
 
 ## API Keys Needed Later
 
@@ -77,6 +80,8 @@ These platforms are target signals now. Findly does not need direct access to th
 - Payments.
 - Direct platform APIs.
 - Social scraping.
+- Google Maps scraping inside SaaS runtime.
+- Browser automation, login automation, and proxy scraping.
 
 ## Next Phase
 

@@ -143,6 +143,29 @@ describe('Admin System Status Endpoint', () => {
     expect(readiness.evidence).toBeDefined();
     expect(typeof readiness.evidence.discoveryQueryCount).toBe('number');
     expect(typeof readiness.evidence.leadEvidenceCount).toBe('number');
+    expect(readiness.evidenceCache).toMatchObject({
+      available: true,
+      minConfidence: 65,
+      linkedEvidenceRequiredForLeadListReuse: true,
+      unlinkedEvidenceDirectListInsertion: false,
+      status: 'ready',
+    });
+    expect(readiness.decisionEngine).toMatchObject({
+      available: true,
+      localFirst: true,
+      evidenceBeforePaidProviders: true,
+      smartQueryBudgeting: true,
+      paidProvidersGuarded: true,
+    });
+    expect(readiness.sourceIntelligence).toBeDefined();
+    expect(readiness.sourceIntelligence.liveDiscoveryAllowedSources).toEqual(expect.arrayContaining(['SERPER', 'SERPAPI']));
+    expect(readiness.sourceIntelligence.blockedForLiveDiscoverySources).toEqual(expect.arrayContaining([
+      'COMMON_CRAWL',
+      'GOOGLE_MAPS_SCRAPER_OUTPUT',
+      'SPIDERFOOT',
+      'WEBSITE_METADATA',
+      'SNOV_IO',
+    ]));
 
     expect(readiness.sources.serpApi).toMatchObject({
       runnable: false,

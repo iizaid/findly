@@ -8,6 +8,14 @@ import {
   isDiscoverySecretManagementConfigured,
   listDiscoveryProviderSecretStatuses,
 } from './discoveryProviderSecretsVault.service.js';
+import {
+  listRuntimeAllowedSources,
+  listOfflineOnlySources,
+  listAdminOnlySources,
+  listBlockedRuntimeSources,
+  listSourcesAllowedForStage,
+  STAGES,
+} from './sourceIntelligencePolicy.service.js';
 
 const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'];
 
@@ -77,6 +85,31 @@ export const getDiscoveryReadinessSummary = async () => {
       discoveryQueryCount,
       leadEvidenceCount,
       status: 'available',
+    },
+    evidenceCache: {
+      available: true,
+      minConfidence: 65,
+      linkedEvidenceRequiredForLeadListReuse: true,
+      unlinkedEvidenceDirectListInsertion: false,
+      status: 'ready',
+    },
+    decisionEngine: {
+      available: true,
+      localFirst: true,
+      evidenceBeforePaidProviders: true,
+      smartQueryBudgeting: true,
+      paidProvidersGuarded: true,
+    },
+    sourceIntelligence: {
+      policyEngineAvailable: true,
+      runtimeAllowedSources: listRuntimeAllowedSources().map((source) => source.key),
+      liveDiscoveryAllowedSources: listSourcesAllowedForStage(STAGES.LIVE_DISCOVERY).map((source) => source.key),
+      offlineOnlySources: listOfflineOnlySources().map((source) => source.key),
+      adminOnlySources: listAdminOnlySources().map((source) => source.key),
+      blockedForLiveDiscoverySources: listBlockedRuntimeSources().map((source) => source.key),
+      warnings: [
+        'Offline/admin-only sources are blocked from live discovery, not rejected as data sources.',
+      ],
     },
     sources: {
       googlePlaces: {

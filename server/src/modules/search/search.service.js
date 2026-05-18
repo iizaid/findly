@@ -645,6 +645,15 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
        limit: Math.max(1, (campaign.requestedLimit || 20) - matchedLeads.length),
     });
     const evidenceCandidates = convertEvidenceToReusableLeadCandidates({ evidences: evidenceRecords, campaign });
+    const linkedEvidenceCandidates = evidenceCandidates.filter(e => e.catalogLeadId);
+    const unlinkedEvidenceCandidates = evidenceCandidates.filter(e => !e.catalogLeadId);
+    const evidenceMetadata = {
+      evidenceCacheUsed: evidenceCandidates.length > 0,
+      evidenceCandidatesCount: evidenceCandidates.length,
+      linkedEvidenceCandidatesCount: linkedEvidenceCandidates.length,
+      unlinkedEvidenceCandidatesCount: unlinkedEvidenceCandidates.length,
+      evidenceSkippedUnlinkedCount: unlinkedEvidenceCandidates.length,
+    };
     
     // DISCOVERY DECISION ENGINE
     const discoveryDecision = buildBrainDiscoveryPlan({
@@ -662,11 +671,11 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     });
     const estimatedTotalResults = Math.min(
       campaign.requestedLimit || 20,
-      matchedLeads.length + evidenceCandidates.length + externalDiscovery.candidates.length,
+      matchedLeads.length + linkedEvidenceCandidates.length + externalDiscovery.candidates.length,
     );
     await updateCampaignProgress({
       campaignId: campaign.id,
-      progressCurrent: Math.min(matchedLeads.length + evidenceCandidates.length, campaign.requestedLimit || 20),
+      progressCurrent: Math.min(matchedLeads.length + linkedEvidenceCandidates.length, campaign.requestedLimit || 20),
       progressTotal: campaign.requestedLimit || 20,
       lastStep: 'Scoring leads',
     });
@@ -717,16 +726,22 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             discovery: {
               sourceUsed: 'LOCAL_DATASET',
               localResultsCount: matchedLeads.length,
-              evidenceCandidatesCount: evidenceCandidates.length,
+              ...evidenceMetadata,
               evidenceSavedExternalCalls: discoveryDecision.evidenceCoverage.savedExternalCallsEstimate,
               discoveryDecision: discoveryDecision.stageDecision,
+              discoveryPrimaryReason: discoveryDecision.primaryReason,
               externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
               externalProvider: externalDiscovery.metadata.externalProvider,
               externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+              paidProvidersSkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
               searchMetadataProviderPrimary: externalDiscovery.metadata.searchMetadataProviderPrimary,
               searchMetadataProviderUsed: externalDiscovery.metadata.searchMetadataProviderUsed,
               searchMetadataFallbackUsed: externalDiscovery.metadata.searchMetadataFallbackUsed,
               searchMetadataQueriesUsed: externalDiscovery.metadata.searchMetadataQueriesUsed,
+              smartQueryBudget: discoveryDecision.smartQueryBudget,
+              searchMetadataMaxQueriesAllowed: discoveryDecision.searchMetadataPlan.maxQueriesAllowed,
+              googlePlacesMaxQueriesAllowed: discoveryDecision.googlePlacesPlan.maxQueriesAllowed,
+              sourcePolicyWarnings: discoveryDecision.sourcePolicyWarnings,
               externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,
             },
           },
@@ -741,8 +756,6 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         lastStep: 'Saving lead list',
       });
 
-      const linkedEvidenceCandidates = evidenceCandidates.filter(e => e.catalogLeadId);
-      const unlinkedEvidenceCandidates = evidenceCandidates.filter(e => !e.catalogLeadId);
       const combinedLocalAndEvidence = [...matchedLeads, ...linkedEvidenceCandidates].slice(0, campaign.requestedLimit || 20);
       const catalogIds = new Set();
       if (combinedLocalAndEvidence.length > 0) {
@@ -791,29 +804,24 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       let evidenceCreatedCount = 0;
       let promotedToCatalogCount = 0;
       let linkedDuplicateCount = 0;
-      const unlinkedEvidenceIds = new Set(unlinkedEvidenceCandidates.map(e => e.originalEvidenceId));
-      const unlinkedEvidenceRecordsToPromote = evidenceRecords.filter(e => unlinkedEvidenceIds.has(e.id));
 
-      if (externalDiscovery.candidates.length > 0 || unlinkedEvidenceRecordsToPromote.length > 0) {
-        let externalDiscoveryQuery = null;
-        if (externalDiscovery.candidates.length > 0) {
-          externalDiscoveryQuery = await createDiscoveryQuery({
-            tx,
-            userId,
-            workspaceId: campaign.workspaceId,
-            campaignId: campaign.id,
-            seedQuery: campaign.query,
-            expandedQuery: discoveryPlan?.expandedQuery,
-            geography: discoveryPlan?.geography || [campaign.city, campaign.country].filter(Boolean).join(', ') || null,
-            targetSources: discoveryPlan?.targetSources || platformsRequested,
-            discoveryMethod: externalDiscovery.metadata.externalProvider === 'GOOGLE_PLACES' ? 'GOOGLE_PLACES' : 'SERPAPI_DISCOVERY',
-            adapter: externalDiscovery.metadata.externalProvider || 'EXTERNAL_DISCOVERY',
-            costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
-            status: 'COMPLETED',
-          });
-        }
+      if (externalDiscovery.candidates.length > 0) {
+        const externalDiscoveryQuery = await createDiscoveryQuery({
+          tx,
+          userId,
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          seedQuery: campaign.query,
+          expandedQuery: discoveryPlan?.expandedQuery,
+          geography: discoveryPlan?.geography || [campaign.city, campaign.country].filter(Boolean).join(', ') || null,
+          targetSources: discoveryPlan?.targetSources || platformsRequested,
+          discoveryMethod: externalDiscovery.metadata.externalProvider === 'GOOGLE_PLACES' ? 'GOOGLE_PLACES' : 'SERPAPI_DISCOVERY',
+          adapter: externalDiscovery.metadata.externalProvider || 'EXTERNAL_DISCOVERY',
+          costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
+          status: 'COMPLETED',
+        });
 
-        const evidences = [...unlinkedEvidenceRecordsToPromote];
+        const evidences = [];
         for (const candidate of externalDiscovery.candidates) {
           evidences.push(await recordLeadEvidence({
             tx,
@@ -872,6 +880,12 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               evidenceCreatedCount,
               promotedToCatalogCount,
               linkedDuplicateCount,
+              ...evidenceMetadata,
+              evidenceSavedExternalCalls: discoveryDecision.evidenceCoverage.savedExternalCallsEstimate,
+              paidProvidersSkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+              smartQueryBudget: discoveryDecision.smartQueryBudget,
+              searchMetadataMaxQueriesAllowed: discoveryDecision.searchMetadataPlan.maxQueriesAllowed,
+              googlePlacesMaxQueriesAllowed: discoveryDecision.googlePlacesPlan.maxQueriesAllowed,
               finalResultCount,
             },
           },
@@ -922,6 +936,11 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             leadsReturned: finalResultCount,
             creditsUsed,
             localResultsCount: matchedLeads.length,
+            ...evidenceMetadata,
+            evidenceSavedExternalCalls: discoveryDecision.evidenceCoverage.savedExternalCallsEstimate,
+            discoveryPrimaryReason: discoveryDecision.primaryReason,
+            paidProvidersSkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,
+            smartQueryBudget: discoveryDecision.smartQueryBudget,
             externalDiscoveryUsed: externalDiscovery.metadata.externalDiscoveryUsed,
             externalProvider: externalDiscovery.metadata.externalProvider,
             externalDiscoverySkippedReason: externalDiscovery.metadata.externalDiscoverySkippedReason,

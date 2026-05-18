@@ -3,6 +3,8 @@ import {
   getSourcePolicy,
   listRuntimeAllowedSources,
   listBlockedRuntimeSources,
+  listSourcesAllowedForStage,
+  listSourcesBlockedForStage,
   assertSourceAllowedForStage,
   STAGES,
   RISK_LEVELS,
@@ -47,7 +49,30 @@ describe('Source Intelligence Policy', () => {
     expect(blocked.some(p => p.key === 'COMMON_CRAWL')).toBe(true);
     expect(blocked.some(p => p.key === 'SPIDERFOOT')).toBe(true);
     expect(blocked.some(p => p.key === 'CSV_IMPORT')).toBe(true);
+    expect(blocked.some(p => p.key === 'GOOGLE_MAPS_SCRAPER_OUTPUT')).toBe(true);
+    expect(blocked.some(p => p.key === 'WEBSITE_METADATA')).toBe(true);
+    expect(blocked.some(p => p.key === 'SNOV_IO')).toBe(true);
     expect(blocked.some(p => p.key === 'SERPER')).toBe(false);
+  });
+
+  it('lists live discovery sources separately from offline and enrichment tools', () => {
+    const allowedLive = listSourcesAllowedForStage(STAGES.LIVE_DISCOVERY).map(p => p.key);
+    const blockedLive = listSourcesBlockedForStage(STAGES.LIVE_DISCOVERY).map(p => p.key);
+
+    expect(allowedLive).toEqual(expect.arrayContaining(['SERPER', 'SERPAPI']));
+    expect(allowedLive).not.toContain('GOOGLE_PLACES');
+    expect(allowedLive).not.toContain('WEBSITE_METADATA');
+    expect(blockedLive).toEqual(expect.arrayContaining([
+      'COMMON_CRAWL',
+      'HUGGING_FACE_DATASETS',
+      'SPIDERFOOT',
+      'GOOGLE_MAPS_SCRAPER_OUTPUT',
+      'CSV_IMPORT',
+      'XLSX_IMPORT',
+      'JSON_IMPORT',
+      'WEBSITE_METADATA',
+      'SNOV_IO',
+    ]));
   });
 
   it('enforces stage assertions', () => {

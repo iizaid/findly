@@ -2,10 +2,70 @@ import { prisma } from '../../db/prisma.js';
 
 const DEFAULT_MIN_CONFIDENCE = 65;
 
+export const normalizeText = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+export const isSafeEvidenceUrl = (url) => {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+export const matchesOptionalField = (expected, actual) => {
+  const normalizedExpected = normalizeText(expected);
+  const normalizedActual = normalizeText(actual);
+  if (!normalizedExpected || !normalizedActual) return true;
+  return normalizedExpected === normalizedActual;
+};
+
+export const matchesBusinessType = (expectedBusinessTypes = [], actualCategory) => {
+  const normalizedActual = normalizeText(actualCategory);
+  if (!normalizedActual) return true;
+  const expected = Array.isArray(expectedBusinessTypes) ? expectedBusinessTypes : [expectedBusinessTypes];
+  const normalizedExpected = expected.map(normalizeText).filter(Boolean);
+  if (normalizedExpected.length === 0) return true;
+  return normalizedExpected.some((item) => item === normalizedActual
+    || item.includes(normalizedActual)
+    || normalizedActual.includes(item));
+};
+
+const evidenceDisplayName = (evidence) => evidence?.extractedFields?.businessName || evidence?.title || '';
+
+export const scoreEvidenceReuseMatch = ({ evidence, campaign }) => {
+  let score = 0;
+  const fields = evidence.extractedFields || {};
+  if (evidence.catalogLeadId) score += 50;
+  score += Math.min(40, Math.floor((Number(evidence.confidenceScore) || 0) / 3));
+  if (matchesOptionalField(campaign?.city, fields.city) && campaign?.city && fields.city) score += 20;
+  if (matchesOptionalField(campaign?.country, fields.country) && campaign?.country && fields.country) score += 15;
+  if (matchesBusinessType(campaign?.businessTypes || [], fields.category) && fields.category) score += 10;
+  return score;
+};
+
+const isReusableEvidenceRecord = ({ evidence, campaign, targetSources }) => {
+  const fields = evidence.extractedFields || {};
+  const name = evidenceDisplayName(evidence);
+  if ((Number(evidence.confidenceScore) || 0) < DEFAULT_MIN_CONFIDENCE) return false;
+  if (targetSources.length > 0 && !targetSources.includes(evidence.targetSource)) return false;
+  if (evidence.storeUntil && evidence.storeUntil <= new Date()) return false;
+  if (!isSafeEvidenceUrl(evidence.sourceUrl)) return false;
+  if (normalizeText(name).length < 3) return false;
+  if (!matchesOptionalField(campaign?.city, fields.city)) return false;
+  if (!matchesOptionalField(campaign?.country, fields.country)) return false;
+  if (!matchesBusinessType(campaign?.businessTypes || [], fields.category)) return false;
+  return true;
+};
+
 export const findReusableEvidenceCandidates = async ({ campaign, targetSources = [], limit = 20 }) => {
   const andConditions = [];
 
-  // storeUntil null OR future
   andConditions.push({
     OR: [
       { storeUntil: null },
@@ -13,31 +73,31 @@ export const findReusableEvidenceCandidates = async ({ campaign, targetSources =
     ]
   });
 
-  if (campaign.city) {
-    andConditions.push({ extractedFields: { path: ['city'], equals: campaign.city } });
-  }
-  if (campaign.country) {
-    andConditions.push({ extractedFields: { path: ['country'], equals: campaign.country } });
-  }
-  if (campaign.businessTypes && campaign.businessTypes.length > 0) {
-    andConditions.push({ extractedFields: { path: ['category'], equals: campaign.businessTypes[0] } });
-  }
-
   andConditions.push({ confidenceScore: { gte: DEFAULT_MIN_CONFIDENCE } });
 
   if (targetSources.length > 0) {
     andConditions.push({ targetSource: { in: targetSources } });
   }
 
-  // Find evidence that matches target sources or is just generally high confidence in this city/country
   const evidenceRecords = await prisma.leadEvidence.findMany({
     where: { AND: andConditions },
-    take: limit * 2, // Grab more so we can filter
-    orderBy: { confidenceScore: 'desc' },
+    take: Math.max(limit * 4, 50),
+    orderBy: [{ confidenceScore: 'desc' }, { createdAt: 'desc' }],
   });
 
-  // Filter out any without valid URLs or business names
-  return evidenceRecords.filter(e => e.sourceUrl && e.title && e.title.length >= 3).slice(0, limit);
+  return evidenceRecords
+    .filter((evidence) => isReusableEvidenceRecord({ evidence, campaign, targetSources }))
+    .map((evidence) => ({
+      ...evidence,
+      reuseMatchScore: scoreEvidenceReuseMatch({ evidence, campaign }),
+    }))
+    .sort((a, b) => {
+      if (Boolean(a.catalogLeadId) !== Boolean(b.catalogLeadId)) return a.catalogLeadId ? -1 : 1;
+      if ((b.confidenceScore || 0) !== (a.confidenceScore || 0)) return (b.confidenceScore || 0) - (a.confidenceScore || 0);
+      if ((b.reuseMatchScore || 0) !== (a.reuseMatchScore || 0)) return (b.reuseMatchScore || 0) - (a.reuseMatchScore || 0);
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    })
+    .slice(0, limit);
 };
 
 export const convertEvidenceToReusableLeadCandidates = ({ evidences = [], campaign }) => {
@@ -71,16 +131,22 @@ export const convertEvidenceToReusableLeadCandidates = ({ evidences = [], campai
 
 export const evaluateEvidenceReuseCoverage = ({ campaign, localResults = [], evidenceCandidates = [] }) => {
   const requestedLimit = Math.max(1, Number(campaign?.requestedLimit) || 20);
-  const totalCount = localResults.length + evidenceCandidates.length;
+  const linkedEvidence = evidenceCandidates.filter(e => e.catalogLeadId);
+  const unlinkedEvidence = evidenceCandidates.filter(e => !e.catalogLeadId);
+  const totalCount = localResults.length + linkedEvidence.length;
   const coverageRatio = Math.min(1, totalCount / requestedLimit);
   
   return {
     evidenceCount: evidenceCandidates.length,
-    reusableCatalogLeadCount: evidenceCandidates.filter(e => e.catalogLeadId).length,
-    highConfidenceUnlinkedCount: evidenceCandidates.filter(e => !e.catalogLeadId).length,
+    linkedEvidenceCount: linkedEvidence.length,
+    unlinkedEvidenceCount: unlinkedEvidence.length,
+    reusableCatalogLeadCount: linkedEvidence.length,
+    highConfidenceUnlinkedCount: unlinkedEvidence.filter(e => (Number(e.confidenceScore) || 0) >= DEFAULT_MIN_CONFIDENCE).length,
+    reusableForLeadListCount: linkedEvidence.length,
     coverageRatio,
     enoughEvidence: totalCount >= requestedLimit,
-    savedExternalCallsEstimate: evidenceCandidates.length,
+    savedExternalCallsEstimate: linkedEvidence.length,
+    skippedReasons: unlinkedEvidence.length > 0 ? ['UNLINKED_EVIDENCE_NOT_DIRECTLY_REUSABLE'] : [],
   };
 };
 

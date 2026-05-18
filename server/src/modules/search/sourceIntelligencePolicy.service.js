@@ -415,6 +415,9 @@ export const listAdminOnlySources = () => listSourcePolicies().filter((p) => p.a
 
 export const listBlockedRuntimeSources = () => listSourcePolicies().filter((p) => !p.allowedStages.includes(STAGES.LIVE_DISCOVERY));
 
+export const listSourcesAllowedForStage = (stage) => listSourcePolicies().filter((p) =>
+  p.allowedStages.includes(stage) && !p.blockedStages.includes(stage));
+
 export const listSourcesBlockedForStage = (stage) => listSourcePolicies().filter((p) => !p.allowedStages.includes(stage) || p.blockedStages.includes(stage));
 
 export const assertSourceAllowedForStage = (sourceKey, stage) => {

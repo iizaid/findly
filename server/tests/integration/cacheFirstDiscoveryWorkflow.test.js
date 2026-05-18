@@ -275,4 +275,51 @@ describe('cache-first live discovery workflow', () => {
     expect(result.externalDiscoverySkippedReason).toBe('BUDGET_LIMIT');
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('does not create ghost lead list rows from unlinked evidence cache entries', async () => {
+    global.fetch = vi.fn();
+    await prisma.leadEvidence.create({
+      data: {
+        userId,
+        workspaceId,
+        targetSource: 'REDDIT',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://reddit.com/r/findly/comments/unlinked_phase4_${unique}`,
+        title: `Unlinked Phase4 Cafe ${unique}`,
+        extractedFields: {
+          businessName: `Unlinked Phase4 Cafe ${unique}`,
+          city: `Unlinked City ${unique}`,
+          country: 'UnlinkedLand',
+          category: `Unlinked Phase4 Cafes ${unique}`,
+        },
+        confidenceScore: 90,
+        storeUntil: null,
+      },
+    });
+
+    const campaign = await createCampaign({
+      country: 'UnlinkedLand',
+      city: `Unlinked City ${unique}`,
+      businessTypes: [`Unlinked Phase4 Cafes ${unique}`],
+      sources: ['REDDIT'],
+      requestedLimit: 5,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { disableLiveDiscovery: true },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(false);
+
+    const leadList = await prisma.leadList.findUnique({
+      where: { id: result.leadListId },
+      include: { leadItems: true },
+    });
+    expect(leadList.leadItems.every((item) => item.leadId || item.catalogLeadId)).toBe(true);
+    expect(leadList.filters.discovery.unlinkedEvidenceCandidatesCount).toBeGreaterThanOrEqual(1);
+    expect(leadList.filters.discovery.evidenceSkippedUnlinkedCount).toBeGreaterThanOrEqual(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
