@@ -1,61 +1,61 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import { createApp } from '../../src/app.js';
-import { prisma } from '../../src/db/prisma.js';
-import { errorCodes } from '../../src/utils/AppError.js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+process.env.NODE_ENV = 'test';
+process.env.PORT ??= '4101';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
+
+let createApp;
+let prisma;
+
+const unique = Date.now().toString(36);
+const rootEmail = `ratelimit.root.${unique}@findly.local`;
+const password = 'Secure12345@#$';
+
+const registerAndLogin = async (agent, email, role) => {
+  await agent.post('/api/auth/register').send({ name: role, email, password }).expect(201);
+  await prisma.user.update({ where: { email }, data: { emailVerified: true, role } });
+  await agent.post('/api/auth/login').send({ email, password }).expect(200);
+};
+
+const csrf = async (agent) => {
+  const res = await agent.get('/api/csrf-token').expect(200);
+  return res.body.data.csrfToken;
+};
 
 /**
  * Rate Limit UX Hardening tests.
- * 
- * These tests validate that:
- * 1. The login brute-force lockout (DB-level) returns a proper 429 with RATE_LIMITED code.
- * 2. Safe authenticated GET reads are skipped from the general rate limiter (dashboard UX protection).
+ *
+ * 1. Login brute-force lockout (DB-level) returns a proper 429 with RATE_LIMITED code.
+ * 2. Safe authenticated GET reads are skipped from the general rate limiter.
  * 3. The express-rate-limit middleware on sensitive routes correctly surfaces limitName/retryAfterSeconds.
  */
 describe('Rate Limit UX Hardening', () => {
   let app;
-  let rootUser;
   let rootAgent;
 
-  const unique = Date.now().toString(36);
-
   beforeAll(async () => {
+    ({ createApp } = await import('../../src/app.js'));
+    ({ prisma } = await import('../../src/db/prisma.js'));
+
     app = createApp();
-
-    // Create a ROOT user for provider-test rate limiting
-    rootUser = await prisma.user.create({
-      data: {
-        email: `ratelimit-root-${unique}@findly.local`,
-        passwordHash: 'dummyhash-not-a-real-password',
-        name: 'Rate Limit ROOT',
-        role: 'ROOT',
-        emailVerified: true,
-      },
-    });
-
-    // Login via request agent so session cookies are established
-    // Since we can't login with a dummy hash, we create a session directly
-    const { createSession } = await import('../../src/modules/sessions/session.service.js');
-    const sessionResult = await createSession({
-      userId: rootUser.id,
-      userAgent: 'rate-limit-test',
-      ipAddress: '127.0.0.1',
-      remember: true,
-    });
-
     rootAgent = request.agent(app);
-    // Set the session cookie on the agent
-    rootAgent.jar.setCookie(`findly_session=${sessionResult.token}`, 'localhost', '/');
+
+    await prisma.user.deleteMany({ where: { email: rootEmail } }).catch(() => {});
+    await registerAndLogin(rootAgent, rootEmail, 'ROOT');
   });
 
   afterAll(async () => {
-    await prisma.session.deleteMany({ where: { userId: rootUser.id } }).catch(() => {});
-    await prisma.auditLog.deleteMany({ where: { userId: rootUser.id } }).catch(() => {});
-    await prisma.user.delete({ where: { id: rootUser.id } }).catch(() => {});
+    const user = await prisma.user.findUnique({ where: { email: rootEmail } }).catch(() => null);
+    if (user) {
+      await prisma.session.deleteMany({ where: { userId: user.id } }).catch(() => {});
+      await prisma.auditLog.deleteMany({ where: { userId: user.id } }).catch(() => {});
+      await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
+    }
   });
 
   it('Login brute-force lockout (DB-level) returns 429 with RATE_LIMITED code', async () => {
-    const lockoutEmail = `ratelimit-lockout-${unique}@findly.local`;
+    const lockoutEmail = `ratelimit.lockout.${unique}@findly.local`;
 
     // Spam login with wrong creds to trigger DB-level checkFailedLoginLimit (threshold = 5)
     for (let i = 0; i < 6; i++) {
@@ -71,99 +71,31 @@ describe('Rate Limit UX Hardening', () => {
 
     expect(blocked.status).toBe(429);
     expect(blocked.body.success).toBe(false);
-    expect(blocked.body.error.code).toBe(errorCodes.RATE_LIMITED);
+    expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(blocked.body.error.message).toContain('Too many failed login attempts');
   });
 
-  it('Express-rate-limit login middleware includes limitName and retryAfterSeconds in 429 response', async () => {
-    // To trigger the express-rate-limit middleware (not the DB lockout),
-    // we need to send more requests than LOGIN_RATE_LIMIT_MAX.
-    // In dev/test env, this defaults to 50 (or the env value).
-    // Since the default test env might have LOGIN_RATE_LIMIT_MAX=1000 (from auth.test.js),
-    // we just validate the response SHAPE from the makeRateLimit handler
-    // by checking that the general limiter returns the correct shape when triggered.
-    //
-    // We do this by hitting a route through a fresh app instance with a very low limit.
-    // Instead, we verify the middleware response shape indirectly by confirming
-    // the rate limit middleware factory produces correct JSON structure.
-    
-    // We can check this by reading the middleware export and validating it exists
-    const { loginRateLimiter } = await import('../../src/middleware/rateLimit.middleware.js');
-    expect(loginRateLimiter).toBeDefined();
-    expect(typeof loginRateLimiter).toBe('function');
-  });
-
   it('Authenticated dashboard and admin reads are not blocked by general limiter', async () => {
-    // Hit dashboard and admin reads several times to ensure they respond consistently.
-    // These should be skipped by the generalRateLimiter's skip function.
-    const cookie = rootAgent.jar.getCookie('findly_session', { path: '/' })?.value;
-    if (!cookie) {
-      // Fallback: use direct cookie
-      const { createSession } = await import('../../src/modules/sessions/session.service.js');
-      const sess = await createSession({
-        userId: rootUser.id,
-        userAgent: 'test',
-        ipAddress: '127.0.0.1',
-        remember: true,
-      });
-      
-      for (let i = 0; i < 5; i++) {
-        const res = await request(app)
-          .get('/api/dashboard')
-          .set('Cookie', `findly_session=${sess.token}`);
-        expect(res.status).toBe(200);
-      }
-
-      const adminRes = await request(app)
-        .get('/api/admin/summary')
-        .set('Cookie', `findly_session=${sess.token}`);
-      expect(adminRes.status).toBe(200);
-      return;
-    }
-
+    // rootAgent already has a valid session from registerAndLogin.
+    // These safe GET endpoints should be skipped by generalRateLimiter.
     for (let i = 0; i < 5; i++) {
-      const res = await request(app)
-        .get('/api/dashboard')
-        .set('Cookie', `findly_session=${cookie}`);
+      const res = await rootAgent.get('/api/dashboard');
       expect(res.status).toBe(200);
     }
 
-    const adminRes = await request(app)
-      .get('/api/admin/summary')
-      .set('Cookie', `findly_session=${cookie}`);
+    const adminRes = await rootAgent.get('/api/admin/summary');
     expect(adminRes.status).toBe(200);
   });
 
   it('Rate limit middleware response shape includes limitName and retryAfterSeconds', async () => {
-    // Validate the makeRateLimit handler response shape by triggering
-    // the aiProviderTestRateLimiter which has a low limit of 5.
-    // We need a ROOT user for this, and we need a CSRF token.
+    // The aiProviderTestRateLimiter has limit=5 per 10min, keyed by user ID.
+    // ROOT can access this endpoint, so we spam it to trigger the 429.
+    const csrfToken = await csrf(rootAgent);
 
-    const { createSession } = await import('../../src/modules/sessions/session.service.js');
-    const sess = await createSession({
-      userId: rootUser.id,
-      userAgent: 'test',
-      ipAddress: '127.0.0.1',
-      remember: true,
-    });
-    const sessionCookie = `findly_session=${sess.token}`;
-
-    // Get CSRF token
-    const csrfRes = await request(app)
-      .get('/api/csrf-token')
-      .set('Cookie', sessionCookie);
-
-    const csrfToken = csrfRes.body.data?.csrfToken;
-    const csrfCookieHeader = csrfRes.headers['set-cookie']?.find(c => c.startsWith('findly_csrf='));
-    const csrfCookie = csrfCookieHeader ? csrfCookieHeader.split(';')[0] : '';
-    const fullCookie = csrfCookie ? `${sessionCookie}; ${csrfCookie}` : sessionCookie;
-
-    // Spam the ai provider test endpoint (limit=5, keyed by user ID)
     let rateLimitedRes;
     for (let i = 0; i < 8; i++) {
-      const res = await request(app)
+      const res = await rootAgent
         .post('/api/admin/ai/providers/openai/test')
-        .set('Cookie', fullCookie)
         .set('X-CSRF-Token', csrfToken)
         .send({ confirmProvider: 'openai' });
 
@@ -176,7 +108,7 @@ describe('Rate Limit UX Hardening', () => {
     expect(rateLimitedRes).toBeDefined();
     expect(rateLimitedRes.status).toBe(429);
     expect(rateLimitedRes.body.success).toBe(false);
-    expect(rateLimitedRes.body.error.code).toBe(errorCodes.RATE_LIMITED);
+    expect(rateLimitedRes.body.error.code).toBe('RATE_LIMITED');
     expect(rateLimitedRes.body.error.limitName).toBe('ai-provider-test');
     expect(typeof rateLimitedRes.body.error.retryAfterSeconds).toBe('number');
     expect(rateLimitedRes.body.error.retryAfterSeconds).toBeGreaterThan(0);
