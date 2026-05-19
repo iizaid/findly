@@ -52,6 +52,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [rateLimitUntil, setRateLimitUntil] = useState(null);
   const [detail, setDetail] = useState({ record: null, type: null });
 
   const openDetail = useCallback((record, type) => setDetail({ record, type }), []);
@@ -83,14 +84,20 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   }, []);
 
   const loadData = useCallback(async (silent = false) => {
-    if (!silent) setState({ status: 'loading' });
+    if (rateLimitUntil && Date.now() < rateLimitUntil) return;
+
+    if (!silent) setState((prev) => ({ ...prev, status: prev.status === 'ready' ? 'ready' : 'loading' }));
     else setIsRefreshing(true);
     try {
       const data = await fetchAdminData();
       setState({ status: 'ready', data });
       setLastRefreshed(new Date());
+      setRateLimitUntil(null);
     } catch (error) {
-      if (!silent) {
+      if (error instanceof ApiError && error.status === 429) {
+        const retryAfter = error.retryAfterSeconds || 60;
+        setRateLimitUntil(Date.now() + retryAfter * 1000);
+      } else if (!silent || state.status !== 'ready') {
         setState({
           status: error instanceof ApiError && error.status === 403 ? 'denied' : 'error',
           message: error instanceof ApiError ? error.message : 'Could not load admin operations.',
@@ -99,7 +106,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchAdminData]);
+  }, [fetchAdminData, rateLimitUntil, state.status]);
 
   useEffect(() => {
     let active = true;
@@ -108,12 +115,20 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
     const run = async () => {
       try {
         const data = await fetchAdminData();
-        if (active) { setState({ status: 'ready', data }); setLastRefreshed(new Date()); }
+        if (active) { setState({ status: 'ready', data }); setLastRefreshed(new Date()); setRateLimitUntil(null); }
       } catch (error) {
-        if (active) setState({
-          status: error instanceof ApiError && error.status === 403 ? 'denied' : 'error',
-          message: error instanceof ApiError ? error.message : 'Could not load admin operations.',
-        });
+        if (error instanceof ApiError && error.status === 429) {
+          if (active) {
+            const retryAfter = error.retryAfterSeconds || 60;
+            setRateLimitUntil(Date.now() + retryAfter * 1000);
+            setState((prev) => ({ ...prev, status: prev.status === 'loading' ? 'ready' : prev.status }));
+          }
+        } else if (active) {
+          setState({
+            status: error instanceof ApiError && error.status === 403 ? 'denied' : 'error',
+            message: error instanceof ApiError ? error.message : 'Could not load admin operations.',
+          });
+        }
       }
     };
 
@@ -265,10 +280,15 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
                 </span>
               )}
             </div>
+            {rateLimitUntil && Date.now() < rateLimitUntil && (
+              <span className="text-[11px] font-bold text-red-500 whitespace-nowrap ml-2 border border-red-500/20 bg-red-50 px-2 py-1 rounded-full">
+                Rate limited (auto-retry soon)
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => loadData(true)}
-              disabled={isRefreshing}
+              onClick={() => { setRateLimitUntil(null); loadData(true); }}
+              disabled={isRefreshing || (rateLimitUntil && Date.now() < rateLimitUntil)}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white border border-black/[0.06] text-black/60 shadow-sm transition-all hover:bg-black/[0.02] hover:text-black disabled:opacity-40 ml-1"
               aria-label="Refresh data"
             >

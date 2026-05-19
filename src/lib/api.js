@@ -11,11 +11,13 @@ const CSRF_EXEMPT = new Set([
 let csrfTokenPromise = null;
 
 class ApiError extends Error {
-  constructor(code, message, status) {
+  constructor(code, message, status, limitName = null, retryAfterSeconds = null) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
+    this.limitName = limitName;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -85,6 +87,8 @@ const apiRequestInternal = async (path, options = {}, retryState = { csrfRetried
       code,
       payload?.error?.message || 'Request failed.',
       response.status,
+      payload?.error?.limitName || null,
+      payload?.error?.retryAfterSeconds || null,
     );
   }
 

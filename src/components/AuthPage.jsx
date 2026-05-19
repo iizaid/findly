@@ -306,9 +306,20 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
       });
     } catch (error) {
       recordAttempt();
-      const message = error instanceof ApiError
-        ? error.message
-        : 'Could not reach the secure auth server. Please try again.';
+      let message = 'Could not reach the secure auth server. Please try again.';
+      if (error instanceof ApiError) {
+        if (error.status === 429) {
+          if (error.limitName === 'login') {
+            message = 'Too many login attempts. Please wait before trying again.';
+          } else if (error.limitName === 'signup') {
+            message = 'Too many signup attempts. Please wait before trying again.';
+          } else {
+            message = 'Too many requests. Please wait a moment.';
+          }
+        } else {
+          message = error.message;
+        }
+      }
       setStatus({ type: 'error', message });
     } finally {
       setIsSubmitting(false);
