@@ -32,20 +32,28 @@ const auditRateLimit = (req, limitName) => {
   }).catch(() => {});
 };
 
-const makeRateLimit = ({ windowMs, limit, message, name, keyGenerator }) =>
+const makeRateLimit = ({ windowMs, limit, message, name, keyGenerator, skip }) =>
   rateLimit({
     windowMs,
     limit,
     keyGenerator,
+    skip,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (req, res) => {
       auditRateLimit(req, name);
+      
+      const retryAfterSeconds = req.rateLimit?.resetTime
+        ? Math.max(1, Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000))
+        : Math.ceil(windowMs / 1000);
+
       return res.status(429).json({
         success: false,
         error: {
           code: errorCodes.RATE_LIMITED,
           message,
+          limitName: name,
+          retryAfterSeconds,
         },
       });
     },
@@ -56,6 +64,16 @@ export const generalRateLimiter = makeRateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   limit: env.RATE_LIMIT_MAX,
   message: 'Too many requests. Please try again later.',
+  skip: (req) => {
+    // Skip safe authenticated read requests so dashboard usage/polling doesn't crash the entire app UX
+    if (req.method !== 'GET') return false;
+    if (!req.user || req.user.role === 'GUEST') return false;
+    
+    return req.path.startsWith('/api/dashboard') ||
+           req.path.startsWith('/api/admin') ||
+           req.path === '/api/auth/me' ||
+           req.path === '/api/csrf-token';
+  },
 });
 
 export const authRateLimiter = makeRateLimit({
