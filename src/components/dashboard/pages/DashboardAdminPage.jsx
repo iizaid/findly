@@ -53,6 +53,27 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [rateLimitUntil, setRateLimitUntil] = useState(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+
+  // Keep isRateLimited in sync with rateLimitUntil without calling Date.now() during render
+  useEffect(() => {
+    if (!rateLimitUntil) {
+      setIsRateLimited(false);
+      return;
+    }
+    const remaining = rateLimitUntil - Date.now();
+    if (remaining <= 0) {
+      setIsRateLimited(false);
+      setRateLimitUntil(null);
+      return;
+    }
+    setIsRateLimited(true);
+    const timer = setTimeout(() => {
+      setIsRateLimited(false);
+      setRateLimitUntil(null);
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [rateLimitUntil]);
   const [detail, setDetail] = useState({ record: null, type: null });
 
   const openDetail = useCallback((record, type) => setDetail({ record, type }), []);
@@ -280,7 +301,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
                 </span>
               )}
             </div>
-            {rateLimitUntil && Date.now() < rateLimitUntil && (
+            {isRateLimited && (
               <span className="text-[11px] font-bold text-red-500 whitespace-nowrap ml-2 border border-red-500/20 bg-red-50 px-2 py-1 rounded-full">
                 Rate limited (auto-retry soon)
               </span>
@@ -288,7 +309,7 @@ const DashboardAdminPage = ({ user, onNavigate }) => {
             <button
               type="button"
               onClick={() => { setRateLimitUntil(null); loadData(true); }}
-              disabled={isRefreshing || (rateLimitUntil && Date.now() < rateLimitUntil)}
+              disabled={isRefreshing || isRateLimited}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white border border-black/[0.06] text-black/60 shadow-sm transition-all hover:bg-black/[0.02] hover:text-black disabled:opacity-40 ml-1"
               aria-label="Refresh data"
             >
