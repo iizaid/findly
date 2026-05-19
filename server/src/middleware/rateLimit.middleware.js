@@ -65,14 +65,18 @@ export const generalRateLimiter = makeRateLimit({
   limit: env.RATE_LIMIT_MAX,
   message: 'Too many requests. Please try again later.',
   skip: (req) => {
-    // Skip safe authenticated read requests so dashboard usage/polling doesn't crash the entire app UX
+    // Skip safe read routes so dashboard/admin polling doesn't exhaust the global limit.
+    // IMPORTANT: this middleware runs BEFORE cookieParser and auth middleware (see app.js),
+    // so req.user is NOT available here. The skip MUST be purely path/method based.
+    // These routes already have their own auth guards (requireAuth, requireAdmin, requireRoot)
+    // and route-specific rate limiters where needed, so skipping here is safe.
     if (req.method !== 'GET') return false;
-    if (!req.user || req.user.role === 'GUEST') return false;
-    
-    return req.path.startsWith('/api/dashboard') ||
-           req.path.startsWith('/api/admin') ||
-           req.path === '/api/auth/me' ||
-           req.path === '/api/csrf-token';
+
+    const p = req.path;
+    return p.startsWith('/api/dashboard') ||
+           p.startsWith('/api/admin') ||
+           p === '/api/auth/me' ||
+           p === '/api/csrf-token';
   },
 });
 

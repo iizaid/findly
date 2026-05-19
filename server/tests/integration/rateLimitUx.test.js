@@ -1,9 +1,21 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+/*
+ * Set a LOW general rate limit so we can prove the skip logic works.
+ * Route-specific limiters (login, signup, etc.) stay high so setup succeeds.
+ * These must be set BEFORE the dynamic import of app.js so the env module parses them.
+ */
 process.env.NODE_ENV = 'test';
 process.env.PORT ??= '4101';
 process.env.SESSION_SECRET ??= 'test-session-secret-that-is-long-enough-for-findly';
+process.env.RATE_LIMIT_WINDOW_MS = '900000';
+process.env.RATE_LIMIT_MAX = '25';         // Low enough to exhaust, high enough for setup+tests
+process.env.AUTH_RATE_LIMIT_MAX = '1000';
+process.env.SIGNUP_RATE_LIMIT_MAX = '1000';
+process.env.LOGIN_RATE_LIMIT_MAX = '1000';
+process.env.SEARCH_RATE_LIMIT_MAX = '1000';
+process.env.ANALYSIS_RATE_LIMIT_MAX = '1000';
 
 let createApp;
 let prisma;
@@ -19,22 +31,30 @@ const registerAndLogin = async (agent, email, role) => {
 };
 
 const csrf = async (agent) => {
+  // GET /api/csrf-token is skipped by generalRateLimiter so this doesn't consume a slot
   const res = await agent.get('/api/csrf-token').expect(200);
   return res.body.data.csrfToken;
 };
 
 /**
- * Rate Limit UX Hardening tests.
+ * Rate Limit UX Hardening.
  *
- * 1. Login brute-force lockout (DB-level) returns a proper 429 with RATE_LIMITED code.
- * 2. Safe authenticated GET reads are skipped from the general rate limiter.
- * 3. The express-rate-limit middleware on sensitive routes correctly surfaces limitName/retryAfterSeconds.
+ * The general rate limiter is mounted BEFORE cookieParser and auth middleware in app.js,
+ * so its skip function CANNOT depend on req.user. It uses purely path/method matching.
+ *
+ * IMPORTANT: All tests share the same express-rate-limit memory store (same app instance,
+ * same IP 127.0.0.1). Non-skipped requests are cumulative across tests.
+ * Test order matters:
+ *   1. Login lockout (7 non-skipped POSTs)
+ *   2. Provider limitName test (≤6 non-skipped POSTs)
+ *   3. General limiter exhaustion — must be LAST (exhausts all remaining slots)
  */
 describe('Rate Limit UX Hardening', () => {
   let app;
   let rootAgent;
 
   beforeAll(async () => {
+    // 2 non-skipped requests: register (POST) + login (POST)
     ({ createApp } = await import('../../src/app.js'));
     ({ prisma } = await import('../../src/db/prisma.js'));
 
@@ -54,17 +74,18 @@ describe('Rate Limit UX Hardening', () => {
     }
   });
 
+  // --- Test 1: 7 non-skipped POSTs (cumulative general count: 2 + 7 = 9) ---
   it('Login brute-force lockout (DB-level) returns 429 with RATE_LIMITED code', async () => {
     const lockoutEmail = `ratelimit.lockout.${unique}@findly.local`;
 
-    // Spam login with wrong creds to trigger DB-level checkFailedLoginLimit (threshold = 5)
+    // 6 failed logins → triggers DB-level lockout at threshold of 5
     for (let i = 0; i < 6; i++) {
       await request(app)
         .post('/api/auth/login')
         .send({ email: lockoutEmail, password: 'WrongPassword123!' });
     }
 
-    // The next attempt should be blocked by the DB-level lockout
+    // 7th attempt is blocked by DB-level checkFailedLoginLimit
     const blocked = await request(app)
       .post('/api/auth/login')
       .send({ email: lockoutEmail, password: 'WrongPassword123!' });
@@ -75,21 +96,10 @@ describe('Rate Limit UX Hardening', () => {
     expect(blocked.body.error.message).toContain('Too many failed login attempts');
   });
 
-  it('Authenticated dashboard and admin reads are not blocked by general limiter', async () => {
-    // rootAgent already has a valid session from registerAndLogin.
-    // These safe GET endpoints should be skipped by generalRateLimiter.
-    for (let i = 0; i < 5; i++) {
-      const res = await rootAgent.get('/api/dashboard');
-      expect(res.status).toBe(200);
-    }
-
-    const adminRes = await rootAgent.get('/api/admin/summary');
-    expect(adminRes.status).toBe(200);
-  });
-
-  it('Rate limit middleware response shape includes limitName and retryAfterSeconds', async () => {
-    // The aiProviderTestRateLimiter has limit=5 per 10min, keyed by user ID.
-    // ROOT can access this endpoint, so we spam it to trigger the 429.
+  // --- Test 2: ≤6 non-skipped POSTs (cumulative general count: 9 + 6 = 15) ---
+  it('Express-rate-limit 429 response includes limitName and retryAfterSeconds', async () => {
+    // aiProviderTestRateLimiter: limit=5 per 10min, keyed by user ID.
+    // CSRF GET is skipped so it doesn't consume a general slot.
     const csrfToken = await csrf(rootAgent);
 
     let rateLimitedRes;
@@ -112,5 +122,38 @@ describe('Rate Limit UX Hardening', () => {
     expect(rateLimitedRes.body.error.limitName).toBe('ai-provider-test');
     expect(typeof rateLimitedRes.body.error.retryAfterSeconds).toBe('number');
     expect(rateLimitedRes.body.error.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  // --- Test 3: MUST be last — exhausts all remaining general slots ---
+  it('Safe dashboard/admin GETs bypass the general limiter even when the limit is exhausted', async () => {
+    // Exhaust the remaining general limiter slots by hitting a non-skipped GET route.
+    // After test 1 + test 2 ≈ 15 slots consumed. With RATE_LIMIT_MAX=25, ~10 remain.
+    // Send enough to guarantee exhaustion.
+    for (let i = 0; i < 15; i++) {
+      await request(app).get('/api/sources/status');
+    }
+
+    // Verify the general limiter IS exhausted on a non-skipped route.
+    const blockedRes = await request(app).get('/api/sources/status');
+    expect(blockedRes.status).toBe(429);
+    expect(blockedRes.body.error.limitName).toBe('general');
+
+    // --- Skipped routes must STILL return 200, not 429 ---
+
+    // GET /api/dashboard — skipped by generalRateLimiter, auth via rootAgent cookie
+    const dashRes = await rootAgent.get('/api/dashboard');
+    expect(dashRes.status).toBe(200);
+
+    // GET /api/admin/summary — skipped, requires admin auth
+    const adminRes = await rootAgent.get('/api/admin/summary');
+    expect(adminRes.status).toBe(200);
+
+    // GET /api/auth/me — skipped, requires auth
+    const meRes = await rootAgent.get('/api/auth/me');
+    expect(meRes.status).toBe(200);
+
+    // GET /api/csrf-token — skipped, no auth needed
+    const csrfRes = await request(app).get('/api/csrf-token');
+    expect(csrfRes.status).toBe(200);
   });
 });
