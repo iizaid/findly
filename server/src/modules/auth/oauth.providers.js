@@ -1,6 +1,8 @@
 import { env } from '../../config/env.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 
+const OAUTH_PROVIDER_FETCH_TIMEOUT_MS = 5000;
+
 export const OAUTH_PROVIDERS = Object.freeze({
   google: {
     provider: 'google',
@@ -71,6 +73,21 @@ const parseJsonResponse = async (response, provider) => {
   return payload;
 };
 
+const fetchWithProviderTimeout = async ({ url, options = {}, fetchImpl = fetch, provider }) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OAUTH_PROVIDER_FETCH_TIMEOUT_MS);
+  try {
+    return await fetchImpl(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch {
+    throw new AppError(errorCodes.PROVIDER_NOT_CONFIGURED, `${provider} sign-in provider is temporarily unavailable.`, 503);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 export const buildOAuthAuthorizationUrl = ({ provider, state }) => {
   const config = assertOAuthProviderConfigured(provider);
   const url = new URL(config.authorizationEndpoint);
@@ -96,13 +113,18 @@ export const exchangeOAuthCode = async ({ provider, code, fetchImpl = fetch }) =
     grant_type: 'authorization_code',
   });
 
-  const response = await fetchImpl(config.tokenEndpoint, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
+  const response = await fetchWithProviderTimeout({
+    url: config.tokenEndpoint,
+    fetchImpl,
+    provider,
+    options: {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
     },
-    body,
   });
   const payload = await parseJsonResponse(response, provider);
   if (!payload?.access_token) {
@@ -115,11 +137,16 @@ export const exchangeOAuthCode = async ({ provider, code, fetchImpl = fetch }) =
 };
 
 const fetchOAuthJson = async ({ url, accessToken, fetchImpl = fetch, provider }) => {
-  const response = await fetchImpl(url, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-      'User-Agent': 'Findly OAuth',
+  const response = await fetchWithProviderTimeout({
+    url,
+    fetchImpl,
+    provider,
+    options: {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': 'Findly OAuth',
+      },
     },
   });
   return parseJsonResponse(response, provider);

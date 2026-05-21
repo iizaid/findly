@@ -5,6 +5,7 @@ import { AppError, errorCodes } from '../../utils/AppError.js';
 import { hashAuditValue } from '../../utils/crypto.js';
 import { toSafeUser } from '../users/user.mapper.js';
 import { createSession } from '../sessions/session.service.js';
+import { grantInitialCreditsIfEligible } from '../credits/credit.service.js';
 import { createUserWithDefaultWorkspace } from './auth.service.js';
 import {
   assertOAuthProviderConfigured,
@@ -15,6 +16,7 @@ import {
 } from './oauth.providers.js';
 
 const STATE_BYTES = 32;
+export const OAUTH_STATE_COOKIE_NAME = 'findly_oauth_state';
 
 const requestContext = (req) => ({
   ipAddress: req.ip,
@@ -29,6 +31,29 @@ export const hashOAuthState = (state) => crypto
   .digest('hex');
 
 const minutesToMs = (minutes) => minutes * 60 * 1000;
+
+export const buildOAuthStateCookieValue = ({ provider, state }) => `${provider}:${state}`;
+
+export const getOAuthStateCookieOptions = () => ({
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.IS_PRODUCTION,
+  path: '/api/auth/oauth',
+  maxAge: minutesToMs(env.OAUTH_STATE_TTL_MINUTES),
+  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+});
+
+export const clearOAuthStateCookieOptions = () => {
+  const options = getOAuthStateCookieOptions();
+  delete options.maxAge;
+  return options;
+};
+
+export const verifyOAuthStateCookie = ({ provider, state, cookieValue }) => {
+  if (!provider || !state || cookieValue !== buildOAuthStateCookieValue({ provider, state })) {
+    throw new AppError(errorCodes.VERIFICATION_TOKEN_INVALID, 'OAuth sign-in session expired. Please try again.', 400);
+  }
+};
 
 export const getSafeOAuthReturnTo = (value) => {
   const fallback = env.OAUTH_DEFAULT_SUCCESS_PATH || '/dashboard';
@@ -125,6 +150,7 @@ export const createOAuthStart = async ({ provider, returnTo, req }) => {
 
   return {
     provider: config.provider,
+    stateCookieValue: buildOAuthStateCookieValue({ provider: config.provider, state }),
     authorizationUrl: buildOAuthAuthorizationUrl({ provider: config.provider, state }),
   };
 };
@@ -213,6 +239,53 @@ const linkIdentityToExistingUser = async ({ tx, user, identity, context }) => {
   return account;
 };
 
+const findPrimaryWorkspaceId = async ({ tx, userId }) => {
+  const membership = await tx.workspaceMember.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'asc' },
+    select: { workspaceId: true },
+  });
+  if (membership?.workspaceId) return membership.workspaceId;
+
+  const ownedWorkspace = await tx.workspace.findFirst({
+    where: { ownerId: userId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return ownedWorkspace?.id || null;
+};
+
+const reconcileVerifiedOAuthUser = async ({ tx, user, context }) => {
+  let currentUser = user;
+  if (!currentUser.emailVerified) {
+    currentUser = await tx.user.update({
+      where: { id: currentUser.id },
+      data: {
+        emailVerified: true,
+        emailVerifiedAt: currentUser.emailVerifiedAt || new Date(),
+      },
+    });
+  }
+
+  const workspaceId = await findPrimaryWorkspaceId({ tx, userId: currentUser.id });
+  const creditResult = await grantInitialCreditsIfEligible({
+    tx,
+    userId: currentUser.id,
+    workspaceId,
+    context,
+  });
+
+  const refreshedUser = creditResult.granted
+    ? await tx.user.findUnique({ where: { id: currentUser.id } })
+    : currentUser;
+
+  return {
+    user: refreshedUser,
+    workspaceId,
+    creditResult,
+  };
+};
+
 export const findOrCreateOAuthUser = async ({ identity, context }) => {
   assertVerifiedIdentity(identity);
 
@@ -228,6 +301,7 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
     });
 
     if (linked) {
+      const reconciled = await reconcileVerifiedOAuthUser({ tx, user: linked.user, context });
       const account = await tx.oAuthAccount.update({
         where: { id: linked.id },
         data: {
@@ -243,14 +317,20 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
         provider: identity.provider,
         providerAccountId: identity.providerAccountId,
         email: identity.email,
-        metadata: { linkedExistingUser: true, createdNewUser: false },
+        metadata: {
+          linkedExistingUser: true,
+          createdNewUser: false,
+          emailVerifiedReconciled: !linked.user.emailVerified,
+          creditsGranted: Boolean(reconciled.creditResult.granted),
+        },
         context,
       });
-      return { user: linked.user, account, linkedExistingUser: true, createdNewUser: false };
+      return { user: reconciled.user, account, linkedExistingUser: true, createdNewUser: false };
     }
 
     const existingUser = await tx.user.findUnique({ where: { email: identity.email } });
     if (existingUser) {
+      const reconciled = await reconcileVerifiedOAuthUser({ tx, user: existingUser, context });
       const account = await linkIdentityToExistingUser({ tx, user: existingUser, identity, context });
       await auditOAuth(tx, {
         userId: existingUser.id,
@@ -258,10 +338,15 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
         provider: identity.provider,
         providerAccountId: identity.providerAccountId,
         email: identity.email,
-        metadata: { linkedExistingUser: true, createdNewUser: false },
+        metadata: {
+          linkedExistingUser: true,
+          createdNewUser: false,
+          emailVerifiedReconciled: !existingUser.emailVerified,
+          creditsGranted: Boolean(reconciled.creditResult.granted),
+        },
         context,
       });
-      return { user: existingUser, account, linkedExistingUser: true, createdNewUser: false };
+      return { user: reconciled.user, account, linkedExistingUser: true, createdNewUser: false };
     }
 
     const { user, workspace, creditResult } = await createUserWithDefaultWorkspace({
@@ -312,8 +397,9 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
   });
 };
 
-export const completeOAuthCallback = async ({ provider, code, state, req, fetchImpl = fetch }) => {
+export const completeOAuthCallback = async ({ provider, code, state, stateCookieValue, req, fetchImpl = fetch }) => {
   const context = requestContext(req);
+  verifyOAuthStateCookie({ provider, state, cookieValue: stateCookieValue });
   const storedState = await consumeOAuthState({ provider, state });
   if (!code) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'OAuth provider did not return an authorization code.', 400);

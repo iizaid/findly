@@ -35,6 +35,8 @@ process.env.LOG_LEVEL ??= 'silent';
 let createApp;
 let prisma;
 let app;
+let createPasswordResetToken;
+let hashPasswordResetToken;
 
 const unique = Date.now().toString(36);
 const password = 'Secure12345@#$';
@@ -70,22 +72,24 @@ const mockOAuthFetch = ({ provider, email, verified = true, id }) => {
   });
 };
 
-const startOAuth = async (provider = 'google', returnTo = '/dashboard') => {
-  const response = await request(app)
+const startOAuth = async (provider = 'google', returnTo = '/dashboard', agent = request.agent(app)) => {
+  const response = await agent
     .get(`/api/auth/oauth/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`)
     .expect(302);
   const location = response.headers.location;
   const state = new URL(location).searchParams.get('state');
   expect(state).toBeTruthy();
-  return { location, state };
+  expect(response.headers['set-cookie']?.join(';')).toContain('findly_oauth_state');
+  return { agent, location, state };
 };
 
-const callbackOAuth = (provider, state) => request.agent(app)
+const callbackOAuth = (provider, state, agent = request.agent(app)) => agent
   .get(`/api/auth/oauth/${provider}/callback?code=test-code&state=${encodeURIComponent(state)}`);
 
 beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
   ({ prisma } = await import('../../src/db/prisma.js'));
+  ({ createPasswordResetToken, hashPasswordResetToken } = await import('../../src/utils/crypto.js'));
   app = createApp();
 });
 
@@ -118,11 +122,11 @@ describe('OAuth authentication', () => {
     const email = `oauth.google.${unique}@findly.local`;
     createdEmails.push(email);
     mockOAuthFetch({ provider: 'google', email, verified: true, id: `google-${unique}` });
-    const { state } = await startOAuth('google');
+    const { agent: oauthAgent, state } = await startOAuth('google');
 
-    const agent = await callbackOAuth('google', state).expect(302);
-    expect(agent.headers.location).toBe('http://localhost:5173/dashboard');
-    expect(agent.headers['set-cookie']?.join(';')).toContain(process.env.COOKIE_NAME);
+    const response = await callbackOAuth('google', state, oauthAgent).expect(302);
+    expect(response.headers.location).toBe('http://localhost:5173/dashboard');
+    expect(response.headers['set-cookie']?.join(';')).toContain(process.env.COOKIE_NAME);
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -135,11 +139,46 @@ describe('OAuth authentication', () => {
     expect(user.workspaceMembers).toHaveLength(1);
     expect(user.creditsBalance).toBe(50);
 
-    const me = await request.agent(app)
-      .set('Cookie', agent.headers['set-cookie'])
+    await request(app)
+      .post('/api/auth/login')
+      .send({ email, password })
+      .expect(401);
+
+    const me = await oauthAgent
       .get('/api/auth/me')
       .expect(200);
     expect(me.body.data.user.email).toBe(email);
+  });
+
+  it('OAuth-only user can set a password through reset and then login with credentials', async () => {
+    const email = `oauth.password-reset.${unique}@findly.local`;
+    createdEmails.push(email);
+    mockOAuthFetch({ provider: 'google', email, verified: true, id: `google-reset-${unique}` });
+    const { agent: oauthAgent, state } = await startOAuth('google');
+    await callbackOAuth('google', state, oauthAgent).expect(302);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user.passwordHash).toBeNull();
+
+    const rawToken = createPasswordResetToken();
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashPasswordResetToken(rawToken),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+
+    const newPassword = 'OAuthReset12345@#$';
+    await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: rawToken, newPassword })
+      .expect(200);
+
+    await request(app)
+      .post('/api/auth/login')
+      .send({ email, password: newPassword })
+      .expect(200);
   });
 
   it('repeated OAuth login reuses linked account without duplicate workspace', async () => {
@@ -147,11 +186,11 @@ describe('OAuth authentication', () => {
     createdEmails.push(email);
     mockOAuthFetch({ provider: 'discord', email, verified: true, id: `discord-repeat-${unique}` });
     const first = await startOAuth('discord');
-    await callbackOAuth('discord', first.state).expect(302);
+    await callbackOAuth('discord', first.state, first.agent).expect(302);
 
     mockOAuthFetch({ provider: 'discord', email, verified: true, id: `discord-repeat-${unique}` });
     const second = await startOAuth('discord');
-    await callbackOAuth('discord', second.state).expect(302);
+    await callbackOAuth('discord', second.state, second.agent).expect(302);
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -168,8 +207,8 @@ describe('OAuth authentication', () => {
     await prisma.user.update({ where: { email }, data: { emailVerified: true, emailVerifiedAt: new Date() } });
 
     mockOAuthFetch({ provider: 'github', email, verified: true, id: `github-link-${unique}` });
-    const { state } = await startOAuth('github');
-    await callbackOAuth('github', state).expect(302);
+    const { agent, state: linkedState } = await startOAuth('github');
+    await callbackOAuth('github', linkedState, agent).expect(302);
 
     const user = await prisma.user.findUnique({ where: { email }, include: { oauthAccounts: true } });
     expect(user.oauthAccounts).toHaveLength(1);
@@ -178,32 +217,80 @@ describe('OAuth authentication', () => {
     await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   });
 
+  it('verified OAuth link verifies an existing unverified user and grants initial credits', async () => {
+    const email = `oauth.verify-existing.${unique}@findly.local`;
+    createdEmails.push(email);
+    await request(app).post('/api/auth/register').send({ name: 'Unverified User', email, password }).expect(201);
+
+    const before = await prisma.user.findUnique({ where: { email } });
+    expect(before.emailVerified).toBe(false);
+    expect(before.creditsBalance).toBe(0);
+    expect(before.initialCreditsGrantedAt).toBeNull();
+
+    mockOAuthFetch({ provider: 'google', email, verified: true, id: `google-existing-unverified-${unique}` });
+    const { agent, state } = await startOAuth('google');
+    await callbackOAuth('google', state, agent).expect(302);
+
+    const after = await prisma.user.findUnique({ where: { email }, include: { oauthAccounts: true } });
+    expect(after.emailVerified).toBe(true);
+    expect(after.emailVerifiedAt).toBeTruthy();
+    expect(after.creditsBalance).toBe(50);
+    expect(after.initialCreditsGrantedAt).toBeTruthy();
+    expect(after.oauthAccounts).toHaveLength(1);
+  });
+
   it('rejects callback replay and provider mismatch safely', async () => {
     const email = `oauth.replay.${unique}@findly.local`;
     createdEmails.push(email);
     mockOAuthFetch({ provider: 'google', email, verified: true, id: `google-replay-${unique}` });
-    const { state } = await startOAuth('google');
-    await callbackOAuth('google', state).expect(302);
+    const { agent, state: firstState } = await startOAuth('google');
+    await callbackOAuth('google', firstState, agent).expect(302);
 
-    const replay = await callbackOAuth('google', state).expect(302);
+    const replay = await callbackOAuth('google', firstState, agent).expect(302);
     expect(replay.headers.location).toContain('authError=oauth_invalid_state');
 
     const mismatch = await startOAuth('google');
-    const mismatchResponse = await callbackOAuth('discord', mismatch.state).expect(302);
+    const mismatchResponse = await callbackOAuth('discord', mismatch.state, mismatch.agent).expect(302);
     expect(mismatchResponse.headers.location).toContain('authError=oauth_invalid_state');
+  });
+
+  it('OAuth callback without matching state cookie fails safely before consuming DB state', async () => {
+    const missingCookie = await startOAuth('google');
+
+    const response = await request(app)
+      .get(`/api/auth/oauth/google/callback?code=test-code&state=${encodeURIComponent(missingCookie.state)}`)
+      .expect(302);
+
+    expect(response.headers.location).toContain('authError=oauth_invalid_state');
+    const stateRecord = await prisma.oAuthState.findFirst({
+      where: { provider: 'google' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(stateRecord.usedAt).toBeNull();
+  });
+
+  it('provider network failures redirect to provider unavailable safely', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new TypeError('network unavailable');
+    });
+    const { agent, state } = await startOAuth('google');
+
+    const response = await callbackOAuth('google', state, agent).expect(302);
+
+    expect(response.headers.location).toContain('authError=oauth_provider_unavailable');
   });
 
   it('rejects missing or unverified provider email without creating a user', async () => {
     const unverifiedEmail = `oauth.unverified.${unique}@findly.local`;
     mockOAuthFetch({ provider: 'google', email: unverifiedEmail, verified: false, id: `google-unverified-${unique}` });
     const unverified = await startOAuth('google');
-    const unverifiedResponse = await callbackOAuth('google', unverified.state).expect(302);
+    const unverifiedResponse = await callbackOAuth('google', unverified.state, unverified.agent).expect(302);
     expect(unverifiedResponse.headers.location).toContain('authError=oauth_email_unverified');
     expect(await prisma.user.findUnique({ where: { email: unverifiedEmail } })).toBeNull();
 
     mockOAuthFetch({ provider: 'discord', email: null, verified: true, id: `discord-missing-${unique}` });
     const missing = await startOAuth('discord');
-    const missingResponse = await callbackOAuth('discord', missing.state).expect(302);
+    const missingResponse = await callbackOAuth('discord', missing.state, missing.agent).expect(302);
     expect(missingResponse.headers.location).toContain('authError=oauth_email_missing');
   });
 });

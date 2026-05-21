@@ -4,8 +4,11 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { getCookieOptions } from '../sessions/session.service.js';
 import {
   completeOAuthCallback,
+  clearOAuthStateCookieOptions,
   createOAuthStart,
   getOAuthFailureRedirectUrl,
+  getOAuthStateCookieOptions,
+  OAUTH_STATE_COOKIE_NAME,
   oauthErrorCode,
 } from './oauth.service.js';
 
@@ -29,11 +32,12 @@ const recordOAuthFailure = async ({ req, provider, errorCode }) => {
 
 export const startOAuth = asyncHandler(async (req, res) => {
   const { provider } = req.validated.params;
-  const { authorizationUrl } = await createOAuthStart({
+  const { authorizationUrl, stateCookieValue } = await createOAuthStart({
     provider,
     returnTo: req.validated.query?.returnTo,
     req,
   });
+  res.cookie(OAUTH_STATE_COOKIE_NAME, stateCookieValue, getOAuthStateCookieOptions());
   return res.redirect(302, authorizationUrl);
 });
 
@@ -48,14 +52,17 @@ export const handleOAuthCallback = async (req, res) => {
       provider,
       code: req.validated?.query?.code,
       state: req.validated?.query?.state,
+      stateCookieValue: req.cookies?.[OAUTH_STATE_COOKIE_NAME],
       req,
     });
 
+    res.clearCookie(OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookieOptions());
     res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(true));
     return res.redirect(302, successRedirectUrl(result.returnTo));
   } catch (error) {
     const code = oauthErrorCode(error);
     await recordOAuthFailure({ req, provider, errorCode: code });
+    res.clearCookie(OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookieOptions());
     return res.redirect(302, getOAuthFailureRedirectUrl(code));
   }
 };
