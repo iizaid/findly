@@ -108,6 +108,20 @@ export const passwordResetRateLimiter = makeRateLimit({
   message: 'Too many password reset attempts. Please try again later.',
 });
 
+export const oauthStartRateLimiter = makeRateLimit({
+  name: 'oauth-start',
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  message: 'Too many sign-in attempts. Please try again later.',
+});
+
+export const oauthCallbackRateLimiter = makeRateLimit({
+  name: 'oauth-callback',
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+  message: 'Too many sign-in attempts. Please try again later.',
+});
+
 export const searchRateLimiter = makeRateLimit({
   name: 'search',
   windowMs: env.RATE_LIMIT_WINDOW_MS,

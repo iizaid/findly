@@ -71,6 +71,23 @@ export const envSchema = z.object({
   VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
   APP_URL: z.string().url().default('http://localhost:4000'),
   CLIENT_URL: z.string().url().default('http://localhost:5173'),
+  OAUTH_ENABLED: createBooleanParser(false),
+  OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(1).max(10).default(10),
+  OAUTH_ALLOWED_RETURN_PATHS: z.string().min(1).default('/dashboard,/settings,/billing'),
+  OAUTH_DEFAULT_SUCCESS_PATH: z.string().min(1).default('/dashboard'),
+  OAUTH_FAILURE_PATH: z.string().min(1).default('/auth'),
+  GOOGLE_OAUTH_ENABLED: createBooleanParser(false),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  GITHUB_OAUTH_ENABLED: createBooleanParser(false),
+  GITHUB_OAUTH_CLIENT_ID: z.string().optional(),
+  GITHUB_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GITHUB_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  DISCORD_OAUTH_ENABLED: createBooleanParser(false),
+  DISCORD_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_OAUTH_CLIENT_SECRET: z.string().optional(),
+  DISCORD_OAUTH_REDIRECT_URI: z.string().url().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_SECURE: createBooleanParser(false),
@@ -211,6 +228,37 @@ export const envSchema = z.object({
       path: ['APP_URL'],
       message: 'APP_URL cannot point to localhost in production.',
     });
+  }
+
+  const oauthProviders = [
+    ['GOOGLE_OAUTH', value.GOOGLE_OAUTH_ENABLED, value.GOOGLE_OAUTH_CLIENT_ID, value.GOOGLE_OAUTH_CLIENT_SECRET, value.GOOGLE_OAUTH_REDIRECT_URI],
+    ['GITHUB_OAUTH', value.GITHUB_OAUTH_ENABLED, value.GITHUB_OAUTH_CLIENT_ID, value.GITHUB_OAUTH_CLIENT_SECRET, value.GITHUB_OAUTH_REDIRECT_URI],
+    ['DISCORD_OAUTH', value.DISCORD_OAUTH_ENABLED, value.DISCORD_OAUTH_CLIENT_ID, value.DISCORD_OAUTH_CLIENT_SECRET, value.DISCORD_OAUTH_REDIRECT_URI],
+  ];
+  for (const [prefix, enabled, clientId, clientSecret, redirectUri] of oauthProviders) {
+    if (!enabled) continue;
+    if (!value.OAUTH_ENABLED) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OAUTH_ENABLED'],
+        message: 'OAUTH_ENABLED must be true when an OAuth provider is enabled.',
+      });
+    }
+    if (!clientId) {
+      ctx.addIssue({ code: 'custom', path: [`${prefix}_CLIENT_ID`], message: `${prefix}_CLIENT_ID is required when enabled.` });
+    }
+    if (!clientSecret) {
+      ctx.addIssue({ code: 'custom', path: [`${prefix}_CLIENT_SECRET`], message: `${prefix}_CLIENT_SECRET is required when enabled.` });
+    }
+    if (!redirectUri) {
+      ctx.addIssue({ code: 'custom', path: [`${prefix}_REDIRECT_URI`], message: `${prefix}_REDIRECT_URI is required when enabled.` });
+    } else if (isLocalhostUrl(redirectUri)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [`${prefix}_REDIRECT_URI`],
+        message: `${prefix}_REDIRECT_URI cannot point to localhost in production.`,
+      });
+    }
   }
 
   const requiredSmtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'];
@@ -359,6 +407,7 @@ export const parseEnv = (source = process.env) => {
     SEARCH_QUEUE_CONCURRENCY: parsed.data.SEARCH_QUEUE_CONCURRENCY ?? parsed.data.MAX_SEARCH_WORKER_CONCURRENCY,
     IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
     CLIENT_ORIGINS: parseOriginList(parsed.data.CLIENT_ORIGIN),
+    OAUTH_ALLOWED_RETURN_PATHS_LIST: parseOriginList(parsed.data.OAUTH_ALLOWED_RETURN_PATHS),
   };
 };
 

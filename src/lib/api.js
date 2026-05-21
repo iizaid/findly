@@ -21,7 +21,7 @@ class ApiError extends Error {
   }
 }
 
-const getApiBaseUrl = () => {
+export const getApiBaseUrl = () => {
   if (!API_BASE_URL) {
     throw new ApiError(
       'CONFIGURATION_ERROR',
@@ -31,6 +31,16 @@ const getApiBaseUrl = () => {
   }
 
   return API_BASE_URL;
+};
+
+export const getOAuthStartUrl = (provider, returnTo = '/dashboard') => {
+  const safeProvider = String(provider || '').toLowerCase();
+  if (!['google', 'github', 'discord'].includes(safeProvider)) {
+    throw new ApiError('VALIDATION_ERROR', 'Unsupported sign-in provider.', 400);
+  }
+  const query = new URLSearchParams();
+  if (returnTo) query.set('returnTo', returnTo);
+  return `${getApiBaseUrl()}/api/auth/oauth/${encodeURIComponent(safeProvider)}/start?${query.toString()}`;
 };
 
 const parseJson = async (response) => {

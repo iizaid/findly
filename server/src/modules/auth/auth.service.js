@@ -5,6 +5,7 @@ import { toSafeUser } from '../users/user.mapper.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { hashAuditValue, hashPassword, verifyPassword } from '../../utils/crypto.js';
 import { sendVerificationForUser } from './emailVerification.service.js';
+import { grantInitialCreditsIfEligible } from '../credits/credit.service.js';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
 const DUMMY_PASSWORD_HASH = '$2b$10$NLcXp1cWaAG/68QxrfVK0O7GHN3vtnlM8kAOqNtfI/Ki4r2a3Q1bS';
@@ -102,48 +103,16 @@ export const registerUser = async ({ name, email, password }, req) => {
   const context = requestContext(req);
 
   const result = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        creditsBalance: 0,
-        emailVerified: false,
-      },
+    return createUserWithDefaultWorkspace({
+      tx,
+      name,
+      email,
+      passwordHash,
+      emailVerified: false,
+      context,
+      auditAction: 'USER_REGISTERED',
+      auditMetadata: { initialCreditsGranted: false },
     });
-
-    const workspace = await tx.workspace.create({
-      data: {
-        ownerId: user.id,
-        name: `${name}'s workspace`,
-      },
-    });
-
-    await tx.workspaceMember.create({
-      data: {
-        workspaceId: workspace.id,
-        userId: user.id,
-        role: 'OWNER',
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'USER_REGISTERED',
-        entityType: 'User',
-        entityId: user.id,
-        metadata: {
-          emailVerified: false,
-          initialCreditsGranted: false,
-          workspaceId: workspace.id,
-        },
-        ipAddress: context.ipAddress,
-        userAgent: context.userAgent,
-      },
-    });
-
-    return { user, workspace };
   });
 
   let emailSent = true;
@@ -207,7 +176,9 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
     throw new AppError(errorCodes.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE, 401);
   }
 
-  const passwordMatches = await verifyPassword(password, user.passwordHash);
+  const passwordMatches = user.passwordHash
+    ? await verifyPassword(password, user.passwordHash)
+    : false;
 
   if (!passwordMatches) {
     await recordFailedLogin({ userId: user.id, email, context });
@@ -261,6 +232,10 @@ export const updatePassword = async (userId, currentPassword, newPassword, { cur
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
 
+  if (!user.passwordHash) {
+    throw new AppError(errorCodes.UNAUTHORIZED, 'Set a password using account recovery before changing it here.', 401);
+  }
+
   const passwordMatches = await verifyPassword(currentPassword, user.passwordHash);
   if (!passwordMatches) {
     throw new AppError(errorCodes.UNAUTHORIZED, 'Incorrect current password.', 401);
@@ -300,6 +275,80 @@ export const updatePassword = async (userId, currentPassword, newPassword, { cur
   });
 
   return { revokedSessions };
+};
+
+export const createUserWithDefaultWorkspace = async ({
+  tx = prisma,
+  name,
+  email,
+  passwordHash = null,
+  emailVerified = false,
+  emailVerifiedAt = null,
+  avatarUrl = null,
+  context = {},
+  auditAction = 'USER_REGISTERED',
+  auditMetadata = {},
+  grantInitialCredits = false,
+} = {}) => {
+  const user = await tx.user.create({
+    data: {
+      name,
+      email,
+      passwordHash,
+      avatarUrl,
+      creditsBalance: 0,
+      emailVerified,
+      emailVerifiedAt,
+    },
+  });
+
+  const workspace = await tx.workspace.create({
+    data: {
+      ownerId: user.id,
+      name: `${name}'s workspace`,
+    },
+  });
+
+  await tx.workspaceMember.create({
+    data: {
+      workspaceId: workspace.id,
+      userId: user.id,
+      role: 'OWNER',
+    },
+  });
+
+  let creditResult = { granted: false };
+  if (grantInitialCredits) {
+    creditResult = await grantInitialCreditsIfEligible({
+      tx,
+      userId: user.id,
+      workspaceId: workspace.id,
+      context,
+    });
+  }
+
+  await tx.auditLog.create({
+    data: {
+      userId: user.id,
+      action: auditAction,
+      entityType: 'User',
+      entityId: user.id,
+      metadata: {
+        emailVerified,
+        initialCreditsGranted: Boolean(creditResult.granted),
+        workspaceId: workspace.id,
+        ...auditMetadata,
+      },
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+    },
+  });
+
+  const refreshedUser = creditResult.granted
+    ? await tx.user.findUnique({ where: { id: user.id } })
+    : user;
+
+  return { user: refreshedUser, workspace, creditResult };
 };
 
 export const logoutEverywhere = async (userId) => {

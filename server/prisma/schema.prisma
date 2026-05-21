@@ -115,7 +115,7 @@ model User {
   id                          String    @id @default(cuid())
   name                        String
   email                       String    @unique
-  passwordHash                String
+  passwordHash                String?
   avatarUrl                   String?
   role                        UserRole  @default(USER)
   plan                        Plan      @default(FREE)
@@ -132,6 +132,7 @@ model User {
   notifyMarketing             Boolean   @default(false)
   twoFactorEnabled            Boolean   @default(false)
 
+  oauthAccounts           OAuthAccount[]
   sessions                Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
@@ -968,4 +969,39 @@ model FailedLoginAttempt {
 
   @@id([ipAddress, emailHash])
   @@index([expiresAt])
+}
+
+model OAuthAccount {
+  id                 String   @id @default(cuid())
+  userId             String
+  provider           String
+  providerAccountId  String
+  email              String?
+  emailVerified      Boolean  @default(false)
+  displayName        String?
+  avatarUrl          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([email])
+}
+
+model OAuthState {
+  id         String    @id @default(cuid())
+  stateHash  String    @unique
+  provider   String
+  returnTo   String?
+  expiresAt  DateTime
+  usedAt     DateTime?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([provider])
+  @@index([expiresAt])
+  @@index([usedAt])
 }

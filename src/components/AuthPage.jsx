@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -8,10 +8,11 @@ import {
   EyeOff,
   Lock,
   Mail,
+  MessageCircle,
   RefreshCw,
   User,
 } from 'lucide-react';
-import { apiRequest, ApiError } from '../lib/api';
+import { apiRequest, ApiError, getOAuthStartUrl } from '../lib/api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ATTEMPT_KEY = 'findly_auth_attempts';
@@ -57,6 +58,20 @@ const getPasswordScore = (password) => {
 
 const toDisplayText = (value, maxLength) => stripUnsafeChars(value).replace(/\s{2,}/g, ' ').slice(0, maxLength);
 
+const OAUTH_ERROR_MESSAGES = {
+  oauth_provider_unavailable: 'This sign-in provider is temporarily unavailable.',
+  oauth_invalid_state: 'The sign-in session expired. Please try again.',
+  oauth_email_unverified: 'This provider did not return a verified email address.',
+  oauth_email_missing: 'This provider did not return an email address.',
+  oauth_login_failed: 'Could not complete sign-in. Please try again.',
+};
+
+const OAUTH_PROVIDERS = [
+  { id: 'google', label: 'Google', icon: Mail },
+  { id: 'github', label: 'GitHub', icon: User },
+  { id: 'discord', label: 'Discord', icon: MessageCircle },
+];
+
 const canSubmitAttempt = () => {
   const now = Date.now();
   const attempts = getStoredJson(ATTEMPT_KEY, []).filter((time) => now - time < 60_000);
@@ -94,6 +109,16 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
 
   const isSignup = mode === 'signup';
   const passwordScore = getPasswordScore(form.password);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get('authError');
+    if (authError && OAUTH_ERROR_MESSAGES[authError]) {
+      setStatus({ type: 'error', message: OAUTH_ERROR_MESSAGES[authError] });
+      const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, []);
 
   const errors = useMemo(() => {
     const next = {};
@@ -326,6 +351,11 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     }
   };
 
+  const startOAuth = (provider) => {
+    setStatus(null);
+    window.location.assign(getOAuthStartUrl(provider, '/dashboard'));
+  };
+
   return (
     <main className="min-h-screen bg-white text-black">
       <div className="grid min-h-screen lg:grid-cols-[0.9fr_1.1fr]">
@@ -534,6 +564,30 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                   </div>
 
                   <form className="mt-8 min-h-[650px] space-y-5" onSubmit={handleSubmit} noValidate>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {OAUTH_PROVIDERS.map((provider) => {
+                    const Icon = provider.icon;
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        onClick={() => startOAuth(provider.id)}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-black/[0.08] bg-white px-4 text-sm font-bold text-black transition-colors hover:bg-[#F7F8F6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        aria-label={`Continue with ${provider.label}`}
+                      >
+                        <Icon size={17} />
+                        {provider.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-secondary">
+                  <span className="h-px flex-1 bg-black/[0.08]" />
+                  <span>{isSignup ? 'or create with email' : 'or log in with email'}</span>
+                  <span className="h-px flex-1 bg-black/[0.08]" />
+                </div>
+
                 {isSignup && planContext && (
                   <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3 text-sm font-bold text-black">
                     Selected plan: {planContext}

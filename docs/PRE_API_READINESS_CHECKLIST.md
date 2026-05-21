@@ -15,6 +15,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Existing leads can be enriched with safe homepage website metadata. This records conversion-path and digital-presence signals as `LeadEvidence` without crawling or storing raw HTML.
 - Admins can view and refresh website intelligence from the catalog lead detail panel. The workflow is admin-only, CSRF-protected for refreshes, and returns sanitized metadata/signals only.
 - Admins can create controlled website enrichment jobs for small capped batches of existing catalog leads. Jobs reuse recent `WEBSITE_METADATA` evidence, expose only safe progress summaries, and do not create new leads.
+- Google, GitHub, and Discord OAuth can be enabled as backend-only identity providers. OAuth uses the existing Findly session cookie, requires verified provider emails, and does not store provider tokens.
 - Local searches can create `DiscoveryQuery` and `LeadEvidence` records.
 - Lead lists, AI analysis, credits, password reset, admin import, and source mapping remain active.
 - Admins can review a safe discovery readiness summary without exposing secrets.
@@ -45,6 +46,7 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 - Serper key for primary low-cost search metadata discovery.
 - Optional SerpAPI key for fallback search metadata discovery.
 - SMTP credentials for production email verification and password reset.
+- OAuth client IDs/secrets for Google, GitHub, or Discord only when those sign-in providers are enabled.
 
 ## APIs Not Needed Now
 
