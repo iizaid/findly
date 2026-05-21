@@ -46,7 +46,8 @@ describe('health and production readiness report', () => {
       ok: true,
       service: 'findly-api',
       environment: 'test',
-      database: {
+      database: 'ok',
+      databaseStatus: {
         ok: true,
         status: 'ok',
         responseTimeMs: expect.any(Number),
@@ -61,6 +62,8 @@ describe('health and production readiness report', () => {
       },
       security: {
         authAbuseProtectionEnabled: expect.any(Boolean),
+        sessionSecure: expect.any(Boolean),
+        csrfSecure: expect.any(Boolean),
       },
       email: {
         configured: expect.any(Boolean),
@@ -83,18 +86,21 @@ describe('health and production readiness report', () => {
     expect(Array.isArray(response.body.data.configuration.warnings)).toBe(true);
     expect(response.body.data.configuration.warningCount).toBe(response.body.data.configuration.warnings.length);
 
-    const body = JSON.stringify(response.body);
+    const body = JSON.stringify(response.body).toLowerCase();
     expect(body).not.toContain('test-secret');
-    expect(body).not.toContain('SERPAPI_API_KEY');
-    expect(body).not.toContain('SERPER_API_KEY');
-    expect(body).not.toContain('GEMINI_API_KEY');
-    expect(body).not.toContain('SMTP_PASS');
+    expect(body).not.toContain('serpapi_api_key');
+    expect(body).not.toContain('serper_api_key');
+    expect(body).not.toContain('gemini_api_key');
+    expect(body).not.toContain('smtp_pass');
+    expect(body).not.toContain('cookie');
+    expect(body).not.toContain('token');
   });
 
   it('also exposes the same readiness report through /api/health/ready', async () => {
     const response = await request(app).get('/api/health/ready').expect(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.database.status).toBe('ok');
+    expect(response.body.data.database).toBe('ok');
+    expect(response.body.data.databaseStatus.status).toBe('ok');
     expect(response.body.data.configuration.categories.liveDiscovery.providers).toEqual(expect.any(Array));
   });
 });
