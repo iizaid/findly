@@ -243,19 +243,20 @@ const buildConfigurationSummary = () => {
   };
 };
 
-const buildReadinessReport = ({ database }) => {
+const buildReadinessReport = ({ databaseStatus }) => {
   const configuration = buildConfigurationSummary();
   const blockingIssues = [];
-  if (!database.ok) blockingIssues.push('DATABASE_UNAVAILABLE');
+  if (!databaseStatus.ok) blockingIssues.push('DATABASE_UNAVAILABLE');
 
   return {
-    ok: database.ok,
+    ok: databaseStatus.ok,
     status: blockingIssues.length ? 'not_ready' : (configuration.warnings.some((warning) => warning.severity === 'ERROR') ? 'degraded' : 'ready'),
     service: 'findly-api',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     environment: env.NODE_ENV,
-    database,
+    database: databaseStatus.status,
+    databaseStatus,
     configuration,
     blockingIssues,
   };
@@ -280,7 +281,7 @@ const readyHandler = async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     const report = buildReadinessReport({
-      database: {
+      databaseStatus: {
         ok: true,
         status: 'ok',
         responseTimeMs: elapsedMs(databaseStartedAt),
