@@ -77,9 +77,11 @@ describe('open web evidence layer', () => {
     const result = await lookupOpenWebEvidence({ websiteUrl: 'https://openweb-test.example.com' });
     expect(result.enabled).toBe(false);
     expect(result.found).toBe(false);
+    expect(result.skippedReason).toBe('DISABLED');
+    expect(result.durationMs).toEqual(expect.any(Number));
   });
 
-  it('queries Common Crawl safely, extracts archived metadata, and stores no raw html', async () => {
+  it('queries Common Crawl safely, extracts archived metadata, stores no raw html, and reports safe runtime metadata', async () => {
     const html = `
       <html>
         <head>
@@ -137,6 +139,17 @@ describe('open web evidence layer', () => {
       'CONTACT_PAGE_SIGNAL',
     ]));
     expect(result.shouldSkipPaid).toBe(true);
+    expect(result.durationMs).toEqual(expect.any(Number));
+    expect(result.cacheHit).toBe(false);
+    expect(result.timeout).toBe(false);
+    expect(result.skippedReason).toBeNull();
+    expect(result.archivedHtmlFetched).toBe(true);
+
+    const cachedResult = await lookupOpenWebEvidence({ websiteUrl: 'https://openweb-test.example.com/' });
+    expect(cachedResult.found).toBe(true);
+    expect(cachedResult.fromCache).toBe(true);
+    expect(cachedResult.cacheHit).toBe(true);
+    expect(cachedResult.durationMs).toEqual(expect.any(Number));
 
     const [cacheEntry] = await prisma.$queryRaw`
       SELECT *
@@ -155,11 +168,16 @@ describe('open web evidence layer', () => {
     const result = await lookupOpenWebEvidence({ websiteUrl: 'https://openweb-test.example.com/' });
     expect(result.found).toBe(false);
     expect(result.signals[0].key).toBe('OPEN_WEB_EVIDENCE_TIMEOUT');
+    expect(result.timeout).toBe(true);
+    expect(result.skippedReason).toBe('TIMEOUT');
+    expect(result.durationMs).toEqual(expect.any(Number));
   });
 
   it('skips unsafe urls without throwing', async () => {
     const result = await lookupOpenWebEvidence({ websiteUrl: 'http://127.0.0.1/private' });
     expect(result.found).toBe(false);
     expect(result.signals[0].key).toBe('OPEN_WEB_EVIDENCE_SKIPPED_UNSAFE_URL');
+    expect(result.skippedReason).toBe('UNSAFE_URL');
+    expect(result.durationMs).toEqual(expect.any(Number));
   });
 });
