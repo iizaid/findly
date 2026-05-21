@@ -14,6 +14,17 @@ import {
 
 const successRedirectUrl = (returnTo) => new URL(returnTo || env.OAUTH_DEFAULT_SUCCESS_PATH || '/dashboard', env.CLIENT_URL).toString();
 
+const twoFactorRedirectUrl = ({ challengeToken, expiresAt, returnTo }) => {
+  const url = new URL(env.OAUTH_FAILURE_PATH || '/auth', env.CLIENT_URL);
+  url.searchParams.set('twoFactorRequired', '1');
+  url.searchParams.set('challengeToken', challengeToken);
+  url.searchParams.set('expiresAt', new Date(expiresAt).toISOString());
+  if (returnTo) {
+    url.searchParams.set('returnTo', returnTo);
+  }
+  return url.toString();
+};
+
 const recordOAuthFailure = async ({ req, provider, errorCode }) => {
   await prisma.auditLog.create({
     data: {
@@ -57,6 +68,15 @@ export const handleOAuthCallback = async (req, res) => {
     });
 
     res.clearCookie(OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookieOptions());
+
+    if (result.requiresTwoFactor) {
+      return res.redirect(302, twoFactorRedirectUrl({
+        challengeToken: result.challengeToken,
+        expiresAt: result.expiresAt,
+        returnTo: result.returnTo,
+      }));
+    }
+
     res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(true));
     return res.redirect(302, successRedirectUrl(result.returnTo));
   } catch (error) {

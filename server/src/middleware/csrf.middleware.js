@@ -6,6 +6,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const EXEMPT_PATHS = new Set([
   '/api/auth/register',
   '/api/auth/login',
+  '/api/auth/2fa/login/verify',
+  '/api/auth/2fa/login/cancel',
   '/api/auth/verify-email',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',

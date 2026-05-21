@@ -65,6 +65,8 @@ export const loginSchema = z.object({
   query: z.object({}).optional(),
 });
 
+const twoFactorCodeSchema = z.string().trim().min(6).max(32);
+
 export const verifyEmailSchema = z.object({
   body: z.object({
     token: z.string().min(32, 'Verification token is required.').max(256),
@@ -101,6 +103,40 @@ export const resetPasswordSchema = z.object({
   body: z.object({
     token: z.string().min(32, 'Reset token is required.').max(256),
     newPassword: passwordSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const twoFactorConfirmSchema = z.object({
+  body: z.object({
+    code: twoFactorCodeSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const twoFactorDisableSchema = z.object({
+  body: z.object({
+    password: z.string().min(1).max(128).optional(),
+    code: twoFactorCodeSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const twoFactorLoginVerifySchema = z.object({
+  body: z.object({
+    challengeToken: z.string().min(32).max(256),
+    code: twoFactorCodeSchema,
+  }).strict(),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+export const twoFactorLoginCancelSchema = z.object({
+  body: z.object({
+    challengeToken: z.string().min(32).max(256),
   }).strict(),
   params: z.object({}).optional(),
   query: z.object({}).optional(),

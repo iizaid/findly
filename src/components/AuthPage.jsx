@@ -9,6 +9,7 @@ import {
   Lock,
   Mail,
   RefreshCw,
+  Shield,
   User,
 } from 'lucide-react';
 
@@ -33,7 +34,13 @@ const DiscordIcon = () => (
     <path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
   </svg>
 );
-import { apiRequest, ApiError, getOAuthStartUrl } from '../lib/api';
+import {
+  apiRequest,
+  ApiError,
+  cancelTwoFactorLogin,
+  getOAuthStartUrl,
+  verifyTwoFactorLogin,
+} from '../lib/api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ATTEMPT_KEY = 'findly_auth_attempts';
@@ -58,6 +65,7 @@ const getStoredJson = (key, fallback) => {
 };
 
 const normalizeEmail = (email) => email.trim().toLowerCase();
+const normalizeTwoFactorCode = (value) => String(value || '').trim().replace(/\s+/g, '').toUpperCase();
 const stripUnsafeChars = (value) => [...value]
   .filter((char) => {
     const code = char.charCodeAt(0);
@@ -146,9 +154,12 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [isVerifyingTwoFactor, setIsVerifyingTwoFactor] = useState(false);
   const [touched, setTouched] = useState({});
   const [formStartedAt, setFormStartedAt] = useState(() => Date.now());
   const [turnstileReady, setTurnstileReady] = useState(false);
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState({ token: '', expiresAt: '', returnTo: '/dashboard' });
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -171,8 +182,23 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authError = params.get('authError');
+    const twoFactorRequired = params.get('twoFactorRequired');
+    const challengeToken = params.get('challengeToken');
+    const expiresAt = params.get('expiresAt');
+    const returnTo = params.get('returnTo') || '/dashboard';
+
+    if (twoFactorRequired === '1' && challengeToken) {
+      setMode('login');
+      setScreen('two-factor');
+      setTwoFactorChallenge({ token: challengeToken, expiresAt: expiresAt || '', returnTo });
+      setStatus(null);
+    }
+
     if (authError && OAUTH_ERROR_MESSAGES[authError]) {
       setStatus({ type: 'error', message: OAUTH_ERROR_MESSAGES[authError] });
+    }
+
+    if (authError || twoFactorRequired === '1') {
       const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
       window.history.replaceState({}, '', cleanUrl);
     }
@@ -303,6 +329,66 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     setStatus(null);
     setSubmitted(false);
     setTouched({});
+    setTwoFactorCode('');
+    setTwoFactorChallenge({ token: '', expiresAt: '', returnTo: '/dashboard' });
+  };
+
+  const handleCancelTwoFactor = async () => {
+    const challengeToken = twoFactorChallenge.token;
+    setStatus(null);
+
+    if (challengeToken) {
+      try {
+        await cancelTwoFactorLogin(challengeToken);
+      } catch {
+        // The local flow should still reset even if the challenge already expired.
+      }
+    }
+
+    setTwoFactorCode('');
+    setTwoFactorChallenge({ token: '', expiresAt: '', returnTo: '/dashboard' });
+    setScreen('form');
+  };
+
+  const handleVerifyTwoFactor = async (event) => {
+    event.preventDefault();
+    setStatus(null);
+
+    if (!twoFactorChallenge.token) {
+      setStatus({ type: 'error', message: 'Invalid or expired two-factor challenge.' });
+      return;
+    }
+
+    if (normalizeTwoFactorCode(twoFactorCode).length < 6) {
+      setStatus({ type: 'error', message: 'Enter your authenticator code or backup code.' });
+      return;
+    }
+
+    setIsVerifyingTwoFactor(true);
+
+    try {
+      const response = await verifyTwoFactorLogin({
+        challengeToken: twoFactorChallenge.token,
+        code: normalizeTwoFactorCode(twoFactorCode),
+      });
+
+      onSessionChange?.(response.data?.user || null);
+      onNavigate?.(response.data?.returnTo || twoFactorChallenge.returnTo || '/dashboard');
+    } catch (error) {
+      let message = 'Invalid authentication code.';
+      if (error instanceof ApiError) {
+        if (error.code === 'TWO_FACTOR_CHALLENGE_INVALID') {
+          message = 'Invalid or expired two-factor challenge.';
+        } else if (error.status === 429) {
+          message = 'Too many attempts, please login again.';
+        } else {
+          message = error.message;
+        }
+      }
+      setStatus({ type: 'error', message });
+    } finally {
+      setIsVerifyingTwoFactor(false);
+    }
   };
 
   const sendPasswordReset = async (event) => {
@@ -435,6 +521,20 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
         } else {
           setStatus(null);
         }
+        return;
+      }
+
+      if (response.data?.requiresTwoFactor) {
+        setMode('login');
+        setScreen('two-factor');
+        setAccountEmail(email);
+        setTwoFactorCode('');
+        setTwoFactorChallenge({
+          token: response.data.challengeToken,
+          expiresAt: response.data.expiresAt,
+          returnTo: '/dashboard',
+        });
+        setStatus(null);
         return;
       }
 
@@ -682,6 +782,61 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                           setScreen('form');
                           setStatus(null);
                         }}
+                        className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04]"
+                      >
+                        Back to login
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : screen === 'two-factor' ? (
+                <div className="min-h-[650px] pt-10">
+                  <p className="text-sm font-bold uppercase tracking-[0.2em] text-secondary">Two-factor authentication</p>
+                  <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
+                    Confirm it is you.
+                  </h2>
+                  <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-secondary">
+                    Enter the 6-digit code from your authenticator app, or use one of your backup codes.
+                    {accountEmail ? <> This sign-in is for <span className="text-black">{accountEmail}</span>.</> : null}
+                  </p>
+                  {twoFactorChallenge.expiresAt ? (
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-secondary">
+                      Challenge expires at {new Date(twoFactorChallenge.expiresAt).toLocaleTimeString()}
+                    </p>
+                  ) : null}
+                  <form className="mt-8 max-w-xl space-y-5" onSubmit={handleVerifyTwoFactor} noValidate>
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-black">Authenticator or backup code</label>
+                      <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                        <Shield size={18} className="text-secondary" />
+                        <input
+                          value={twoFactorCode}
+                          onChange={(event) => setTwoFactorCode(event.target.value.toUpperCase())}
+                          maxLength={32}
+                          required
+                          className="w-full bg-transparent text-sm font-semibold uppercase tracking-[0.18em] outline-none placeholder:text-secondary/50"
+                          placeholder="123456 or ABCD-EFGH"
+                          autoComplete="one-time-code"
+                          inputMode="text"
+                        />
+                      </div>
+                    </div>
+                    {status && (
+                      <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
+                        {status.message}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        type="submit"
+                        disabled={isVerifyingTwoFactor}
+                        className="inline-flex h-12 items-center justify-center rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
+                      >
+                        {isVerifyingTwoFactor ? 'Verifying...' : 'Verify code'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelTwoFactor}
                         className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04]"
                       >
                         Back to login

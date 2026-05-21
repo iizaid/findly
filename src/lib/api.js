@@ -3,6 +3,8 @@ const API_BASE_URL = configuredApiBaseUrl || (import.meta.env.PROD ? '' : 'http:
 const CSRF_EXEMPT = new Set([
   'POST /api/auth/register',
   'POST /api/auth/login',
+  'POST /api/auth/2fa/login/verify',
+  'POST /api/auth/2fa/login/cancel',
   'POST /api/auth/verify-email',
   'POST /api/auth/forgot-password',
   'POST /api/auth/reset-password',
@@ -163,5 +165,37 @@ export const getCsrfToken = async () => {
 
   return csrfTokenPromise;
 };
+
+export const getTwoFactorStatus = () => apiRequest('/api/auth/2fa/status');
+
+export const startTwoFactorSetup = () => apiRequest('/api/auth/2fa/setup/start', {
+  method: 'POST',
+  body: JSON.stringify({}),
+});
+
+export const confirmTwoFactorSetup = (code) => apiRequest('/api/auth/2fa/setup/confirm', {
+  method: 'POST',
+  body: JSON.stringify({ code }),
+});
+
+export const disableTwoFactor = ({ password, code }) => apiRequest('/api/auth/2fa/disable', {
+  method: 'POST',
+  body: JSON.stringify({ password, code }),
+});
+
+export const regenerateBackupCodes = (code) => apiRequest('/api/auth/2fa/backup-codes/regenerate', {
+  method: 'POST',
+  body: JSON.stringify({ code }),
+});
+
+export const verifyTwoFactorLogin = ({ challengeToken, code }) => apiRequest('/api/auth/2fa/login/verify', {
+  method: 'POST',
+  body: JSON.stringify({ challengeToken, code }),
+});
+
+export const cancelTwoFactorLogin = (challengeToken) => apiRequest('/api/auth/2fa/login/cancel', {
+  method: 'POST',
+  body: JSON.stringify({ challengeToken }),
+});
 
 export { ApiError };

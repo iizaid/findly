@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { env } from '../config/env.js';
 import { prisma } from '../db/prisma.js';
 import { errorCodes } from '../utils/AppError.js';
@@ -58,6 +58,9 @@ const makeRateLimit = ({ windowMs, limit, message, name, keyGenerator, skip }) =
       });
     },
   });
+
+const getIpRateLimitKey = (req) => ipKeyGenerator(req.ip || '', 56);
+const getUserOrIpRateLimitKey = (req) => req.user?.id || getIpRateLimitKey(req);
 
 export const generalRateLimiter = makeRateLimit({
   name: 'general',
@@ -120,6 +123,38 @@ export const oauthCallbackRateLimiter = makeRateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 60,
   message: 'Too many sign-in attempts. Please try again later.',
+});
+
+export const twoFactorSetupConfirmRateLimiter = makeRateLimit({
+  name: 'two-factor-setup-confirm',
+  windowMs: env.TWO_FACTOR_SETUP_CONFIRM_WINDOW_MS,
+  limit: env.TWO_FACTOR_SETUP_CONFIRM_MAX,
+  keyGenerator: getUserOrIpRateLimitKey,
+  message: 'Too many two-factor setup attempts. Please wait and try again.',
+});
+
+export const twoFactorLoginVerifyRateLimiter = makeRateLimit({
+  name: 'two-factor-login-verify',
+  windowMs: env.TWO_FACTOR_LOGIN_VERIFY_WINDOW_MS,
+  limit: env.TWO_FACTOR_LOGIN_VERIFY_MAX,
+  keyGenerator: getIpRateLimitKey,
+  message: 'Too many two-factor attempts. Please login again in a moment.',
+});
+
+export const twoFactorDisableRateLimiter = makeRateLimit({
+  name: 'two-factor-disable',
+  windowMs: env.TWO_FACTOR_DISABLE_WINDOW_MS,
+  limit: env.TWO_FACTOR_DISABLE_MAX,
+  keyGenerator: getUserOrIpRateLimitKey,
+  message: 'Too many two-factor disable attempts. Please wait and try again.',
+});
+
+export const twoFactorBackupRegenerateRateLimiter = makeRateLimit({
+  name: 'two-factor-backup-regenerate',
+  windowMs: env.TWO_FACTOR_BACKUP_REGENERATE_WINDOW_MS,
+  limit: env.TWO_FACTOR_BACKUP_REGENERATE_MAX,
+  keyGenerator: getUserOrIpRateLimitKey,
+  message: 'Too many backup code regeneration attempts. Please wait and try again.',
 });
 
 export const searchRateLimiter = makeRateLimit({

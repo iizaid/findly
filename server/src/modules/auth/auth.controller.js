@@ -6,6 +6,15 @@ import { clearCookieOptions, getCookieOptions } from '../sessions/session.servic
 import { loginUser, logoutUser, registerUser, updatePassword as updatePasswordService, logoutEverywhere as logoutEverywhereService } from './auth.service.js';
 import { resendVerificationEmail, verifyEmailToken } from './emailVerification.service.js';
 import { PASSWORD_RESET_GENERIC_MESSAGE, requestPasswordReset, resetPasswordWithToken } from './passwordReset.service.js';
+import {
+  cancelTwoFactorLoginChallenge,
+  completeTwoFactorLogin,
+  confirmTwoFactorSetup,
+  disableTwoFactor,
+  getTwoFactorStatus,
+  regenerateTwoFactorBackupCodes,
+  startTwoFactorSetup,
+} from './twoFactor.service.js';
 
 export const register = asyncHandler(async (req, res) => {
   const result = await registerUser(req.validated.body, req);
@@ -27,8 +36,20 @@ export const register = asyncHandler(async (req, res) => {
 
 export const login = asyncHandler(async (req, res) => {
   const result = await loginUser(req.validated.body, req);
+
+  if (result.requiresTwoFactor) {
+    return successResponse(
+      res,
+      {
+        requiresTwoFactor: true,
+        challengeToken: result.challengeToken,
+        expiresAt: result.expiresAt,
+      },
+      'Two-factor authentication required.',
+    );
+  }
+
   const workspace = await getDefaultWorkspace(result.user.id);
-  
   const remember = req.validated.body.remember ?? true;
 
   res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(remember));
@@ -98,7 +119,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
 export const updatePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.validated.body;
 
-  await updatePasswordService(req.user.id, currentPassword, newPassword, { currentSessionId: req.session?.id });
+  await updatePasswordService(req.user.id, currentPassword, newPassword, { currentSessionId: req.session?.id, req });
   return successResponse(res, {}, 'Password updated successfully.');
 });
 
@@ -117,4 +138,67 @@ export const resetPassword = asyncHandler(async (req, res) => {
   await resetPasswordWithToken(req.validated.body, req);
   res.clearCookie(env.COOKIE_NAME, clearCookieOptions);
   return successResponse(res, {}, 'Password reset successfully. Please log in again.');
+});
+
+export const getTwoFactor = asyncHandler(async (req, res) => {
+  const status = await getTwoFactorStatus(req.user.id);
+  return successResponse(res, status, 'Two-factor status loaded.');
+});
+
+export const startTwoFactor = asyncHandler(async (req, res) => {
+  const result = await startTwoFactorSetup({ userId: req.user.id, req });
+  return successResponse(res, result, 'Two-factor setup started.');
+});
+
+export const confirmTwoFactor = asyncHandler(async (req, res) => {
+  const result = await confirmTwoFactorSetup({ userId: req.user.id, code: req.validated.body.code, req });
+  return successResponse(res, result, 'Two-factor authentication enabled.');
+});
+
+export const disableTwoFactorForCurrentUser = asyncHandler(async (req, res) => {
+  await disableTwoFactor({
+    userId: req.user.id,
+    password: req.validated.body.password,
+    code: req.validated.body.code,
+    req,
+  });
+  return successResponse(res, {}, 'Two-factor authentication disabled.');
+});
+
+export const regenerateBackupCodes = asyncHandler(async (req, res) => {
+  const result = await regenerateTwoFactorBackupCodes({
+    userId: req.user.id,
+    code: req.validated.body.code,
+    req,
+  });
+  return successResponse(res, result, 'Backup codes regenerated.');
+});
+
+export const verifyTwoFactorLogin = asyncHandler(async (req, res) => {
+  const result = await completeTwoFactorLogin({
+    challengeToken: req.validated.body.challengeToken,
+    code: req.validated.body.code,
+    req,
+  });
+
+  const workspace = await getDefaultWorkspace(result.user.id);
+  res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(result.remember ?? true));
+
+  return successResponse(
+    res,
+    {
+      user: result.user,
+      workspace,
+      returnTo: result.returnTo,
+    },
+    'Logged in successfully.',
+  );
+});
+
+export const cancelTwoFactorLogin = asyncHandler(async (req, res) => {
+  await cancelTwoFactorLoginChallenge({
+    challengeToken: req.validated.body.challengeToken,
+    req,
+  });
+  return successResponse(res, {}, 'Two-factor login cancelled.');
 });

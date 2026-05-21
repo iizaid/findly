@@ -41,8 +41,8 @@ const sessionExpiry = (remember = true) => {
   return new Date(Date.now() + maxAgeMs);
 };
 
-const pruneOldActiveSessions = async (userId, keepSessionId) => {
-  const activeSessions = await prisma.session.findMany({
+const pruneOldActiveSessions = async ({ tx = prisma, userId, keepSessionId }) => {
+  const activeSessions = await tx.session.findMany({
     where: {
       userId,
       revokedAt: null,
@@ -65,7 +65,7 @@ const pruneOldActiveSessions = async (userId, keepSessionId) => {
 
   if (sessionsToRevoke.length === 0) return;
 
-  await prisma.session.updateMany({
+  await tx.session.updateMany({
     where: {
       id: {
         in: sessionsToRevoke.map((session) => session.id),
@@ -79,11 +79,11 @@ const pruneOldActiveSessions = async (userId, keepSessionId) => {
   });
 };
 
-export const createSession = async ({ userId, userAgent, ipAddress, remember = true }) => {
+export const createSession = async ({ tx = prisma, userId, userAgent, ipAddress, remember = true }) => {
   const token = createSessionToken();
   const tokenHash = hashSessionToken(token);
 
-  const session = await prisma.session.create({
+  const session = await tx.session.create({
     data: {
       userId,
       tokenHash,
@@ -93,7 +93,7 @@ export const createSession = async ({ userId, userAgent, ipAddress, remember = t
     },
   });
 
-  await pruneOldActiveSessions(userId, session.id);
+  await pruneOldActiveSessions({ tx, userId, keepSessionId: session.id });
 
   return { token, session };
 };

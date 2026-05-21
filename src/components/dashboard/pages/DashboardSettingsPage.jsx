@@ -1,9 +1,16 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { LogOut, User, Building2, Shield, WalletCards, Bell, Loader2, Trash2, Eye, EyeOff } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import AvatarCropperModal from '../AvatarCropperModal';
 import UserAvatar from '../../common/UserAvatar';
-import { apiRequest } from '../../../lib/api';
+import {
+  apiRequest,
+  confirmTwoFactorSetup,
+  disableTwoFactor,
+  getTwoFactorStatus,
+  regenerateBackupCodes,
+  startTwoFactorSetup,
+} from '../../../lib/api';
 
 const TABS = [
   { id: 'general', label: 'General', icon: User },
@@ -38,8 +45,21 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
   const fileInputRef = useRef(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Security & Notification UI states (Phase 5)
-  const twoFA = Boolean(user?.twoFactorEnabled);
+  // Security & Notification UI states
+  const [twoFactorState, setTwoFactorState] = useState({
+    enabled: Boolean(user?.twoFactorEnabled),
+    confirmedAt: null,
+    backupCodeCountRemaining: 0,
+  });
+  const [twoFactorSetup, setTwoFactorSetup] = useState(null);
+  const [twoFactorSetupCode, setTwoFactorSetupCode] = useState('');
+  const [twoFactorDisableCode, setTwoFactorDisableCode] = useState('');
+  const [twoFactorDisablePassword, setTwoFactorDisablePassword] = useState('');
+  const [twoFactorRegenerateCode, setTwoFactorRegenerateCode] = useState('');
+  const [twoFactorBackupCodes, setTwoFactorBackupCodes] = useState([]);
+  const [twoFactorMessage, setTwoFactorMessage] = useState(null);
+  const [isLoadingTwoFactor, setIsLoadingTwoFactor] = useState(false);
+  const [isRefreshingTwoFactor, setIsRefreshingTwoFactor] = useState(false);
   const [notifyMarketing, setNotifyMarketing] = useState(user?.notifyMarketing || false);
   const [notifyReports, setNotifyReports] = useState(user?.notifyReports ?? true);
   const [notifySecurity, setNotifySecurity] = useState(user?.notifySecurity ?? true);
@@ -53,6 +73,25 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
       actionLabel: 'Got it',
     });
   }, [onNotice]);
+
+  const loadTwoFactor = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setIsRefreshingTwoFactor(true);
+    }
+
+    try {
+      const response = await getTwoFactorStatus();
+      setTwoFactorState(response.data);
+    } catch (error) {
+      if (!silent) {
+        setTwoFactorMessage({ type: 'error', text: error.message || 'Could not load two-factor status.' });
+      }
+    } finally {
+      if (!silent) {
+        setIsRefreshingTwoFactor(false);
+      }
+    }
+  }, []);
 
   // Password visibility
   const [showCurrentPw, setShowCurrentPw] = useState(false);
@@ -68,6 +107,13 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
   // Avatar Cropper state
   const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [cropperImageSrc, setCropperImageSrc] = useState(null);
+  const twoFA = Boolean(twoFactorState.enabled);
+
+  useEffect(() => {
+    if (activeTab === 'security') {
+      loadTwoFactor({ silent: true });
+    }
+  }, [activeTab, loadTwoFactor]);
 
   // Real team members ONLY
   const teamMembers = [
@@ -205,12 +251,86 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     );
   };
 
-  const handleUnavailable2FA = () => {
-    showNotice(
-      'Two-factor authentication is not enabled yet',
-      'Findly will only expose this toggle after the full 2FA setup, recovery-code, and verification flow is connected.',
-    );
-  };
+  const handleStartTwoFactorSetup = useCallback(async () => {
+    setIsLoadingTwoFactor(true);
+    setTwoFactorMessage(null);
+    setTwoFactorBackupCodes([]);
+
+    try {
+      const response = await startTwoFactorSetup();
+      setTwoFactorSetup(response.data);
+      setTwoFactorSetupCode('');
+      setTwoFactorMessage({ type: 'success', text: 'Scan the QR code, then enter the 6-digit code from your authenticator app.' });
+    } catch (error) {
+      setTwoFactorMessage({ type: 'error', text: error.message || 'Could not start two-factor setup.' });
+    } finally {
+      setIsLoadingTwoFactor(false);
+    }
+  }, []);
+
+  const handleConfirmTwoFactorSetup = useCallback(async () => {
+    setIsLoadingTwoFactor(true);
+    setTwoFactorMessage(null);
+
+    try {
+      const response = await confirmTwoFactorSetup(twoFactorSetupCode.trim());
+      setTwoFactorBackupCodes(response.data.backupCodes || []);
+      setTwoFactorSetup(null);
+      setTwoFactorSetupCode('');
+      setTwoFactorDisableCode('');
+      setTwoFactorDisablePassword('');
+      setTwoFactorRegenerateCode('');
+      setTwoFactorMessage({ type: 'success', text: 'Two-factor authentication enabled. Save your backup codes now.' });
+      await loadTwoFactor({ silent: true });
+      onUpdate?.();
+    } catch (error) {
+      setTwoFactorMessage({ type: 'error', text: error.message || 'Could not enable two-factor authentication.' });
+    } finally {
+      setIsLoadingTwoFactor(false);
+    }
+  }, [loadTwoFactor, onUpdate, twoFactorSetupCode]);
+
+  const handleDisableTwoFactor = useCallback(async () => {
+    setIsLoadingTwoFactor(true);
+    setTwoFactorMessage(null);
+
+    try {
+      await disableTwoFactor({
+        password: twoFactorDisablePassword || undefined,
+        code: twoFactorDisableCode.trim(),
+      });
+      setTwoFactorBackupCodes([]);
+      setTwoFactorSetup(null);
+      setTwoFactorSetupCode('');
+      setTwoFactorDisableCode('');
+      setTwoFactorDisablePassword('');
+      setTwoFactorRegenerateCode('');
+      setTwoFactorMessage({ type: 'success', text: 'Two-factor authentication disabled.' });
+      await loadTwoFactor({ silent: true });
+      onUpdate?.();
+    } catch (error) {
+      setTwoFactorMessage({ type: 'error', text: error.message || 'Could not disable two-factor authentication.' });
+    } finally {
+      setIsLoadingTwoFactor(false);
+    }
+  }, [loadTwoFactor, onUpdate, twoFactorDisableCode, twoFactorDisablePassword]);
+
+  const handleRegenerateBackupCodes = useCallback(async () => {
+    setIsLoadingTwoFactor(true);
+    setTwoFactorMessage(null);
+
+    try {
+      const response = await regenerateBackupCodes(twoFactorRegenerateCode.trim());
+      setTwoFactorBackupCodes(response.data.backupCodes || []);
+      setTwoFactorRegenerateCode('');
+      setTwoFactorMessage({ type: 'success', text: 'Backup codes regenerated. Save the new set now.' });
+      await loadTwoFactor({ silent: true });
+    } catch (error) {
+      setTwoFactorMessage({ type: 'error', text: error.message || 'Could not regenerate backup codes.' });
+    } finally {
+      setIsLoadingTwoFactor(false);
+    }
+  }, [loadTwoFactor, twoFactorRegenerateCode]);
 
   const handleUpgradePlan = () => {
     if (onNavigate) {
@@ -590,27 +710,184 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
             <DashboardCard className="p-5 md:p-7">
               <h3 className="text-2xl font-bold tracking-tighter text-black mb-6">Additional Security</h3>
               
-              <div className="max-w-xl space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-black">Two-Factor Authentication (2FA)</p>
-                    <p className="mt-1 text-xs font-semibold text-secondary">Protect your account with an extra layer of security.</p>
+                <div className="max-w-xl space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-black">Two-Factor Authentication (2FA)</p>
+                      <p className="mt-1 text-xs font-semibold text-secondary">
+                        Protect your account with an authenticator app and one-time backup codes.
+                      </p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] ${
+                      twoFA ? 'bg-accent/20 text-black' : 'bg-black/[0.06] text-secondary'
+                    }`}>
+                      {twoFA ? 'Enabled' : 'Disabled'}
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleUnavailable2FA}
-                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 ${
-                      twoFA ? 'bg-black' : 'bg-black/20'
-                    }`}
-                    aria-label="Two-factor authentication status"
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        twoFA ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
+
+                  {twoFactorMessage && (
+                    <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${
+                      twoFactorMessage.type === 'success' ? 'bg-accent/20 text-black' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {twoFactorMessage.text}
+                    </div>
+                  )}
+
+                  {!twoFA && !twoFactorSetup && (
+                    <button
+                      type="button"
+                      onClick={handleStartTwoFactorSetup}
+                      disabled={isLoadingTwoFactor || isRefreshingTwoFactor}
+                      className="inline-flex h-11 items-center justify-center rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
+                    >
+                      {isLoadingTwoFactor ? 'Preparing...' : 'Enable two-factor authentication'}
+                    </button>
+                  )}
+
+                  {twoFactorSetup && (
+                    <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-[#F7F8F6] p-5">
+                      <div className="space-y-2">
+                        <p className="text-sm font-bold text-black">Step 1: Scan the QR code</p>
+                        <p className="text-xs font-semibold text-secondary">
+                          Use Google Authenticator, Microsoft Authenticator, Authy, 1Password, or another compatible app.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                        <img src={twoFactorSetup.qrCodeDataUrl} alt="Two-factor QR code" className="h-44 w-44 rounded-2xl border border-black/[0.08] bg-white p-3" />
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Manual setup key</p>
+                            <p className="mt-2 rounded-2xl border border-black/[0.08] bg-white px-4 py-3 font-mono text-sm font-bold tracking-[0.18em] text-black">
+                              {twoFactorSetup.manualSetupKey}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-sm font-bold text-black">Step 2: Enter the 6-digit code</label>
+                            <input
+                              value={twoFactorSetupCode}
+                              onChange={(event) => setTwoFactorSetupCode(event.target.value.replace(/\s+/g, '').toUpperCase())}
+                              maxLength={32}
+                              className="h-11 w-full rounded-2xl border border-black/[0.08] bg-white px-4 text-sm font-bold uppercase tracking-[0.18em] text-black outline-none"
+                              placeholder="123456"
+                              autoComplete="one-time-code"
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={handleConfirmTwoFactorSetup}
+                              disabled={isLoadingTwoFactor}
+                              className="inline-flex h-11 items-center justify-center rounded-full bg-black px-5 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
+                            >
+                              {isLoadingTwoFactor ? 'Verifying...' : 'Confirm and enable'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTwoFactorSetup(null);
+                                setTwoFactorSetupCode('');
+                                setTwoFactorMessage(null);
+                              }}
+                              className="inline-flex h-11 items-center justify-center rounded-full border border-black/[0.08] px-5 text-sm font-bold text-black transition-colors hover:bg-white"
+                            >
+                              Cancel setup
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {twoFA && (
+                    <>
+                      <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-[#F7F8F6] p-5">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-bold text-black">Backup codes</p>
+                            <p className="mt-1 text-xs font-semibold text-secondary">
+                              Remaining codes: {twoFactorState.backupCodeCountRemaining ?? 0}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={loadTwoFactor}
+                            disabled={isRefreshingTwoFactor}
+                            className="inline-flex h-10 items-center justify-center rounded-xl border border-black/[0.08] px-4 text-xs font-bold uppercase tracking-[0.14em] text-black transition-colors hover:bg-white disabled:opacity-50"
+                          >
+                            {isRefreshingTwoFactor ? 'Refreshing...' : 'Refresh'}
+                          </button>
+                        </div>
+
+                        {twoFactorBackupCodes.length > 0 && (
+                          <div className="rounded-2xl border border-black/[0.08] bg-white p-4">
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Save these backup codes now</p>
+                            <p className="mt-2 text-xs font-semibold text-secondary">
+                              They are shown only once. Each code works one time.
+                            </p>
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                              {twoFactorBackupCodes.map((backupCode) => (
+                                <div key={backupCode} className="rounded-xl bg-[#F7F8F6] px-3 py-2 font-mono text-sm font-bold tracking-[0.16em] text-black">
+                                  {backupCode}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-black">Regenerate backup codes</label>
+                          <input
+                            value={twoFactorRegenerateCode}
+                            onChange={(event) => setTwoFactorRegenerateCode(event.target.value.replace(/\s+/g, '').toUpperCase())}
+                            maxLength={32}
+                            className="h-11 w-full rounded-2xl border border-black/[0.08] bg-white px-4 text-sm font-bold uppercase tracking-[0.18em] text-black outline-none"
+                            placeholder="Enter current authenticator code"
+                            autoComplete="one-time-code"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleRegenerateBackupCodes}
+                            disabled={isLoadingTwoFactor}
+                            className="inline-flex h-11 items-center justify-center rounded-full border border-black/[0.08] px-5 text-sm font-bold text-black transition-colors hover:bg-white disabled:opacity-50"
+                          >
+                            {isLoadingTwoFactor ? 'Regenerating...' : 'Regenerate backup codes'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 rounded-[22px] border border-red-200 bg-red-50/60 p-5">
+                        <div>
+                          <p className="text-sm font-bold text-black">Disable two-factor authentication</p>
+                          <p className="mt-1 text-xs font-semibold text-secondary">
+                            Confirm with your current password and a valid authenticator or backup code.
+                          </p>
+                        </div>
+                        <input
+                          type="password"
+                          value={twoFactorDisablePassword}
+                          onChange={(event) => setTwoFactorDisablePassword(event.target.value)}
+                          className="h-11 w-full rounded-2xl border border-red-200 bg-white px-4 text-sm font-bold text-black outline-none"
+                          placeholder="Current password"
+                        />
+                        <input
+                          value={twoFactorDisableCode}
+                          onChange={(event) => setTwoFactorDisableCode(event.target.value.replace(/\s+/g, '').toUpperCase())}
+                          maxLength={32}
+                          className="h-11 w-full rounded-2xl border border-red-200 bg-white px-4 text-sm font-bold uppercase tracking-[0.18em] text-black outline-none"
+                          placeholder="Authenticator or backup code"
+                          autoComplete="one-time-code"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleDisableTwoFactor}
+                          disabled={isLoadingTwoFactor}
+                          className="inline-flex h-11 items-center justify-center rounded-full bg-red-600 px-5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {isLoadingTwoFactor ? 'Disabling...' : 'Disable two-factor authentication'}
+                        </button>
+                      </div>
+                    </>
+                  )}
 
                 <div className="border-t border-black/[0.08]" />
                 

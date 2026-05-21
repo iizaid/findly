@@ -14,6 +14,8 @@ export const createEmailVerificationToken = () => crypto.randomBytes(TOKEN_BYTES
 
 export const createPasswordResetToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
 
+export const createTwoFactorChallengeToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
+
 export const hashSessionToken = (token) => {
   return crypto
     .createHmac('sha256', env.SESSION_SECRET)
@@ -32,6 +34,13 @@ export const hashPasswordResetToken = (token) => {
   return crypto
     .createHmac('sha256', env.SESSION_SECRET)
     .update(`password-reset:${token}`)
+    .digest('hex');
+};
+
+export const hashTwoFactorChallengeToken = (token) => {
+  return crypto
+    .createHmac('sha256', env.SESSION_SECRET)
+    .update(`two-factor-challenge:${token}`)
     .digest('hex');
 };
 

@@ -15,6 +15,10 @@ import {
   recordLoginFailure as recordAuthAbuseLoginFailure,
 } from './authAbuse.service.js';
 import { enforceBotChallengeIfNeeded } from './botChallenge.service.js';
+import {
+  createTwoFactorLoginChallenge,
+  sendPasswordChangedSecurityEmail,
+} from './twoFactor.service.js';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
 const DUMMY_PASSWORD_HASH = '$2b$10$NLcXp1cWaAG/68QxrfVK0O7GHN3vtnlM8kAOqNtfI/Ki4r2a3Q1bS';
@@ -164,6 +168,21 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
 
   await clearLoginFailureState({ email, req });
 
+  if (user.twoFactorEnabled) {
+    const challenge = await createTwoFactorLoginChallenge({
+      userId: user.id,
+      remember,
+      req,
+      type: 'LOGIN',
+    });
+
+    return {
+      requiresTwoFactor: true,
+      challengeToken: challenge.challengeToken,
+      expiresAt: challenge.expiresAt,
+    };
+  }
+
   const sessionResult = await createSession({
     userId: user.id,
     userAgent: context.userAgent,
@@ -205,7 +224,7 @@ export const logoutUser = async (req) => {
   });
 };
 
-export const updatePassword = async (userId, currentPassword, newPassword, { currentSessionId = null } = {}) => {
+export const updatePassword = async (userId, currentPassword, newPassword, { currentSessionId = null, req = null } = {}) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
 
@@ -251,7 +270,67 @@ export const updatePassword = async (userId, currentPassword, newPassword, { cur
     return revoked.count;
   });
 
+  await sendPasswordChangedSecurityEmail({
+    user,
+    req: req || {
+      ip: null,
+      get: () => null,
+    },
+  });
+
   return { revokedSessions };
+};
+
+export const finalizePrimaryAuthentication = async ({
+  user,
+  remember = true,
+  returnTo = null,
+  req,
+  challengeType = 'LOGIN',
+}) => {
+  if (user.twoFactorEnabled) {
+    const challenge = await createTwoFactorLoginChallenge({
+      userId: user.id,
+      remember,
+      returnTo,
+      req,
+      type: challengeType,
+    });
+
+    return {
+      requiresTwoFactor: true,
+      challengeToken: challenge.challengeToken,
+      expiresAt: challenge.expiresAt,
+      returnTo,
+    };
+  }
+
+  const sessionResult = await createSession({
+    userId: user.id,
+    userAgent: req.get('user-agent') || null,
+    ipAddress: req.ip,
+    remember,
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: user.id,
+      action: 'USER_LOGGED_IN',
+      entityType: 'Session',
+      entityId: sessionResult.session.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || null,
+      metadata: {
+        authFlow: challengeType,
+      },
+    },
+  }).catch(() => {});
+
+  return {
+    token: sessionResult.token,
+    user: toSafeUser(user),
+    returnTo,
+  };
 };
 
 export const createUserWithDefaultWorkspace = async ({

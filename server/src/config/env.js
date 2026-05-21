@@ -105,6 +105,19 @@ export const envSchema = z.object({
   VERIFICATION_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
   APP_URL: z.string().url().default('http://localhost:4000'),
   CLIENT_URL: z.string().url().default('http://localhost:5173'),
+  TWO_FACTOR_AUTH_ENABLED: createBooleanParser(true),
+  TWO_FACTOR_SECRET_ENCRYPTION_KEY: z.string().optional(),
+  TWO_FACTOR_ISSUER: z.string().min(1).max(80).default('Findly'),
+  TWO_FACTOR_LOGIN_CHALLENGE_TTL_MINUTES: z.coerce.number().int().min(5).max(30).default(10),
+  TWO_FACTOR_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
+  TWO_FACTOR_SETUP_CONFIRM_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(10 * 60 * 1000),
+  TWO_FACTOR_SETUP_CONFIRM_MAX: z.coerce.number().int().min(1).max(50).default(5),
+  TWO_FACTOR_LOGIN_VERIFY_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  TWO_FACTOR_LOGIN_VERIFY_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  TWO_FACTOR_DISABLE_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  TWO_FACTOR_DISABLE_MAX: z.coerce.number().int().min(1).max(50).default(5),
+  TWO_FACTOR_BACKUP_REGENERATE_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  TWO_FACTOR_BACKUP_REGENERATE_MAX: z.coerce.number().int().min(1).max(50).default(5),
   OAUTH_ENABLED: createBooleanParser(false),
   OAUTH_STATE_TTL_MINUTES: z.coerce.number().int().min(1).max(10).default(10),
   OAUTH_ALLOWED_RETURN_PATHS: z.string().min(1).default('/dashboard,/settings,/billing'),
@@ -143,6 +156,8 @@ export const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
+  EMAIL_PROVIDER: z.enum(['smtp']).default('smtp'),
+  EMAIL_SECURITY_FROM: z.string().optional(),
   GOOGLE_PLACES_API_KEY: z.string().optional(),
   YELP_API_KEY: z.string().optional(),
   SEARCH_METADATA_PROVIDER_PRIMARY: z.string().min(1).default('serper'),
@@ -356,6 +371,35 @@ export const envSchema = z.object({
         message: `${field} is required in production.`,
       });
     }
+  }
+
+  if (value.NODE_ENV === 'production' && value.TWO_FACTOR_AUTH_ENABLED && !value.TWO_FACTOR_SECRET_ENCRYPTION_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TWO_FACTOR_SECRET_ENCRYPTION_KEY'],
+      message: 'TWO_FACTOR_SECRET_ENCRYPTION_KEY is required when two-factor authentication is enabled.',
+    });
+  }
+
+  if (
+    value.NODE_ENV === 'production'
+    && value.TWO_FACTOR_AUTH_ENABLED
+    && value.TWO_FACTOR_SECRET_ENCRYPTION_KEY
+    && !isStrongMasterKey(value.TWO_FACTOR_SECRET_ENCRYPTION_KEY)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TWO_FACTOR_SECRET_ENCRYPTION_KEY'],
+      message: 'TWO_FACTOR_SECRET_ENCRYPTION_KEY must decode to at least 32 bytes.',
+    });
+  }
+
+  if (
+    value.TWO_FACTOR_AUTH_ENABLED
+    && value.TWO_FACTOR_SECRET_ENCRYPTION_KEY
+    && !isStrongMasterKey(value.TWO_FACTOR_SECRET_ENCRYPTION_KEY)
+  ) {
+    console.warn('[WARNING] TWO_FACTOR_SECRET_ENCRYPTION_KEY does not decode to at least 32 bytes. Two-factor setup will be unavailable until this is fixed.');
   }
 
   if (value.COOKIE_SECURE === false) {

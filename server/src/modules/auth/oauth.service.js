@@ -3,10 +3,8 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { hashAuditValue } from '../../utils/crypto.js';
-import { toSafeUser } from '../users/user.mapper.js';
-import { createSession } from '../sessions/session.service.js';
 import { grantInitialCreditsIfEligible } from '../credits/credit.service.js';
-import { createUserWithDefaultWorkspace } from './auth.service.js';
+import { createUserWithDefaultWorkspace, finalizePrimaryAuthentication } from './auth.service.js';
 import {
   assertOAuthProviderConfigured,
   buildOAuthAuthorizationUrl,
@@ -422,19 +420,16 @@ export const completeOAuthCallback = async ({ provider, code, state, stateCookie
   const token = await exchangeOAuthCode({ provider, code, fetchImpl });
   const identity = await fetchOAuthIdentity({ provider, accessToken: token.accessToken, fetchImpl });
   const result = await findOrCreateOAuthUser({ identity, context });
-
-  const sessionResult = await createSession({
-    userId: result.user.id,
-    userAgent: context.userAgent,
-    ipAddress: context.ipAddress,
+  const authResult = await finalizePrimaryAuthentication({
+    user: result.user,
     remember: true,
+    returnTo: storedState.returnTo || env.OAUTH_DEFAULT_SUCCESS_PATH || '/dashboard',
+    req,
+    challengeType: 'OAUTH_LOGIN',
   });
 
   return {
-    token: sessionResult.token,
-    session: sessionResult.session,
-    user: toSafeUser(result.user),
-    returnTo: storedState.returnTo || env.OAUTH_DEFAULT_SUCCESS_PATH || '/dashboard',
+    ...authResult,
     linkedExistingUser: result.linkedExistingUser,
     createdNewUser: result.createdNewUser,
   };

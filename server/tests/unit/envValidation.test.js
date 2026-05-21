@@ -3,6 +3,7 @@ import { parseEnv } from '../../src/config/env.js';
 
 const strongSecret = 'test-session-secret-that-is-long-enough-for-findly';
 const strongMasterKey = Buffer.from('a'.repeat(32)).toString('base64');
+const strongTwoFactorKey = Buffer.from('b'.repeat(32)).toString('base64');
 
 const productionEnv = {
   DATABASE_URL: 'postgresql://user:pass@db.example.com:5432/findly',
@@ -17,6 +18,7 @@ const productionEnv = {
   SMTP_USER: 'mailer@example.com',
   SMTP_PASS: 'smtp-password-value',
   EMAIL_FROM: 'Findly <mailer@example.com>',
+  TWO_FACTOR_SECRET_ENCRYPTION_KEY: strongTwoFactorKey,
 };
 
 describe('production env validation', () => {

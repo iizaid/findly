@@ -8,6 +8,7 @@ import {
   hashPasswordResetToken,
 } from '../../utils/crypto.js';
 import { sendPasswordResetEmail } from '../mail/mail.service.js';
+import { sendPasswordChangedSecurityEmail } from './twoFactor.service.js';
 import {
   evaluatePasswordResetAbuse,
   getAuthRequestContext,
@@ -189,7 +190,7 @@ export const resetPasswordWithToken = async ({ token, newPassword }, req) => {
 
   const passwordHash = await hashPassword(newPassword);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const freshToken = await tx.passwordResetToken.findUnique({
       where: { id: storedToken.id },
       include: { user: true },
@@ -236,4 +237,11 @@ export const resetPasswordWithToken = async ({ token, newPassword }, req) => {
 
     return { sessionsRevoked: revoked.count };
   });
+
+  await sendPasswordChangedSecurityEmail({
+    user: storedToken.user,
+    req,
+  });
+
+  return result;
 };
