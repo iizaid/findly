@@ -4,12 +4,12 @@ import { createSessionToken, hashSessionToken } from '../../utils/crypto.js';
 
 const msPerDay = 24 * 60 * 60 * 1000;
 
-const getBaseCookieOptions = () => {
+export const getBaseCookieOptions = (path = '/') => {
   const options = {
     httpOnly: true,
     sameSite: env.COOKIE_SAME_SITE,
     secure: env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.IS_PRODUCTION,
-    path: '/',
+    path,
   };
   
   if (env.COOKIE_DOMAIN) {

@@ -17,6 +17,7 @@ import {
 import { enforceBotChallengeIfNeeded } from './botChallenge.service.js';
 import {
   createTwoFactorLoginChallenge,
+  getEffectiveTwoFactorRequirement,
   sendPasswordChangedSecurityEmail,
 } from './twoFactor.service.js';
 
@@ -168,7 +169,9 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
 
   await clearLoginFailureState({ email, req });
 
-  if (user.twoFactorEnabled) {
+  const twoFactorRequirement = await getEffectiveTwoFactorRequirement(user.id);
+
+  if (twoFactorRequirement.required) {
     const challenge = await createTwoFactorLoginChallenge({
       userId: user.id,
       remember,
@@ -288,7 +291,9 @@ export const finalizePrimaryAuthentication = async ({
   req,
   challengeType = 'LOGIN',
 }) => {
-  if (user.twoFactorEnabled) {
+  const twoFactorRequirement = await getEffectiveTwoFactorRequirement(user.id);
+
+  if (twoFactorRequirement.required) {
     const challenge = await createTwoFactorLoginChallenge({
       userId: user.id,
       remember,

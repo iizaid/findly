@@ -133,6 +133,14 @@ export const twoFactorSetupConfirmRateLimiter = makeRateLimit({
   message: 'Too many two-factor setup attempts. Please wait and try again.',
 });
 
+export const twoFactorSetupStartRateLimiter = makeRateLimit({
+  name: 'two-factor-setup-start',
+  windowMs: env.TWO_FACTOR_SETUP_START_WINDOW_MS,
+  limit: env.TWO_FACTOR_SETUP_START_MAX,
+  keyGenerator: getUserOrIpRateLimitKey,
+  message: 'Too many two-factor setup requests. Please wait and try again.',
+});
+
 export const twoFactorLoginVerifyRateLimiter = makeRateLimit({
   name: 'two-factor-login-verify',
   windowMs: env.TWO_FACTOR_LOGIN_VERIFY_WINDOW_MS,

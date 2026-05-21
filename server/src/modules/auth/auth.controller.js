@@ -8,6 +8,7 @@ import { resendVerificationEmail, verifyEmailToken } from './emailVerification.s
 import { PASSWORD_RESET_GENERIC_MESSAGE, requestPasswordReset, resetPasswordWithToken } from './passwordReset.service.js';
 import {
   cancelTwoFactorLoginChallenge,
+  clearTwoFactorChallengeCookieOptions,
   completeTwoFactorLogin,
   confirmTwoFactorSetup,
   disableTwoFactor,
@@ -175,14 +176,28 @@ export const regenerateBackupCodes = asyncHandler(async (req, res) => {
 });
 
 export const verifyTwoFactorLogin = asyncHandler(async (req, res) => {
-  const result = await completeTwoFactorLogin({
-    challengeToken: req.validated.body.challengeToken,
-    code: req.validated.body.code,
-    req,
-  });
+  const cookieChallengeToken = req.cookies?.[env.TWO_FACTOR_CHALLENGE_COOKIE_NAME];
+  const challengeToken = req.validated.body.challengeToken || cookieChallengeToken;
+  let result;
+
+  try {
+    result = await completeTwoFactorLogin({
+      challengeToken,
+      code: req.validated.body.code,
+      req,
+    });
+  } catch (error) {
+    if (cookieChallengeToken && ['TWO_FACTOR_CHALLENGE_INVALID', 'TWO_FACTOR_NOT_ENABLED', 'RATE_LIMITED'].includes(error?.code)) {
+      res.clearCookie(env.TWO_FACTOR_CHALLENGE_COOKIE_NAME, clearTwoFactorChallengeCookieOptions);
+    }
+    throw error;
+  }
 
   const workspace = await getDefaultWorkspace(result.user.id);
   res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(result.remember ?? true));
+  if (cookieChallengeToken) {
+    res.clearCookie(env.TWO_FACTOR_CHALLENGE_COOKIE_NAME, clearTwoFactorChallengeCookieOptions);
+  }
 
   return successResponse(
     res,
@@ -196,9 +211,13 @@ export const verifyTwoFactorLogin = asyncHandler(async (req, res) => {
 });
 
 export const cancelTwoFactorLogin = asyncHandler(async (req, res) => {
+  const cookieChallengeToken = req.cookies?.[env.TWO_FACTOR_CHALLENGE_COOKIE_NAME];
   await cancelTwoFactorLoginChallenge({
-    challengeToken: req.validated.body.challengeToken,
+    challengeToken: req.validated.body.challengeToken || cookieChallengeToken,
     req,
   });
+  if (cookieChallengeToken) {
+    res.clearCookie(env.TWO_FACTOR_CHALLENGE_COOKIE_NAME, clearTwoFactorChallengeCookieOptions);
+  }
   return successResponse(res, {}, 'Two-factor login cancelled.');
 });

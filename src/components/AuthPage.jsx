@@ -183,14 +183,13 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     const params = new URLSearchParams(window.location.search);
     const authError = params.get('authError');
     const twoFactorRequired = params.get('twoFactorRequired');
-    const challengeToken = params.get('challengeToken');
     const expiresAt = params.get('expiresAt');
     const returnTo = params.get('returnTo') || '/dashboard';
 
-    if (twoFactorRequired === '1' && challengeToken) {
+    if (twoFactorRequired === '1') {
       setMode('login');
       setScreen('two-factor');
-      setTwoFactorChallenge({ token: challengeToken, expiresAt: expiresAt || '', returnTo });
+      setTwoFactorChallenge({ token: '', expiresAt: expiresAt || '', returnTo });
       setStatus(null);
     }
 
@@ -337,12 +336,10 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     const challengeToken = twoFactorChallenge.token;
     setStatus(null);
 
-    if (challengeToken) {
-      try {
-        await cancelTwoFactorLogin(challengeToken);
-      } catch {
-        // The local flow should still reset even if the challenge already expired.
-      }
+    try {
+      await cancelTwoFactorLogin(challengeToken || undefined);
+    } catch {
+      // The local flow should still reset even if the challenge already expired.
     }
 
     setTwoFactorCode('');
@@ -354,11 +351,6 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     event.preventDefault();
     setStatus(null);
 
-    if (!twoFactorChallenge.token) {
-      setStatus({ type: 'error', message: 'Invalid or expired two-factor challenge.' });
-      return;
-    }
-
     if (normalizeTwoFactorCode(twoFactorCode).length < 6) {
       setStatus({ type: 'error', message: 'Enter your authenticator code or backup code.' });
       return;
@@ -368,7 +360,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
 
     try {
       const response = await verifyTwoFactorLogin({
-        challengeToken: twoFactorChallenge.token,
+        challengeToken: twoFactorChallenge.token || undefined,
         code: normalizeTwoFactorCode(twoFactorCode),
       });
 

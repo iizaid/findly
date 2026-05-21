@@ -54,6 +54,18 @@ When a user with 2FA enabled signs in successfully with the primary factor:
 
 The final session is created only after `POST /api/auth/2fa/login/verify` succeeds.
 
+### OAuth login challenge
+
+When OAuth sign-in reaches a user with enabled 2FA:
+
+- Findly still pauses before the final session.
+- The pending 2FA challenge token is stored in a short-lived httpOnly cookie on the API domain.
+- The frontend redirect carries only safe flags such as:
+  - `twoFactorRequired=1`
+  - `expiresAt`
+  - `returnTo`
+- The challenge token is not placed in the frontend URL.
+
 ### Login verify
 
 `POST /api/auth/2fa/login/verify`
@@ -99,6 +111,7 @@ The final session is created only after `POST /api/auth/2fa/login/verify` succee
 - The encryption key comes from `TWO_FACTOR_SECRET_ENCRYPTION_KEY`.
 - Backup codes are stored as hashes only.
 - Pending login challenges store only a token hash, never the raw token.
+- Do not rotate `TWO_FACTOR_SECRET_ENCRYPTION_KEY` casually after users enable 2FA. Existing encrypted secrets depend on it.
 
 ## Environment
 
@@ -112,7 +125,11 @@ Important variables:
 
 - `TWO_FACTOR_AUTH_ENABLED`
 - `TWO_FACTOR_ISSUER`
+- `TWO_FACTOR_CHALLENGE_COOKIE_NAME`
 - `TWO_FACTOR_LOGIN_CHALLENGE_TTL_MINUTES`
+- `TWO_FACTOR_CHALLENGE_RETENTION_DAYS`
+- `TWO_FACTOR_SETUP_START_WINDOW_MS`
+- `TWO_FACTOR_SETUP_START_MAX`
 - `TWO_FACTOR_LOGIN_MAX_ATTEMPTS`
 - `TWO_FACTOR_SETUP_CONFIRM_WINDOW_MS`
 - `TWO_FACTOR_SETUP_CONFIRM_MAX`
@@ -128,8 +145,10 @@ Important variables:
 - The TOTP secret is never stored in plaintext.
 - Backup codes are never stored in plaintext.
 - The final session is never created before second-factor verification.
+- OAuth 2FA challenge state is stored in a short-lived httpOnly cookie, not in a frontend URL token.
 - Normal users are not forced into 2FA unless they enable it.
 - 2FA endpoints keep existing CSRF and auth guard patterns.
+- Expired and consumed old two-factor challenge rows are cleaned opportunistically during new challenge creation.
 
 ## Current limitations
 

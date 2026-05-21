@@ -190,12 +190,12 @@ export const regenerateBackupCodes = (code) => apiRequest('/api/auth/2fa/backup-
 
 export const verifyTwoFactorLogin = ({ challengeToken, code }) => apiRequest('/api/auth/2fa/login/verify', {
   method: 'POST',
-  body: JSON.stringify({ challengeToken, code }),
+  body: JSON.stringify(challengeToken ? { challengeToken, code } : { code }),
 });
 
 export const cancelTwoFactorLogin = (challengeToken) => apiRequest('/api/auth/2fa/login/cancel', {
   method: 'POST',
-  body: JSON.stringify({ challengeToken }),
+  body: JSON.stringify(challengeToken ? { challengeToken } : {}),
 });
 
 export { ApiError };

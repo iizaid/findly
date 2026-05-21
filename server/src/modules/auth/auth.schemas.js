@@ -127,7 +127,7 @@ export const twoFactorDisableSchema = z.object({
 
 export const twoFactorLoginVerifySchema = z.object({
   body: z.object({
-    challengeToken: z.string().min(32).max(256),
+    challengeToken: z.string().min(32).max(256).optional(),
     code: twoFactorCodeSchema,
   }).strict(),
   params: z.object({}).optional(),
@@ -136,7 +136,7 @@ export const twoFactorLoginVerifySchema = z.object({
 
 export const twoFactorLoginCancelSchema = z.object({
   body: z.object({
-    challengeToken: z.string().min(32).max(256),
+    challengeToken: z.string().min(32).max(256).optional(),
   }).strict(),
   params: z.object({}).optional(),
   query: z.object({}).optional(),

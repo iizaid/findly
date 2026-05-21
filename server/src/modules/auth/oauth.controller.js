@@ -11,13 +11,16 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   oauthErrorCode,
 } from './oauth.service.js';
+import {
+  clearTwoFactorChallengeCookieOptions,
+  getTwoFactorChallengeCookieOptions,
+} from './twoFactor.service.js';
 
 const successRedirectUrl = (returnTo) => new URL(returnTo || env.OAUTH_DEFAULT_SUCCESS_PATH || '/dashboard', env.CLIENT_URL).toString();
 
-const twoFactorRedirectUrl = ({ challengeToken, expiresAt, returnTo }) => {
+const twoFactorRedirectUrl = ({ expiresAt, returnTo }) => {
   const url = new URL(env.OAUTH_FAILURE_PATH || '/auth', env.CLIENT_URL);
   url.searchParams.set('twoFactorRequired', '1');
-  url.searchParams.set('challengeToken', challengeToken);
   url.searchParams.set('expiresAt', new Date(expiresAt).toISOString());
   if (returnTo) {
     url.searchParams.set('returnTo', returnTo);
@@ -70,19 +73,25 @@ export const handleOAuthCallback = async (req, res) => {
     res.clearCookie(OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookieOptions());
 
     if (result.requiresTwoFactor) {
+      res.cookie(
+        env.TWO_FACTOR_CHALLENGE_COOKIE_NAME,
+        result.challengeToken,
+        getTwoFactorChallengeCookieOptions(),
+      );
       return res.redirect(302, twoFactorRedirectUrl({
-        challengeToken: result.challengeToken,
         expiresAt: result.expiresAt,
         returnTo: result.returnTo,
       }));
     }
 
+    res.clearCookie(env.TWO_FACTOR_CHALLENGE_COOKIE_NAME, clearTwoFactorChallengeCookieOptions);
     res.cookie(env.COOKIE_NAME, result.token, getCookieOptions(true));
     return res.redirect(302, successRedirectUrl(result.returnTo));
   } catch (error) {
     const code = oauthErrorCode(error);
     await recordOAuthFailure({ req, provider, errorCode: code });
     res.clearCookie(OAUTH_STATE_COOKIE_NAME, clearOAuthStateCookieOptions());
+    res.clearCookie(env.TWO_FACTOR_CHALLENGE_COOKIE_NAME, clearTwoFactorChallengeCookieOptions);
     return res.redirect(302, getOAuthFailureRedirectUrl(code));
   }
 };

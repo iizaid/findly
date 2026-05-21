@@ -10,7 +10,7 @@ import {
   hashTwoFactorChallengeToken,
   verifyPassword,
 } from '../../utils/crypto.js';
-import { createSession } from '../sessions/session.service.js';
+import { createSession, getBaseCookieOptions } from '../sessions/session.service.js';
 import { toSafeUser } from '../users/user.mapper.js';
 import {
   sendPasswordChangedEmail,
@@ -26,6 +26,7 @@ const BACKUP_CODE_COUNT = 10;
 const TOTP_DIGITS = 6;
 const TOTP_PERIOD_SECONDS = 30;
 const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const TWO_FACTOR_CHALLENGE_COOKIE_PATH = '/api/auth/2fa/login';
 
 authenticator.options = {
   digits: TOTP_DIGITS,
@@ -191,6 +192,110 @@ const markChallengeConsumed = async (challengeId) => prisma.twoFactorChallenge.u
   where: { id: challengeId },
   data: { consumedAt: new Date() },
 });
+
+const retentionCutoff = () => new Date(Date.now() - (env.TWO_FACTOR_CHALLENGE_RETENTION_DAYS * 24 * 60 * 60 * 1000));
+
+export const cleanupExpiredTwoFactorChallenges = async () => {
+  const cutoff = retentionCutoff();
+  return prisma.twoFactorChallenge.deleteMany({
+    where: {
+      OR: [
+        { expiresAt: { lt: cutoff } },
+        { consumedAt: { lt: cutoff } },
+      ],
+    },
+  });
+};
+
+const cleanupExpiredTwoFactorChallengesSafely = async () => {
+  try {
+    await cleanupExpiredTwoFactorChallenges();
+  } catch {
+    await safeAudit({
+      action: 'TWO_FACTOR_CHALLENGE_CLEANUP_FAILED',
+      entityType: 'TwoFactorChallenge',
+    });
+  }
+};
+
+const repairTwoFactorFlag = async ({ userId, nextEnabled, reason }) => {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { twoFactorEnabled: nextEnabled },
+  });
+
+  await safeAudit({
+    userId,
+    action: 'TWO_FACTOR_INVARIANT_REPAIRED',
+    entityType: 'User',
+    entityId: userId,
+    metadata: {
+      nextEnabled,
+      reason,
+    },
+  });
+};
+
+export const getEffectiveTwoFactorRequirement = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      twoFactorEnabled: true,
+      twoFactorSetting: {
+        select: {
+          enabled: true,
+          secretEncrypted: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
+  }
+
+  const hasActiveSetting = Boolean(
+    user.twoFactorSetting?.enabled
+    && user.twoFactorSetting?.secretEncrypted,
+  );
+
+  if (hasActiveSetting && !user.twoFactorEnabled) {
+    await repairTwoFactorFlag({
+      userId,
+      nextEnabled: true,
+      reason: 'SETTING_ENABLED_USER_FLAG_FALSE',
+    });
+    return {
+      required: true,
+      repaired: true,
+    };
+  }
+
+  if (!hasActiveSetting && user.twoFactorEnabled) {
+    await repairTwoFactorFlag({
+      userId,
+      nextEnabled: false,
+      reason: 'USER_FLAG_TRUE_WITHOUT_ACTIVE_SETTING',
+    });
+    return {
+      required: false,
+      repaired: true,
+    };
+  }
+
+  return {
+    required: hasActiveSetting && user.twoFactorEnabled,
+    repaired: false,
+  };
+};
+
+export const getTwoFactorChallengeCookieOptions = () => ({
+  ...getBaseCookieOptions(TWO_FACTOR_CHALLENGE_COOKIE_PATH),
+  maxAge: env.TWO_FACTOR_LOGIN_CHALLENGE_TTL_MINUTES * 60 * 1000,
+});
+
+export const clearTwoFactorChallengeCookieOptions = getBaseCookieOptions(TWO_FACTOR_CHALLENGE_COOKIE_PATH);
 
 export const getTwoFactorStatus = async (userId) => {
   const setting = await prisma.userTwoFactorSetting.findUnique({
@@ -488,6 +593,7 @@ export const createTwoFactorLoginChallenge = async ({
   type = 'LOGIN',
 }) => {
   assertTwoFactorConfigured();
+  void cleanupExpiredTwoFactorChallengesSafely();
 
   await prisma.twoFactorChallenge.updateMany({
     where: {
@@ -536,6 +642,13 @@ export const createTwoFactorLoginChallenge = async ({
 
 export const completeTwoFactorLogin = async ({ challengeToken, code, req }) => {
   assertTwoFactorConfigured();
+  if (!challengeToken) {
+    throw new AppError(
+      errorCodes.TWO_FACTOR_CHALLENGE_INVALID,
+      'Invalid or expired two-factor challenge.',
+      401,
+    );
+  }
   const tokenHash = hashTwoFactorChallengeToken(challengeToken);
   const challenge = await prisma.twoFactorChallenge.findUnique({
     where: { tokenHash },
@@ -561,11 +674,12 @@ export const completeTwoFactorLogin = async ({ challengeToken, code, req }) => {
     );
   }
 
+  const requirement = await getEffectiveTwoFactorRequirement(challenge.userId);
   const setting = await prisma.userTwoFactorSetting.findUnique({
     where: { userId: challenge.userId },
   });
 
-  if (!setting?.enabled || !setting.secretEncrypted || !challenge.user.twoFactorEnabled) {
+  if (!requirement.required || !setting?.enabled || !setting.secretEncrypted) {
     await markChallengeConsumed(challenge.id).catch(() => {});
     throw new AppError(errorCodes.TWO_FACTOR_NOT_ENABLED, 'Two-factor authentication is not enabled.', 400);
   }
@@ -682,6 +796,7 @@ export const completeTwoFactorLogin = async ({ challengeToken, code, req }) => {
 };
 
 export const cancelTwoFactorLoginChallenge = async ({ challengeToken, req }) => {
+  if (!challengeToken) return;
   const tokenHash = hashTwoFactorChallengeToken(challengeToken);
   const challenge = await prisma.twoFactorChallenge.findUnique({
     where: { tokenHash },

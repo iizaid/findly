@@ -20,7 +20,9 @@ process.env.SIGNUP_RATE_LIMIT_MAX = '1000';
 process.env.LOGIN_RATE_LIMIT_MAX = '1000';
 process.env.PASSWORD_RESET_RATE_LIMIT_MAX = '100';
 process.env.TWO_FACTOR_AUTH_ENABLED = 'true';
+process.env.TWO_FACTOR_CHALLENGE_COOKIE_NAME ??= 'findly_two_factor_challenge_test';
 process.env.TWO_FACTOR_SECRET_ENCRYPTION_KEY ??= 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
+process.env.TWO_FACTOR_LOGIN_VERIFY_MAX = '100';
 process.env.OAUTH_ENABLED = 'true';
 process.env.GOOGLE_OAUTH_ENABLED = 'true';
 process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
@@ -32,6 +34,8 @@ let prisma;
 let app;
 let getTestOutbox;
 let clearTestOutbox;
+let cleanupExpiredTwoFactorChallenges;
+let env;
 
 const unique = Date.now().toString(36);
 const password = 'Secure12345@#$';
@@ -113,7 +117,9 @@ const loginAndRequireTwoFactor = async (email) => {
 beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
   ({ prisma } = await import('../../src/db/prisma.js'));
+  ({ env } = await import('../../src/config/env.js'));
   ({ getTestOutbox, clearTestOutbox } = await import('../../src/modules/mail/mail.service.js'));
+  ({ cleanupExpiredTwoFactorChallenges } = await import('../../src/modules/auth/twoFactor.service.js'));
   app = createApp();
 });
 
@@ -169,6 +175,9 @@ describe('Two-factor authentication', () => {
     expect(response.otpauthUrl).toContain('otpauth://totp/');
     expect(response.qrCodeDataUrl).toMatch(/^data:image\/png;base64,/);
     expect(response.manualSetupKey).toBeTruthy();
+    expect(response.pendingSecretEncrypted).toBeUndefined();
+    expect(response.secretEncrypted).toBeUndefined();
+    expect(response.backupCodesHash).toBeUndefined();
 
     const setting = await prisma.userTwoFactorSetting.findFirst({
       where: { user: { email } },
@@ -226,6 +235,7 @@ describe('Two-factor authentication', () => {
 
     const loginAttempt = await loginAndRequireTwoFactor(email);
     expect(loginAttempt.challengeToken).toBeTruthy();
+    expect(typeof loginAttempt.challengeToken).toBe('string');
   });
 
   it('completes login with a valid TOTP code', async () => {
@@ -344,7 +354,104 @@ describe('Two-factor authentication', () => {
     expect(regenEmail).toBeTruthy();
   });
 
-  it('requires two-factor verification after OAuth login for a 2FA-enabled account', async () => {
+  it('rate limits repeated two-factor setup start requests', async () => {
+    const { agent } = await registerAndVerify({ email: makeEmail('setup-start-limit') });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await startTwoFactorSetup(agent);
+    }
+
+    const csrfToken = await getCsrfToken(agent);
+    const limited = await agent
+      .post('/api/auth/2fa/setup/start')
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(429);
+
+    expect(limited.body.error.code).toBe('RATE_LIMITED');
+    expect(limited.body.error.limitName).toBe('two-factor-setup-start');
+  });
+
+  it('cleans up expired and consumed old two-factor challenges without deleting active ones', async () => {
+    const email = makeEmail('challenge-cleanup');
+    await registerAndVerify({ email });
+    const user = await prisma.user.findUnique({ where: { email } });
+    const oldDate = new Date(Date.now() - ((env.TWO_FACTOR_CHALLENGE_RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000));
+    const activeDate = new Date(Date.now() + 10 * 60 * 1000);
+
+    const expired = await prisma.twoFactorChallenge.create({
+      data: {
+        userId: user.id,
+        tokenHash: `expired-${unique}-${Math.random()}`,
+        expiresAt: oldDate,
+      },
+    });
+    const consumed = await prisma.twoFactorChallenge.create({
+      data: {
+        userId: user.id,
+        tokenHash: `consumed-${unique}-${Math.random()}`,
+        expiresAt: activeDate,
+        consumedAt: oldDate,
+      },
+    });
+    const active = await prisma.twoFactorChallenge.create({
+      data: {
+        userId: user.id,
+        tokenHash: `active-${unique}-${Math.random()}`,
+        expiresAt: activeDate,
+      },
+    });
+
+    await cleanupExpiredTwoFactorChallenges();
+
+    expect(await prisma.twoFactorChallenge.findUnique({ where: { id: expired.id } })).toBeNull();
+    expect(await prisma.twoFactorChallenge.findUnique({ where: { id: consumed.id } })).toBeNull();
+    expect(await prisma.twoFactorChallenge.findUnique({ where: { id: active.id } })).toBeTruthy();
+  });
+
+  it('repairs the user flag when the setting is enabled and still requires two-factor login', async () => {
+    const email = makeEmail('repair-enabled-setting');
+    const { agent } = await registerAndVerify({ email });
+    const setup = await startTwoFactorSetup(agent);
+    await confirmTwoFactorSetup(agent, setup.manualSetupKey);
+
+    await prisma.user.update({
+      where: { email },
+      data: { twoFactorEnabled: false },
+    });
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    expect(response.body.data.requiresTwoFactor).toBe(true);
+    const repairedUser = await prisma.user.findUnique({ where: { email } });
+    expect(repairedUser.twoFactorEnabled).toBe(true);
+  });
+
+  it('repairs an impossible two-factor flag and allows normal login when no active setting exists', async () => {
+    const email = makeEmail('repair-invalid-flag');
+    const { agent } = await registerAndVerify({ email });
+    const setup = await startTwoFactorSetup(agent);
+    await confirmTwoFactorSetup(agent, setup.manualSetupKey);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    await prisma.userTwoFactorSetting.delete({ where: { userId: user.id } });
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    expect(response.body.data.requiresTwoFactor).toBeUndefined();
+    expect(response.body.data.user.email).toBe(email);
+
+    const repairedUser = await prisma.user.findUnique({ where: { email } });
+    expect(repairedUser.twoFactorEnabled).toBe(false);
+  });
+
+  it('requires two-factor verification after OAuth login without exposing the challenge token in the URL', async () => {
     const email = makeEmail('oauth-two-factor');
     const { agent } = await registerAndVerify({ email });
     const setup = await startTwoFactorSetup(agent);
@@ -377,16 +484,123 @@ describe('Two-factor authentication', () => {
 
     const redirectUrl = new URL(callbackResponse.headers.location);
     expect(redirectUrl.searchParams.get('twoFactorRequired')).toBe('1');
-    const challengeToken = redirectUrl.searchParams.get('challengeToken');
-    expect(challengeToken).toBeTruthy();
+    expect(redirectUrl.searchParams.get('challengeToken')).toBeNull();
+    expect(callbackResponse.headers.location).not.toContain('challengeToken=');
+    expect(callbackResponse.headers['set-cookie'] || []).toContainEqual(
+      expect.stringContaining(`${env.TWO_FACTOR_CHALLENGE_COOKIE_NAME}=`),
+    );
 
     const code = generateCode(setup.manualSetupKey);
 
     await oauthAgent
       .post('/api/auth/2fa/login/verify')
-      .send({ challengeToken, code })
+      .send({ code })
       .expect(200);
 
     await oauthAgent.get('/api/auth/me').expect(200);
+  });
+
+  it('clears the OAuth challenge cookie after successful verification', async () => {
+    const email = makeEmail('oauth-two-factor-cookie-success');
+    const { agent } = await registerAndVerify({ email });
+    const setup = await startTwoFactorSetup(agent);
+    await confirmTwoFactorSetup(agent, setup.manualSetupKey);
+
+    global.fetch = vi.fn(async (url) => {
+      const value = String(url);
+      if (value.includes('oauth2.googleapis.com/token')) {
+        return Response.json({ access_token: 'oauth-access-token', token_type: 'Bearer' });
+      }
+
+      return Response.json({
+        sub: `google-success-${unique}`,
+        email,
+        email_verified: true,
+        name: 'OAuth Two Factor Success',
+        picture: 'https://example.com/avatar.png',
+      });
+    });
+
+    const oauthAgent = request.agent(app);
+    const startResponse = await oauthAgent.get('/api/auth/oauth/google/start').expect(302);
+    const state = new URL(startResponse.headers.location).searchParams.get('state');
+
+    await oauthAgent
+      .get(`/api/auth/oauth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)
+      .expect(302);
+
+    const code = generateCode(setup.manualSetupKey);
+    const verifyResponse = await oauthAgent
+      .post('/api/auth/2fa/login/verify')
+      .send({ code })
+      .expect(200);
+
+    expect(verifyResponse.headers['set-cookie'] || []).toContainEqual(
+      expect.stringContaining(`${env.TWO_FACTOR_CHALLENGE_COOKIE_NAME}=;`),
+    );
+    expect(JSON.stringify(verifyResponse.body)).not.toContain('challengeToken');
+    await oauthAgent.get('/api/auth/me').expect(200);
+  });
+
+  it('cancels OAuth two-factor login using only the challenge cookie and clears it', async () => {
+    const email = makeEmail('oauth-two-factor-cancel');
+    const { agent } = await registerAndVerify({ email });
+    const setup = await startTwoFactorSetup(agent);
+    await confirmTwoFactorSetup(agent, setup.manualSetupKey);
+
+    global.fetch = vi.fn(async (url) => {
+      const value = String(url);
+      if (value.includes('oauth2.googleapis.com/token')) {
+        return Response.json({ access_token: 'oauth-access-token', token_type: 'Bearer' });
+      }
+
+      return Response.json({
+        sub: `google-cancel-${unique}`,
+        email,
+        email_verified: true,
+        name: 'OAuth Two Factor Cancel',
+        picture: 'https://example.com/avatar.png',
+      });
+    });
+
+    const oauthAgent = request.agent(app);
+    const startResponse = await oauthAgent.get('/api/auth/oauth/google/start').expect(302);
+    const state = new URL(startResponse.headers.location).searchParams.get('state');
+
+    await oauthAgent
+      .get(`/api/auth/oauth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)
+      .expect(302);
+
+    const cancelResponse = await oauthAgent
+      .post('/api/auth/2fa/login/cancel')
+      .send({})
+      .expect(200);
+
+    expect(cancelResponse.headers['set-cookie'] || []).toContainEqual(
+      expect.stringContaining(`${env.TWO_FACTOR_CHALLENGE_COOKIE_NAME}=;`),
+    );
+
+    const invalid = await oauthAgent
+      .post('/api/auth/2fa/login/verify')
+      .send({ code: generateCode(setup.manualSetupKey) })
+      .expect(401);
+
+    expect(invalid.body.error.code).toBe('TWO_FACTOR_CHALLENGE_INVALID');
+  });
+
+  it('still supports password-login two-factor verification using the JSON challenge token', async () => {
+    const email = makeEmail('password-two-factor-json');
+    const { agent } = await registerAndVerify({ email });
+    const setup = await startTwoFactorSetup(agent);
+    await confirmTwoFactorSetup(agent, setup.manualSetupKey);
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password, remember: true })
+      .expect(200);
+
+    expect(response.body.data.requiresTwoFactor).toBe(true);
+    expect(response.body.data.challengeToken).toBeTruthy();
+    expect(response.body.data.expiresAt).toBeTruthy();
   });
 });

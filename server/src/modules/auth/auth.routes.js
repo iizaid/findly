@@ -11,6 +11,7 @@ import {
   twoFactorDisableRateLimiter,
   twoFactorLoginVerifyRateLimiter,
   twoFactorSetupConfirmRateLimiter,
+  twoFactorSetupStartRateLimiter,
 } from '../../middleware/rateLimit.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
 import {
@@ -66,7 +67,7 @@ authRouter.post('/logout-everywhere', requireAuth, validate(emptyAuthBodySchema)
 authRouter.get('/me', requireAuth, me);
 authRouter.patch('/password', requireAuth, validate(updatePasswordSchema), updatePassword);
 authRouter.get('/2fa/status', requireAuth, requireVerifiedEmail, getTwoFactor);
-authRouter.post('/2fa/setup/start', requireAuth, requireVerifiedEmail, validate(emptyAuthBodySchema), startTwoFactor);
+authRouter.post('/2fa/setup/start', requireAuth, requireVerifiedEmail, twoFactorSetupStartRateLimiter, validate(emptyAuthBodySchema), startTwoFactor);
 authRouter.post('/2fa/setup/confirm', requireAuth, requireVerifiedEmail, twoFactorSetupConfirmRateLimiter, validate(twoFactorConfirmSchema), confirmTwoFactor);
 authRouter.post('/2fa/disable', requireAuth, requireVerifiedEmail, twoFactorDisableRateLimiter, validate(twoFactorDisableSchema), disableTwoFactorForCurrentUser);
 authRouter.post('/2fa/backup-codes/regenerate', requireAuth, requireVerifiedEmail, twoFactorBackupRegenerateRateLimiter, validate(twoFactorConfirmSchema), regenerateBackupCodes);
