@@ -59,7 +59,7 @@ export const errorHandler = (err, req, res, _next) => {
 
   if (err instanceof AppError) {
     logBackendError(req, err.statusCode, err.code, err.message);
-    return errorResponse(res, err.code, err.message, err.statusCode);
+    return errorResponse(res, err.code, err.message, err.statusCode, err.details);
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {

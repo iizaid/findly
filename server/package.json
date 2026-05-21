@@ -19,6 +19,7 @@
     "ai:sync-env": "node scripts/syncAiEnv.js",
     "ai:smoke": "node scripts/smokeAiProvider.js",
     "load:smoke": "node load-tests/smoke.js",
+    "load:auth-abuse": "node load-tests/auth-abuse-smoke.js",
     "load:search": "node load-tests/search-queue.js",
     "load:read-path": "node load-tests/queue-metrics.js"
   },

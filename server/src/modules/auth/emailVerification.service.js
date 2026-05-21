@@ -6,14 +6,10 @@ import { getDefaultWorkspace } from '../workspaces/workspace.service.js';
 import { grantInitialCreditsIfEligible } from '../credits/credit.service.js';
 import { sendVerificationEmail } from '../mail/mail.service.js';
 import { toSafeUser } from '../users/user.mapper.js';
+import { assertVerificationResendAllowed, getAuthRequestContext } from './authAbuse.service.js';
 
 const minutesToMs = (minutes) => minutes * 60 * 1000;
 const secondsToMs = (seconds) => seconds * 1000;
-
-const requestContext = (req) => ({
-  ipAddress: req.ip,
-  userAgent: req.get('user-agent') || null,
-});
 
 const verificationUrl = (rawToken) => {
   const url = new URL('/verify-email', env.CLIENT_URL);
@@ -55,7 +51,7 @@ export const createVerificationToken = async ({ tx = prisma, userId, context }) 
 };
 
 export const sendVerificationForUser = async ({ user, req, tx = prisma, resend = false }) => {
-  const context = requestContext(req);
+  const context = getAuthRequestContext(req);
 
   const tokenResult = await createVerificationToken({
     tx,
@@ -123,6 +119,8 @@ export const resendVerificationEmail = async (req) => {
     }
   }
 
+  await assertVerificationResendAllowed({ userId: user.id, req });
+
   await sendVerificationForUser({
     user,
     req,
@@ -171,7 +169,7 @@ const findDefaultWorkspaceOrCreate = async ({ tx, user }) => {
 };
 
 export const verifyEmailToken = async ({ token }, req) => {
-  const context = requestContext(req);
+  const context = getAuthRequestContext(req);
   const tokenHash = hashEmailVerificationToken(token);
   const storedToken = await prisma.emailVerificationToken.findUnique({
     where: { tokenHash },

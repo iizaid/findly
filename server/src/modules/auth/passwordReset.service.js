@@ -8,15 +8,16 @@ import {
   hashPasswordResetToken,
 } from '../../utils/crypto.js';
 import { sendPasswordResetEmail } from '../mail/mail.service.js';
+import {
+  evaluatePasswordResetAbuse,
+  getAuthRequestContext,
+  recordBotChallengeOutcome,
+} from './authAbuse.service.js';
+import { enforceBotChallengeIfNeeded } from './botChallenge.service.js';
 
 export const PASSWORD_RESET_GENERIC_MESSAGE = 'If an account exists, a reset email has been sent.';
 
 const minutesToMs = (minutes) => minutes * 60 * 1000;
-
-const requestContext = (req) => ({
-  ipAddress: req.ip,
-  userAgent: req.get('user-agent') || null,
-});
 
 const resetUrl = (rawToken) => {
   const url = new URL('/reset-password', env.CLIENT_URL);
@@ -24,9 +25,44 @@ const resetUrl = (rawToken) => {
   return url.toString();
 };
 
-export const requestPasswordReset = async ({ email }, req) => {
-  const context = requestContext(req);
+export const requestPasswordReset = async ({ email, botChallengeToken }, req) => {
+  const context = getAuthRequestContext(req);
   const emailHash = hashAuditValue(email);
+  const abuseEvaluation = await evaluatePasswordResetAbuse({
+    email,
+    req,
+    botChallengeRequired: true,
+  });
+
+  if (env.BOT_CHALLENGE_ENABLED) {
+    try {
+      await enforceBotChallengeIfNeeded({
+        mode: env.BOT_CHALLENGE_PASSWORD_RESET_MODE,
+        token: botChallengeToken,
+        req,
+        riskLevel: abuseEvaluation.riskLevel,
+      });
+      if (env.BOT_CHALLENGE_PASSWORD_RESET_MODE !== 'off') {
+        await recordBotChallengeOutcome({
+          req,
+          outcome: 'PASSED',
+          metadata: { keyHash: emailHash, route: 'forgot-password' },
+        });
+      }
+    } catch (error) {
+      await recordBotChallengeOutcome({
+        req,
+        outcome: 'FAILED',
+        metadata: { keyHash: emailHash, route: 'forgot-password' },
+      });
+      throw error;
+    }
+  }
+
+  if (!abuseEvaluation.allowed) {
+    return { sent: false, suppressed: true };
+  }
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: {
@@ -128,7 +164,7 @@ export const requestPasswordReset = async ({ email }, req) => {
 };
 
 export const resetPasswordWithToken = async ({ token, newPassword }, req) => {
-  const context = requestContext(req);
+  const context = getAuthRequestContext(req);
   const tokenHash = hashPasswordResetToken(token);
   const storedToken = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },

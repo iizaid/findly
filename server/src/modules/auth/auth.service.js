@@ -6,6 +6,15 @@ import { AppError, errorCodes } from '../../utils/AppError.js';
 import { hashAuditValue, hashPassword, verifyPassword } from '../../utils/crypto.js';
 import { sendVerificationForUser } from './emailVerification.service.js';
 import { grantInitialCreditsIfEligible } from '../credits/credit.service.js';
+import {
+  assertLoginAllowed,
+  assertSignupAbuseAllowed,
+  clearLoginFailureState,
+  getAuthRequestContext,
+  recordBotChallengeOutcome,
+  recordLoginFailure as recordAuthAbuseLoginFailure,
+} from './authAbuse.service.js';
+import { enforceBotChallengeIfNeeded } from './botChallenge.service.js';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
 const DUMMY_PASSWORD_HASH = '$2b$10$NLcXp1cWaAG/68QxrfVK0O7GHN3vtnlM8kAOqNtfI/Ki4r2a3Q1bS';
@@ -13,83 +22,42 @@ const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
-const requestContext = (req) => ({
-  ipAddress: req.ip,
-  userAgent: req.get('user-agent') || null,
-});
-
-const recordFailedLogin = async ({ tx = prisma, userId = null, email, context }) => {
-  const emailHash = hashAuditValue(email);
-  const expiresAt = new Date(Date.now() + (env.FAILED_LOGIN_ATTEMPT_TTL_MINUTES || 15) * 60 * 1000);
-
-  // Atomic UPSERT: High-performance rate limiting counter
-  const attemptRecord = await tx.failedLoginAttempt.upsert({
-    where: {
-      ipAddress_emailHash: {
-        ipAddress: context.ipAddress || 'unknown',
-        emailHash,
-      },
-    },
-    update: {
-      attempts: { increment: 1 },
-      expiresAt,
-    },
-    create: {
-      ipAddress: context.ipAddress || 'unknown',
-      emailHash,
-      attempts: 1,
-      expiresAt,
-    },
+export const registerUser = async ({ name, email, password }, req) => {
+  const context = getAuthRequestContext(req);
+  const body = req.validated?.body || {};
+  const signupEvaluation = await assertSignupAbuseAllowed({
+    email,
+    req,
+    honeypotTriggered: Boolean(body.companyWebsite),
+    formDurationMs: body.formDurationMs ?? null,
+    isOAuth: false,
   });
 
-  // Log the attempt for security audits (fire and forget, don't await if high load)
-  tx.auditLog.create({
-    data: {
-      userId,
-      action: 'FAILED_LOGIN',
-      metadata: { emailHash, attempts: attemptRecord.attempts },
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
-    },
-  }).catch(() => {});
-
-  const newAttempts = Math.min(attemptRecord.attempts, 10);
-  const delayMs = Math.min(150 * newAttempts, 1500);
-  if (delayMs > 0) await sleep(delayMs);
-};
-
-const clearFailedLogin = async (email, ipAddress) => {
-  const emailHash = hashAuditValue(email);
-  await prisma.failedLoginAttempt.deleteMany({
-    where: {
-      ipAddress: ipAddress || 'unknown',
-      emailHash,
-    },
-  }).catch(() => {});
-};
-
-const checkFailedLoginLimit = async (email, context) => {
-  const emailHash = hashAuditValue(email);
-  const record = await prisma.failedLoginAttempt.findUnique({
-    where: {
-      ipAddress_emailHash: {
-        ipAddress: context.ipAddress || 'unknown',
-        emailHash,
-      },
-    },
-  });
-
-  if (record && record.attempts >= (env.FAILED_LOGIN_MAX_ATTEMPTS || 5)) {
-    if (record.expiresAt > new Date()) {
-      throw new AppError(errorCodes.RATE_LIMITED, 'Too many failed login attempts. Please try again later.', 429);
-    } else {
-      // Opportunistically clear expired
-      await clearFailedLogin(email, context.ipAddress);
+  if (env.BOT_CHALLENGE_ENABLED) {
+    try {
+      await enforceBotChallengeIfNeeded({
+        mode: env.BOT_CHALLENGE_SIGNUP_MODE,
+        token: body.botChallengeToken,
+        req,
+        riskLevel: signupEvaluation.riskLevel,
+      });
+      if (env.BOT_CHALLENGE_SIGNUP_MODE !== 'off') {
+        await recordBotChallengeOutcome({
+          req,
+          outcome: 'PASSED',
+          metadata: { keyHash: hashAuditValue(email), route: 'register' },
+        });
+      }
+    } catch (error) {
+      await recordBotChallengeOutcome({
+        req,
+        outcome: 'FAILED',
+        metadata: { keyHash: hashAuditValue(email), route: 'register' },
+      });
+      throw error;
     }
   }
-};
 
-export const registerUser = async ({ name, email, password }, req) => {
   const existingUser = await prisma.user.findUnique({
     where: { email },
     select: { id: true },
@@ -100,7 +68,6 @@ export const registerUser = async ({ name, email, password }, req) => {
   }
 
   const passwordHash = await hashPassword(password);
-  const context = requestContext(req);
 
   const result = await prisma.$transaction(async (tx) => {
     return createUserWithDefaultWorkspace({
@@ -162,9 +129,8 @@ export const registerUser = async ({ name, email, password }, req) => {
 };
 
 export const loginUser = async ({ email, password, remember = true }, req) => {
-  const context = requestContext(req);
-  
-  await checkFailedLoginLimit(email, context);
+  const context = getAuthRequestContext(req);
+  await assertLoginAllowed({ email, req });
 
   const user = await prisma.user.findUnique({
     where: { email },
@@ -172,7 +138,8 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
 
   if (!user) {
     await verifyPassword(password, DUMMY_PASSWORD_HASH);
-    await recordFailedLogin({ email, context });
+    const failure = await recordAuthAbuseLoginFailure({ email, req });
+    if (failure.delayMs > 0) await sleep(failure.delayMs);
     throw new AppError(errorCodes.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE, 401);
   }
 
@@ -181,11 +148,21 @@ export const loginUser = async ({ email, password, remember = true }, req) => {
     : false;
 
   if (!passwordMatches) {
-    await recordFailedLogin({ userId: user.id, email, context });
+    const failure = await recordAuthAbuseLoginFailure({ userId: user.id, email, req });
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'FAILED_LOGIN',
+        metadata: { emailHash: hashAuditValue(email), attempts: failure.failureCount },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      },
+    }).catch(() => {});
+    if (failure.delayMs > 0) await sleep(failure.delayMs);
     throw new AppError(errorCodes.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE, 401);
   }
 
-  await clearFailedLogin(email, context.ipAddress);
+  await clearLoginFailureState({ email, req });
 
   const sessionResult = await createSession({
     userId: user.id,

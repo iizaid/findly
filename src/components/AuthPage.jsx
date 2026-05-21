@@ -95,6 +95,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [touched, setTouched] = useState({});
+  const [formStartedAt, setFormStartedAt] = useState(() => Date.now());
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -105,6 +106,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     remember: true,
     terms: false,
     companyWebsite: '',
+    botChallengeToken: '',
   });
 
   const isSignup = mode === 'signup';
@@ -119,6 +121,10 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
       window.history.replaceState({}, '', cleanUrl);
     }
   }, []);
+
+  useEffect(() => {
+    setFormStartedAt(Date.now());
+  }, [mode, screen]);
 
   const errors = useMemo(() => {
     const next = {};
@@ -204,7 +210,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     try {
       await apiRequest('/api/auth/forgot-password', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, botChallengeToken: form.botChallengeToken || undefined }),
       });
       setAccountEmail(email);
       setStatus({ type: 'success', message: 'If an account exists, a reset email has been sent.' });
@@ -233,6 +239,8 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
       if (error instanceof ApiError) {
         if (error.status === 401) {
           message = 'Your account was created, but this browser did not keep the secure session. Please log in, then resend the verification email.';
+        } else if (error.code === 'BOT_CHALLENGE_REQUIRED' || error.code === 'BOT_CHALLENGE_FAILED') {
+          message = 'We could not verify this request. Please refresh and try again.';
         } else {
           message = error.message;
         }
@@ -285,6 +293,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
     setIsSubmitting(true);
 
     try {
+      const formDurationMs = Math.max(0, Date.now() - formStartedAt);
       const response = await apiRequest(isSignup ? '/api/auth/register' : '/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(
@@ -294,6 +303,8 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                 email,
                 password: form.password,
                 companyWebsite: form.companyWebsite,
+                formDurationMs,
+                botChallengeToken: form.botChallengeToken || undefined,
               }
             : {
                 email,
@@ -334,13 +345,17 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
       let message = 'Could not reach the secure auth server. Please try again.';
       if (error instanceof ApiError) {
         if (error.status === 429) {
-          if (error.limitName === 'login') {
+          if (error.retryAfterSeconds) {
+            message = `Too many attempts. Please wait ${error.retryAfterSeconds}s and try again.`;
+          } else if (error.limitName === 'login') {
             message = 'Too many login attempts. Please wait before trying again.';
           } else if (error.limitName === 'signup') {
             message = 'Too many signup attempts. Please wait before trying again.';
           } else {
             message = 'Too many requests. Please wait a moment.';
           }
+        } else if (error.code === 'BOT_CHALLENGE_REQUIRED' || error.code === 'BOT_CHALLENGE_FAILED') {
+          message = 'We could not verify this request. Please refresh and try again.';
         } else {
           message = error.message;
         }
@@ -601,6 +616,12 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                   value={form.companyWebsite}
                   onChange={(event) => updateField('companyWebsite', event.target.value)}
                   className="hidden"
+                  aria-hidden="true"
+                />
+                <input
+                  type="hidden"
+                  value={form.botChallengeToken}
+                  readOnly
                   aria-hidden="true"
                 />
 

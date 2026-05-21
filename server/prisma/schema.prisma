@@ -156,10 +156,45 @@ model User {
   jobs                    Job[]
   datasetImports          DatasetImport[]
   backendErrorLogs        BackendErrorLog[]
+  authAbuseEvents        AuthAbuseEvent[]
 
   @@index([createdAt])
   @@index([emailVerified])
   @@index([initialCreditsGrantedAt])
+}
+
+model AuthAbuseCounter {
+  id          String   @id @default(cuid())
+  bucket      String
+  keyHash     String
+  action      String
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+  expiresAt   DateTime
+  metadata    Json?
+
+  @@unique([bucket, keyHash, action])
+  @@index([action, expiresAt])
+  @@index([bucket, expiresAt])
+}
+
+model AuthAbuseEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  outcome   String
+  keyHash   String?
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([outcome, createdAt])
+  @@index([userId])
 }
 
 model EmailVerificationToken {

@@ -14,14 +14,15 @@ import {
   fetchOAuthIdentity,
   getOAuthProviderConfig,
 } from './oauth.providers.js';
+import {
+  assertOAuthCallbackAllowed,
+  assertOAuthStartAllowed,
+  assertSignupAbuseAllowed,
+  getAuthRequestContext,
+} from './authAbuse.service.js';
 
 const STATE_BYTES = 32;
 export const OAUTH_STATE_COOKIE_NAME = 'findly_oauth_state';
-
-const requestContext = (req) => ({
-  ipAddress: req.ip,
-  userAgent: req.get('user-agent') || null,
-});
 
 export const createOAuthStateToken = () => crypto.randomBytes(STATE_BYTES).toString('base64url');
 
@@ -119,7 +120,8 @@ const auditOAuth = (tx, {
 
 export const createOAuthStart = async ({ provider, returnTo, req }) => {
   const config = assertOAuthProviderConfigured(provider);
-  const context = requestContext(req);
+  await assertOAuthStartAllowed({ provider: config.provider, req });
+  const context = getAuthRequestContext(req);
   const state = createOAuthStateToken();
   const stateHash = hashOAuthState(state);
   const safeReturnTo = getSafeOAuthReturnTo(returnTo);
@@ -349,6 +351,17 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
       return { user: reconciled.user, account, linkedExistingUser: true, createdNewUser: false };
     }
 
+    await assertSignupAbuseAllowed({
+      email: identity.email,
+      req: {
+        ip: context.ipAddress,
+        get: (header) => header?.toLowerCase() === 'user-agent' ? context.userAgent : null,
+      },
+      honeypotTriggered: false,
+      formDurationMs: null,
+      isOAuth: true,
+    });
+
     const { user, workspace, creditResult } = await createUserWithDefaultWorkspace({
       tx,
       name: displayNameForIdentity(identity),
@@ -398,7 +411,8 @@ export const findOrCreateOAuthUser = async ({ identity, context }) => {
 };
 
 export const completeOAuthCallback = async ({ provider, code, state, stateCookieValue, req, fetchImpl = fetch }) => {
-  const context = requestContext(req);
+  await assertOAuthCallbackAllowed({ provider, req });
+  const context = getAuthRequestContext(req);
   verifyOAuthStateCookie({ provider, state, cookieValue: stateCookieValue });
   const storedState = await consumeOAuthState({ provider, state });
   if (!code) {

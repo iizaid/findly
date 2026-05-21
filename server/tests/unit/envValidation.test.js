@@ -77,4 +77,34 @@ describe('production env validation', () => {
 
     expect(parsed.AI_DASHBOARD_SECRET_MANAGEMENT_ENABLED).toBe(true);
   });
+
+  it('parses disposable email domain lists and auth abuse defaults in test mode', () => {
+    const parsed = parseEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      NODE_ENV: 'test',
+      CLIENT_ORIGIN: 'http://localhost:5173',
+      SESSION_SECRET: strongSecret,
+      DISPOSABLE_EMAIL_DOMAINS: 'mailinator.com,tempmail.com',
+    });
+
+    expect(parsed.AUTH_ABUSE_PROTECTION_ENABLED).toBe(true);
+    expect(parsed.DISPOSABLE_EMAIL_DOMAINS_LIST).toEqual(['mailinator.com', 'tempmail.com']);
+  });
+
+  it('requires turnstile keys when bot challenge protection is enabled in production', () => {
+    expect(() => parseEnv({
+      ...productionEnv,
+      BOT_CHALLENGE_ENABLED: 'true',
+    })).toThrow(/TURNSTILE_SECRET_KEY is required/);
+
+    const parsed = parseEnv({
+      ...productionEnv,
+      BOT_CHALLENGE_ENABLED: 'true',
+      TURNSTILE_SECRET_KEY: 'turnstile-secret',
+      TURNSTILE_SITE_KEY: 'turnstile-site',
+    });
+
+    expect(parsed.BOT_CHALLENGE_ENABLED).toBe(true);
+    expect(parsed.TURNSTILE_SITE_KEY).toBe('turnstile-site');
+  });
 });

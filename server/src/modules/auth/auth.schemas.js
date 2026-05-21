@@ -27,7 +27,9 @@ export const registerSchema = z.object({
     name: z.string().transform(sanitizeText).pipe(z.string().min(2).max(80)),
     email: z.string().email().max(255).transform(normalizeEmail),
     password: passwordSchema,
-    companyWebsite: z.literal('').optional(),
+    companyWebsite: z.string().max(255).optional().default(''),
+    formDurationMs: z.coerce.number().int().min(0).max(600000).optional(),
+    botChallengeToken: z.string().min(1).max(2048).optional(),
   }).strict().superRefine((value, ctx) => {
     const password = value.password.toLowerCase();
     const emailLocalPart = value.email.split('@')[0]?.toLowerCase();
@@ -89,6 +91,7 @@ export const updatePasswordSchema = z.object({
 export const forgotPasswordSchema = z.object({
   body: z.object({
     email: z.string().email().max(255).transform(normalizeEmail),
+    botChallengeToken: z.string().min(1).max(2048).optional(),
   }).strict(),
   params: z.object({}).optional(),
   query: z.object({}).optional(),

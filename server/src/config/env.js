@@ -5,6 +5,7 @@ import { createBooleanParser } from './envParsers.js';
 dotenv.config({ quiet: true });
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+const IS_TEST_ENV = process.env.NODE_ENV === 'test';
 
 const parseOriginList = (value = '') => String(value)
   .split(',')
@@ -51,6 +52,39 @@ export const envSchema = z.object({
   FAILED_LOGIN_ATTEMPT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
   FAILED_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(5),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
+  AUTH_ABUSE_PROTECTION_ENABLED: createBooleanParser(true),
+  AUTH_ABUSE_AUDIT_THROTTLE_MS: z.coerce.number().int().min(1000).max(3600000).default(60000),
+  AUTH_MIN_FORM_DURATION_MS: z.coerce.number().int().min(0).max(60000).default(1200),
+  SIGNUP_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  SIGNUP_IP_MAX: z.coerce.number().int().min(1).max(1000).default(IS_TEST_ENV ? 1000 : 5),
+  SIGNUP_IP_DAILY_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 5000 : 20),
+  SIGNUP_EMAIL_DOMAIN_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  SIGNUP_EMAIL_DOMAIN_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 5000 : 20),
+  SIGNUP_EMAIL_HASH_WINDOW_MS: z.coerce.number().int().min(60000).max(7 * 86400000).default(24 * 60 * 60 * 1000),
+  SIGNUP_EMAIL_HASH_MAX: z.coerce.number().int().min(1).max(1000).default(IS_TEST_ENV ? 100 : 3),
+  DISPOSABLE_EMAIL_BLOCKLIST_ENABLED: createBooleanParser(false),
+  DISPOSABLE_EMAIL_DOMAINS: z.string().default(''),
+  LOGIN_EMAIL_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  LOGIN_EMAIL_MAX_FAILED: z.coerce.number().int().min(1).max(1000).default(Number(process.env.FAILED_LOGIN_MAX_ATTEMPTS) || (IS_TEST_ENV ? 100 : 5)),
+  LOGIN_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  LOGIN_IP_MAX_FAILED: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 20),
+  LOGIN_IP_EMAIL_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  LOGIN_IP_EMAIL_MAX_FAILED: z.coerce.number().int().min(1).max(1000).default(Number(process.env.FAILED_LOGIN_MAX_ATTEMPTS) || (IS_TEST_ENV ? 100 : 5)),
+  LOGIN_IP_DISTINCT_EMAIL_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  LOGIN_IP_DISTINCT_EMAIL_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 10),
+  LOGIN_EMAIL_DISTINCT_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(15 * 60 * 1000),
+  LOGIN_EMAIL_DISTINCT_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 10),
+  LOGIN_DELAY_MAX_MS: z.coerce.number().int().min(0).max(10000).default(1500),
+  PASSWORD_RESET_EMAIL_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  PASSWORD_RESET_EMAIL_MAX: z.coerce.number().int().min(1).max(1000).default(IS_TEST_ENV ? 100 : 3),
+  PASSWORD_RESET_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  PASSWORD_RESET_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 10),
+  PASSWORD_RESET_IP_EMAIL_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  PASSWORD_RESET_IP_EMAIL_MAX: z.coerce.number().int().min(1).max(1000).default(IS_TEST_ENV ? 100 : 3),
+  VERIFICATION_RESEND_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  VERIFICATION_RESEND_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 10),
+  VERIFICATION_RESEND_USER_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  VERIFICATION_RESEND_USER_MAX: z.coerce.number().int().min(1).max(1000).default(IS_TEST_ENV ? 100 : 3),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(15 * 60 * 1000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(process.env.NODE_ENV === 'development' ? 3000 : 300),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(process.env.NODE_ENV === 'development' ? 50 : 20),
@@ -76,6 +110,21 @@ export const envSchema = z.object({
   OAUTH_ALLOWED_RETURN_PATHS: z.string().min(1).default('/dashboard,/settings,/billing'),
   OAUTH_DEFAULT_SUCCESS_PATH: z.string().min(1).default('/dashboard'),
   OAUTH_FAILURE_PATH: z.string().min(1).default('/auth'),
+  OAUTH_START_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(10 * 60 * 1000),
+  OAUTH_START_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 30),
+  OAUTH_CALLBACK_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(10 * 60 * 1000),
+  OAUTH_CALLBACK_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 60),
+  OAUTH_SIGNUP_IP_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  OAUTH_SIGNUP_IP_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 1000 : 8),
+  OAUTH_SIGNUP_DOMAIN_WINDOW_MS: z.coerce.number().int().min(60000).max(86400000).default(60 * 60 * 1000),
+  OAUTH_SIGNUP_DOMAIN_MAX: z.coerce.number().int().min(1).max(10000).default(IS_TEST_ENV ? 5000 : 25),
+  BOT_CHALLENGE_ENABLED: createBooleanParser(false),
+  BOT_CHALLENGE_PROVIDER: z.enum(['turnstile']).default('turnstile'),
+  BOT_CHALLENGE_SIGNUP_MODE: z.enum(['off', 'required', 'risk_based']).default('off'),
+  BOT_CHALLENGE_PASSWORD_RESET_MODE: z.enum(['off', 'required', 'risk_based']).default('off'),
+  BOT_CHALLENGE_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
   GOOGLE_OAUTH_ENABLED: createBooleanParser(false),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
@@ -261,6 +310,22 @@ export const envSchema = z.object({
     }
   }
 
+  if (value.BOT_CHALLENGE_ENABLED && !value.TURNSTILE_SECRET_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TURNSTILE_SECRET_KEY'],
+      message: 'TURNSTILE_SECRET_KEY is required when bot challenge protection is enabled.',
+    });
+  }
+
+  if (value.BOT_CHALLENGE_ENABLED && !value.TURNSTILE_SITE_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TURNSTILE_SITE_KEY'],
+      message: 'TURNSTILE_SITE_KEY is required when bot challenge protection is enabled.',
+    });
+  }
+
   const requiredSmtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_FROM'];
   for (const field of requiredSmtpFields) {
     if (!value[field]) {
@@ -408,6 +473,7 @@ export const parseEnv = (source = process.env) => {
     IS_PRODUCTION: parsed.data.NODE_ENV === 'production',
     CLIENT_ORIGINS: parseOriginList(parsed.data.CLIENT_ORIGIN),
     OAUTH_ALLOWED_RETURN_PATHS_LIST: parseOriginList(parsed.data.OAUTH_ALLOWED_RETURN_PATHS),
+    DISPOSABLE_EMAIL_DOMAINS_LIST: parseOriginList(parsed.data.DISPOSABLE_EMAIL_DOMAINS).map((domain) => domain.toLowerCase()),
   };
 };
 
