@@ -218,6 +218,10 @@ describe('admin website enrichment jobs', () => {
     expect(response.body.data.job.status).toBe('QUEUED');
     expect(response.body.data.job.totalItems).toBe(2);
     expect(response.body.data.job.skippedItems).toBe(1);
+    expect(response.body.data.job.summary.observability).toMatchObject({
+      itemDurationMsAverage: expect.any(Number),
+      liveFetchUsedCount: 0,
+    });
     expect(JSON.stringify(response.body)).not.toContain('<html');
     expect(JSON.stringify(response.body)).not.toContain('rawMetadata');
 
@@ -226,6 +230,7 @@ describe('admin website enrichment jobs', () => {
       .expect(200);
     expect(detail.body.data.job.items).toHaveLength(2);
     expect(detail.body.data.job.items.find((item) => item.catalogLeadId === noWebsiteLead.id).status).toBe('SKIPPED');
+    expect(detail.body.data.job.items.find((item) => item.catalogLeadId === noWebsiteLead.id).durationMs).toBe(0);
   });
 
   it('rejects invalid job requests safely', async () => {
@@ -299,9 +304,17 @@ describe('admin website enrichment jobs', () => {
     expect(processed.status).toBe('COMPLETED');
     expect(processed.succeededItems).toBe(2);
     expect(processed.failedItems).toBe(1);
+    expect(processed.summary.observability).toMatchObject({
+      itemDurationMsAverage: expect.any(Number),
+      itemDurationMsMax: expect.any(Number),
+      liveFetchUsedCount: 2,
+    });
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(processed.items.find((item) => item.catalogLeadId === unsafeLead.id).errorCode).toBe('UNSAFE_WEBSITE_URL');
+    expect(processed.items.find((item) => item.catalogLeadId === unsafeLead.id).durationMs).toEqual(expect.any(Number));
     expect(processed.items.find((item) => item.catalogLeadId === catalogLead.id).evidenceId).toBeTruthy();
+    expect(processed.items.find((item) => item.catalogLeadId === catalogLead.id).durationMs).toEqual(expect.any(Number));
+    expect(processed.items.find((item) => item.catalogLeadId === catalogLead.id).liveFetchUsed).toBe(true);
 
     const evidence = await prisma.leadEvidence.findMany({
       where: {
@@ -351,6 +364,8 @@ describe('admin website enrichment jobs', () => {
 
     expect(processed.status).toBe('COMPLETED');
     expect(processed.succeededItems).toBe(1);
+    expect(processed.items[0].durationMs).toEqual(expect.any(Number));
+    expect(processed.summary.observability.liveFetchUsedCount).toBe(1);
     expect(slowFetcher).toHaveBeenCalledTimes(1);
 
     const evidenceCount = await prisma.leadEvidence.count({
@@ -378,6 +393,9 @@ describe('admin website enrichment jobs', () => {
     const cached = await processWebsiteEnrichmentJob({ jobId: cachedJob.id, fetcher: cachedFetcher });
     expect(cached.succeededItems).toBe(1);
     expect(cached.items[0].cached).toBe(true);
+    expect(cached.items[0].durationMs).toEqual(expect.any(Number));
+    expect(cached.items[0].liveFetchUsed).toBe(false);
+    expect(cached.summary.observability.liveFetchUsedCount).toBe(0);
     expect(cachedFetcher).not.toHaveBeenCalled();
 
     const refreshFetcher = vi.fn(fetcher.getMockImplementation());
@@ -392,6 +410,8 @@ describe('admin website enrichment jobs', () => {
     const refreshed = await processWebsiteEnrichmentJob({ jobId: refreshJob.id, fetcher: refreshFetcher });
     expect(refreshed.succeededItems).toBe(1);
     expect(refreshed.items[0].cached).toBe(false);
+    expect(refreshed.items[0].durationMs).toEqual(expect.any(Number));
+    expect(refreshed.items[0].liveFetchUsed).toBe(true);
     expect(refreshFetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -461,9 +481,21 @@ describe('admin website enrichment jobs', () => {
     expect(processed.items[0].openWebEvidence).toMatchObject({
       used: true,
       confidenceScore: expect.any(Number),
+      durationMs: expect.any(Number),
+      cacheHit: false,
+      timeout: false,
+      shouldSkipLiveFetch: true,
+    });
+    expect(processed.items[0].durationMs).toEqual(expect.any(Number));
+    expect(processed.items[0].liveFetchUsed).toBe(false);
+    expect(processed.summary.observability).toMatchObject({
+      openWebEvidenceUsedCount: 1,
+      openWebEvidenceDurationMsAverage: expect.any(Number),
+      liveFetchUsedCount: 0,
     });
     expect(noLiveFetcher).not.toHaveBeenCalled();
     expect(JSON.stringify(processed)).not.toContain('Common Crawl');
     expect(JSON.stringify(processed)).not.toContain('CC-MAIN');
+    expect(JSON.stringify(processed)).not.toContain('<html');
   });
 });
