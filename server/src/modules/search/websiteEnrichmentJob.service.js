@@ -13,6 +13,7 @@ const MODES = new Set(['EXPLICIT_IDS', 'RECENT_CATALOG_LEADS_WITH_WEBSITE']);
 const ITEM_STATUSES = new Set(['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'SKIPPED']);
 
 const nowIso = () => new Date().toISOString();
+const elapsedMs = (startedAtMs) => Math.max(0, Date.now() - startedAtMs);
 
 const maxItemsLimit = () => Math.min(100, env.WEBSITE_ENRICHMENT_JOB_MAX_ITEMS || 25);
 
@@ -43,6 +44,29 @@ const countByStatus = (items) => ({
   skippedItems: items.filter((item) => item.status === 'SKIPPED').length,
 });
 
+const summarizeItemObservability = (items = []) => {
+  const completedDurations = items
+    .map((item) => Number(item.durationMs))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const openWebDurations = items
+    .map((item) => Number(item.openWebEvidence?.durationMs))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+
+  return {
+    itemDurationMsAverage: completedDurations.length
+      ? Math.round(completedDurations.reduce((sum, value) => sum + value, 0) / completedDurations.length)
+      : null,
+    itemDurationMsMax: completedDurations.length ? Math.max(...completedDurations) : null,
+    openWebEvidenceUsedCount: items.filter((item) => item.openWebEvidence?.used).length,
+    openWebEvidenceCacheHitCount: items.filter((item) => item.openWebEvidence?.cacheHit).length,
+    openWebEvidenceTimeoutCount: items.filter((item) => item.openWebEvidence?.timeout).length,
+    openWebEvidenceDurationMsAverage: openWebDurations.length
+      ? Math.round(openWebDurations.reduce((sum, value) => sum + value, 0) / openWebDurations.length)
+      : null,
+    liveFetchUsedCount: items.filter((item) => item.liveFetchUsed).length,
+  };
+};
+
 const buildPayload = ({
   targetType,
   mode,
@@ -62,7 +86,10 @@ const buildPayload = ({
     ...counters,
     startedAt,
     completedAt,
-    summary,
+    summary: {
+      ...summary,
+      observability: summarizeItemObservability(items),
+    },
     items,
   };
 };
@@ -86,6 +113,9 @@ const itemForCatalogLead = ({ lead, forceSkipped = false }) => {
     errorCode: null,
     errorMessage: null,
     signalsSummary: null,
+    openWebEvidence: null,
+    durationMs: null,
+    liveFetchUsed: null,
     startedAt: null,
     completedAt: null,
     createdAt: nowIso(),
@@ -98,6 +128,8 @@ const itemForCatalogLead = ({ lead, forceSkipped = false }) => {
       status: 'SKIPPED',
       errorCode: 'WEBSITE_URL_MISSING',
       errorMessage: 'Catalog lead does not have a website URL.',
+      durationMs: 0,
+      liveFetchUsed: false,
       completedAt: nowIso(),
     };
   }
@@ -114,6 +146,8 @@ const itemForCatalogLead = ({ lead, forceSkipped = false }) => {
       status: 'FAILED',
       errorCode: 'UNSAFE_WEBSITE_URL',
       errorMessage: 'Catalog lead website URL is not safe for enrichment.',
+      durationMs: 0,
+      liveFetchUsed: false,
       completedAt: nowIso(),
     };
   }
@@ -173,6 +207,8 @@ export const buildWebsiteEnrichmentJobItemDto = (item) => ({
   errorMessage: item.errorMessage || null,
   signalsSummary: item.signalsSummary || null,
   openWebEvidence: item.openWebEvidence || null,
+  durationMs: Number.isFinite(Number(item.durationMs)) ? Number(item.durationMs) : null,
+  liveFetchUsed: typeof item.liveFetchUsed === 'boolean' ? item.liveFetchUsed : null,
   startedAt: item.startedAt || null,
   completedAt: item.completedAt || null,
   createdAt: item.createdAt || null,
@@ -438,6 +474,7 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
 
   let processed = 0;
   for (const { item, index } of queuedIndexes) {
+    const itemStartedAtMs = Date.now();
     const itemStartedAt = nowIso();
     items[index] = { ...item, status: 'RUNNING', startedAt: itemStartedAt, updatedAt: itemStartedAt };
     await heartbeat();
@@ -459,6 +496,7 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
         ...(fetcher ? { fetcher } : {}),
       });
       const completed = nowIso();
+      const liveFetchUsed = !result.cached && !openWebEvidence?.shouldSkipLiveFetch;
       items[index] = {
         ...items[index],
         status: 'SUCCEEDED',
@@ -468,14 +506,21 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
         errorCode: null,
         errorMessage: null,
         signalsSummary: signalSummary(result.signals || []),
-        openWebEvidence: openWebEvidence?.found
+        openWebEvidence: openWebEvidence
           ? {
-              used: true,
-              cached: Boolean(openWebEvidence.fromCache),
+              used: Boolean(openWebEvidence.found),
+              cached: Boolean(openWebEvidence.fromCache || openWebEvidence.cacheHit),
+              cacheHit: Boolean(openWebEvidence.fromCache || openWebEvidence.cacheHit),
+              timeout: Boolean(openWebEvidence.timeout),
+              skippedReason: openWebEvidence.skippedReason || null,
+              durationMs: Number.isFinite(Number(openWebEvidence.durationMs)) ? Number(openWebEvidence.durationMs) : null,
               confidenceScore: openWebEvidence.confidenceScore,
               signalsCount: openWebEvidence.signals?.length || 0,
+              shouldSkipLiveFetch: Boolean(openWebEvidence.shouldSkipLiveFetch),
             }
           : null,
+        liveFetchUsed,
+        durationMs: elapsedMs(itemStartedAtMs),
         completedAt: completed,
         updatedAt: completed,
       };
@@ -487,6 +532,8 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
         status: 'FAILED',
         cached: false,
         reachable: false,
+        liveFetchUsed: false,
+        durationMs: elapsedMs(itemStartedAtMs),
         ...safe,
         completedAt: completed,
         updatedAt: completed,
