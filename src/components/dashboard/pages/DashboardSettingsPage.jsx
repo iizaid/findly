@@ -71,7 +71,13 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
 
   // Real team members ONLY
   const teamMembers = [
-    { id: 1, name: user?.name || 'You', email: user?.email || '', role: 'Admin', isYou: true },
+    {
+      id: 1,
+      name: user?.name || 'You',
+      email: user?.email || '',
+      role: workspace?.ownerId === user?.id ? 'Owner' : 'Member',
+      isYou: true,
+    },
   ];
 
   // Handlers
@@ -481,7 +487,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                           </div>
                         </td>
                         <td className="py-4">
-                          <span className={`inline-flex items-center rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider ${member.role === 'Admin' ? 'bg-accent/20 text-black' : 'bg-black/5 text-black/60'}`}>
+                          <span className={`inline-flex items-center rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider ${member.role === 'Owner' ? 'bg-accent/20 text-black' : 'bg-black/5 text-black/60'}`}>
                             {member.role}
                           </span>
                         </td>
