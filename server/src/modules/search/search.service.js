@@ -648,11 +648,21 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     const evidenceCandidates = convertEvidenceToReusableLeadCandidates({ evidences: evidenceRecords, campaign });
     const linkedEvidenceCandidates = evidenceCandidates.filter(e => e.catalogLeadId);
     const unlinkedEvidenceCandidates = evidenceCandidates.filter(e => !e.catalogLeadId);
-    const openWebEvidence = await collectOpenWebEvidenceCandidates({
-      campaign,
-      localResults: matchedLeads,
-      evidenceCandidates,
-    });
+    const directReusableCoverage = matchedLeads.length + linkedEvidenceCandidates.length;
+    const shouldSkipOpenWebEvidence = directReusableCoverage >= (campaign.requestedLimit || 20);
+    const openWebEvidence = shouldSkipOpenWebEvidence
+      ? {
+          openWebUsed: false,
+          cacheHits: 0,
+          linkedCandidates: [],
+          promotableCandidates: [],
+          results: [],
+        }
+      : await collectOpenWebEvidenceCandidates({
+          campaign,
+          localResults: matchedLeads,
+          evidenceCandidates,
+        });
     const openWebLinkedCandidates = openWebEvidence.linkedCandidates.map((candidate) => ({
       id: candidate.catalogLeadId,
       businessName: candidate.extractedFields?.businessName || candidate.title,
@@ -683,6 +693,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       openWebEvidencePromotableCount: openWebEvidence.promotableCandidates.length,
       openWebEvidenceConfidence: Math.max(0, ...openWebEvidence.results.map((item) => item.result?.confidenceScore || 0)),
       paidCallsAvoidedEstimate: openWebEvidence.promotableCandidates.length,
+      openWebEvidenceSkippedReason: shouldSkipOpenWebEvidence ? 'DIRECT_COVERAGE_SUFFICIENT' : null,
     };
     
     // DISCOVERY DECISION ENGINE

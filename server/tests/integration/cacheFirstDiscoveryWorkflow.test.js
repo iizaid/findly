@@ -162,6 +162,41 @@ describe('cache-first live discovery workflow', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it('skips open web lookups when direct local coverage is already sufficient', async () => {
+    global.fetch = vi.fn();
+    await prisma.leadCatalog.create({
+      data: {
+        businessName: `Direct Coverage Cafe ${unique}`,
+        category: `Phase4 Cafes ${unique}`,
+        country: 'DirectLand',
+        city: `Direct City ${unique}`,
+        source: 'LOCAL_DATASET',
+        sourceId: `direct-coverage-${unique}`,
+        normalizedFingerprint: `direct-coverage-${unique}`,
+        websiteUrl: `https://direct-coverage-${unique}.example.com/`,
+        detectedSignals: ['HAS_WEBSITE'],
+      },
+    });
+
+    const campaign = await createCampaign({
+      country: 'DirectLand',
+      city: `Direct City ${unique}`,
+      requestedLimit: 1,
+      sources: ['WEBSITE'],
+      filters: { goal: 'General opportunity discovery' },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.resultCount).toBe(1);
+    expect(result.openWebEvidenceUsed).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    const leadList = await prisma.leadList.findUnique({
+      where: { id: result.leadListId },
+    });
+    expect(leadList.filters.discovery.openWebEvidenceSkippedReason).toBe('DIRECT_COVERAGE_SUFFICIENT');
+  });
+
   it('uses mocked SerpAPI when local coverage is insufficient and live discovery is enabled', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -366,12 +401,15 @@ describe('cache-first live discovery workflow', () => {
   });
 
   it('promotes high-confidence open web evidence before paid discovery when reusable seeds exist', async () => {
-    const websiteUrl = `https://openweb-phase4-${unique}.example.com/`;
+    const { LocalDatasetAdapter } = await import('../../src/modules/search/adapters/LocalDatasetAdapter.js');
+    vi.spyOn(LocalDatasetAdapter.prototype, 'run').mockResolvedValue([]);
+    const openWebCaseId = `${unique}-openweb-runtime`;
+    const websiteUrl = `https://openweb-phase4-${openWebCaseId}.example.com/`;
     const warcBuffer = buildWarcBuffer(`
       <html>
         <head>
-          <title>Open Web Roastery ${unique}</title>
-          <meta name="description" content="Archived roastery homepage in Open Web City ${unique}, Open Web Land." />
+          <title>Open Web Roastery ${openWebCaseId}</title>
+          <meta name="description" content="Archived roastery homepage in Open Web City ${openWebCaseId}, Open Web Land ${openWebCaseId}." />
         </head>
         <body>
           <a href="/contact">Contact</a>
@@ -388,12 +426,12 @@ describe('cache-first live discovery workflow', () => {
         discoveryMethod: 'SERPAPI_DISCOVERY',
         sourceType: 'SERPAPI_ORGANIC_RESULT',
         sourceUrl: websiteUrl,
-        title: `Open Web Roastery ${unique}`,
+        title: `Open Web Roastery ${openWebCaseId}`,
         extractedFields: {
-          businessName: `Open Web Roastery ${unique}`,
-          city: `Open Web City ${unique}`,
-          country: 'Open Web Land',
-          category: `Open Web Cafes ${unique}`,
+          businessName: `Open Web Roastery ${openWebCaseId}`,
+          city: `Open Web City ${openWebCaseId}`,
+          country: `Open Web Land ${openWebCaseId}`,
+          category: `Open Web Cafes ${openWebCaseId}`,
           websiteUrl,
         },
         confidenceScore: 92,
@@ -426,9 +464,9 @@ describe('cache-first live discovery workflow', () => {
       });
 
     const campaign = await createCampaign({
-      country: 'Open Web Land',
-      city: `Open Web City ${unique}`,
-      businessTypes: [`Open Web Cafes ${unique}`],
+      country: `Open Web Land ${openWebCaseId}`,
+      city: `Open Web City ${openWebCaseId}`,
+      businessTypes: [`Open Web Cafes ${openWebCaseId}`],
       sources: ['WEBSITE'],
       requestedLimit: 1,
       filters: {

@@ -15,12 +15,16 @@ Findly's discovery engine is governed by the **Source Intelligence Policy**. Thi
 - **Official APIs:** Direct partner/official APIs (`GOOGLE_PLACES`). Paid/Medium.
 - **Enrichment:** Targeted specific data retrieval (`WEBSITE_METADATA`).
 - **Admin OSINT & Offline Imports:** High-risk, offline or admin-only tools (`SPIDERFOOT`, `COMMON_CRAWL`, `CSV_IMPORT`, `XLSX_IMPORT`, `JSON_IMPORT`, `HUGGING_FACE_DATASETS`). Blocked from live user discovery, reserved for backend admin operations or offline data merging.
+- **Open Web Evidence:** Internal archived-public-web evidence (`OPEN_WEB_EVIDENCE`) that can assist runtime search and website enrichment without becoming a user-selectable source.
 
 ## Enforcement
-The `assertSourceAllowedForStage` function checks the source policy before a source is used at a specific stage. If a source is not authorized for `LIVE_DISCOVERY` (for example Common Crawl, Hugging Face datasets, SpiderFoot, Google Maps scraper output, CSV/XLSX/JSON imports, website metadata, or Snov.io), it is blocked from live user runtime.
+The `assertSourceAllowedForStage` function checks the source policy before a source is used at a specific stage. If a source is not authorized for `LIVE_DISCOVERY` (for example Common Crawl dataset imports, Hugging Face datasets, SpiderFoot, Google Maps scraper output, CSV/XLSX/JSON imports, website metadata, or Snov.io), it is blocked from live user runtime.
+
+This is intentionally different from the internal `OPEN_WEB_EVIDENCE` policy key. `OPEN_WEB_EVIDENCE` is the safe runtime abstraction used by the backend-only archived-public-web evidence layer. It is not exposed in the user source selector and is allowed only as an internal support layer in runtime search and website enrichment.
 
 That does not mean those sources are bad data sources. It means they belong to different stages:
-- Common Crawl: offline mining only.
+- Common Crawl: offline mining and controlled import semantics only when treated as a raw corpus/source policy.
+- Open Web Evidence: runtime-safe archived-public-web support layer built on top of Common Crawl, hidden from user source selection.
 - Hugging Face datasets: admin import/research only after license review.
 - Google Maps scraper output: admin import only, never runtime scraping.
 - SpiderFoot: admin research only.

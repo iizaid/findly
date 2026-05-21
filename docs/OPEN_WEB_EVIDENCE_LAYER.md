@@ -40,6 +40,7 @@ The implementation follows Common Crawl guidance:
 - low request volume
 - no multi-threaded burst access
 - fail-open behavior when Common Crawl is slow or unavailable
+- bounded WARC byte-range fetches only when explicitly enabled
 
 ## Safety model
 
@@ -89,6 +90,12 @@ COMMON_CRAWL_FETCH_WARC_ENABLED=true
 COMMON_CRAWL_MAX_WARC_BYTES=262144
 COMMON_CRAWL_TIMEOUT_MS=6000
 ```
+
+Operational note:
+
+- `COMMON_CRAWL_FETCH_WARC_ENABLED=true` is acceptable only because v1 keeps strict byte caps, HTML-only filtering, and short timeouts.
+- If you see slow archive responses or unexpected network cost in private beta, disable WARC fetches first and keep the rest of the layer enabled.
+- Do not increase `COMMON_CRAWL_MAX_WARC_BYTES` casually.
 
 ## Local testing
 

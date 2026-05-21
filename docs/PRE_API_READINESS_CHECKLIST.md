@@ -30,14 +30,15 @@ Phase 4 adds cache-first live discovery readiness. Findly still starts with Loca
 
 1. User chooses signal targets such as Instagram, TikTok, Reddit, Yelp, Google Maps, Website, or Local Dataset.
 2. For platform and directory signals, Findly searches the local LeadCatalog first.
-3. Findly checks reusable LeadEvidence before paid providers.
+3. Findly checks reusable `LeadEvidence` before paid providers.
 4. If local plus linked evidence coverage is enough, Findly returns those results and skips external calls.
-5. If coverage is not enough, the search metadata provider layer can fill missing results when the Phase 4B flag, provider key, quality gate, source policy, and budget allow it.
-6. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
-7. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
-8. Website metadata remains enrichment for existing leads, not a standalone scraper.
-9. Website enrichment checks recent `WEBSITE_METADATA` evidence before refetching the same normalized URL.
-10. Website enrichment jobs process one capped batch of existing catalog leads at a time and store status in durable job records.
+5. If local coverage is still short, the backend-only Open Web Evidence Layer can try archived public-web evidence before paid providers.
+6. If coverage is still not enough, the search metadata provider layer can fill missing results when the Phase 4B flag, provider key, quality gate, source policy, and budget allow it.
+7. External metadata is recorded as `LeadEvidence` first, then high-confidence discoveries can be promoted into `LeadCatalog`.
+8. Google Places can be used as an official local business source when configured and local Google Maps coverage is insufficient.
+9. Website metadata remains enrichment for existing leads, not a standalone scraper.
+10. Website enrichment checks recent `WEBSITE_METADATA` evidence before refetching the same normalized URL and can use Open Web Evidence before a live homepage fetch when enabled.
+11. Website enrichment jobs process one capped batch of existing catalog leads at a time and store status in durable job records.
 
 ## API Keys Needed Later
 
