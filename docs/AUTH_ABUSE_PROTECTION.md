@@ -58,6 +58,12 @@ Turnstile is optional and disabled by default.
 
 The backend verifies challenge tokens server-side and never exposes the secret key.
 
+Frontend note:
+
+- keep `TURNSTILE_SECRET_KEY` only in `server/.env`
+- expose only the public site key to Vite as `VITE_TURNSTILE_SITE_KEY`
+- if `VITE_TURNSTILE_SITE_KEY` is unset, the auth UI stays unchanged and no widget is rendered
+
 ## Multi-Instance Note
 
 Memory-only rate limits are not enough for production auth protection across multiple app instances. Findly now makes the critical auth abuse decisions from Postgres-backed counters so signup, login, password reset, resend verification, and OAuth signup controls survive multi-instance deployments more safely.

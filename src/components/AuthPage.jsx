@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -71,6 +71,37 @@ const OAUTH_PROVIDERS = [
   { id: 'github', label: 'GitHub', icon: User },
   { id: 'discord', label: 'Discord', icon: MessageCircle },
 ];
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
+const TURNSTILE_SCRIPT_ID = 'findly-turnstile-script';
+
+const isTurnstileEnabled = Boolean(TURNSTILE_SITE_KEY);
+const loadTurnstileScript = () => new Promise((resolve, reject) => {
+  if (typeof window === 'undefined') {
+    reject(new Error('Turnstile is not available.'));
+    return;
+  }
+
+  if (window.turnstile?.render) {
+    resolve(window.turnstile);
+    return;
+  }
+
+  const existingScript = document.getElementById(TURNSTILE_SCRIPT_ID);
+  if (existingScript) {
+    existingScript.addEventListener('load', () => resolve(window.turnstile), { once: true });
+    existingScript.addEventListener('error', () => reject(new Error('Turnstile failed to load.')), { once: true });
+    return;
+  }
+
+  const script = document.createElement('script');
+  script.id = TURNSTILE_SCRIPT_ID;
+  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  script.async = true;
+  script.defer = true;
+  script.onload = () => resolve(window.turnstile);
+  script.onerror = () => reject(new Error('Turnstile failed to load.'));
+  document.head.appendChild(script);
+});
 
 const canSubmitAttempt = () => {
   const now = Date.now();
@@ -96,6 +127,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
   const [isResending, setIsResending] = useState(false);
   const [touched, setTouched] = useState({});
   const [formStartedAt, setFormStartedAt] = useState(() => Date.now());
+  const [turnstileReady, setTurnstileReady] = useState(false);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -111,6 +143,9 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
 
   const isSignup = mode === 'signup';
   const passwordScore = getPasswordScore(form.password);
+  const turnstileContainerRef = useRef(null);
+  const turnstileWidgetIdRef = useRef(null);
+  const shouldRenderTurnstile = isTurnstileEnabled && (isSignup || screen === 'forgot-password');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -125,6 +160,60 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
   useEffect(() => {
     setFormStartedAt(Date.now());
   }, [mode, screen]);
+
+  useEffect(() => {
+    if (!shouldRenderTurnstile) {
+      setTurnstileReady(false);
+      setForm((current) => current.botChallengeToken ? { ...current, botChallengeToken: '' } : current);
+      if (turnstileWidgetIdRef.current !== null && window.turnstile?.remove) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    loadTurnstileScript()
+      .then((turnstile) => {
+        if (cancelled || !turnstileContainerRef.current || !turnstile?.render || turnstileWidgetIdRef.current !== null) {
+          return;
+        }
+
+        turnstileWidgetIdRef.current = turnstile.render(turnstileContainerRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          theme: 'light',
+          size: 'flexible',
+          callback: (token) => {
+            setForm((current) => ({ ...current, botChallengeToken: token || '' }));
+          },
+          'expired-callback': () => {
+            setForm((current) => ({ ...current, botChallengeToken: '' }));
+          },
+          'error-callback': () => {
+            setForm((current) => ({ ...current, botChallengeToken: '' }));
+          },
+        });
+        setTurnstileReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTurnstileReady(false);
+          setForm((current) => ({ ...current, botChallengeToken: '' }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldRenderTurnstile]);
+
+  const resetTurnstile = () => {
+    if (turnstileWidgetIdRef.current !== null && window.turnstile?.reset) {
+      window.turnstile.reset(turnstileWidgetIdRef.current);
+    }
+    setForm((current) => current.botChallengeToken ? { ...current, botChallengeToken: '' } : current);
+  };
 
   const errors = useMemo(() => {
     const next = {};
@@ -220,6 +309,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
         message: error instanceof ApiError ? error.message : 'Could not request a password reset. Please try again.',
       });
     } finally {
+      resetTurnstile();
       setIsSendingReset(false);
     }
   };
@@ -362,6 +452,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
       }
       setStatus({ type: 'error', message });
     } finally {
+      resetTurnstile();
       setIsSubmitting(false);
     }
   };
@@ -541,6 +632,16 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                         />
                       </div>
                     </div>
+                    {isTurnstileEnabled && (
+                      <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-4">
+                        <div ref={turnstileContainerRef} />
+                        {!turnstileReady && (
+                          <p className="mt-3 text-xs font-bold text-secondary">
+                            Security check will appear here when available.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {status && (
                       <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
                         {status.message}
@@ -624,6 +725,17 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                   readOnly
                   aria-hidden="true"
                 />
+
+                {shouldRenderTurnstile && (
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-4">
+                    <div ref={turnstileContainerRef} />
+                    {!turnstileReady && (
+                      <p className="mt-3 text-xs font-bold text-secondary">
+                        Security check will appear here when available.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {isSignup && (
                   <div>
