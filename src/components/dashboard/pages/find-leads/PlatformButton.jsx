@@ -42,7 +42,7 @@ const PlatformButton = ({ source, selected, onClick }) => {
   const disabled = !source.canRun;
   const Icon = iconMap[source.key] || Search;
   const isSearchReady = Boolean(source.searchable || source.available);
-  const statusLabel = source.status === 'index_ready' ? 'Local Ready' : isSearchReady ? 'Ready' : 'Later';
+  const statusLabel = isSearchReady ? null : 'Later';
 
   return (
     <button
@@ -64,15 +64,15 @@ const PlatformButton = ({ source, selected, onClick }) => {
         </span>
         <span className="truncate text-[14px] font-black tracking-[-0.01em]">{source.name}</span>
       </span>
-      <span className={`shrink-0 rounded-full px-2.5 py-1.5 text-[10px] font-black ${
-        selected
-          ? 'bg-white/12 text-white'
-          : isSearchReady
-            ? 'bg-accent text-black'
+      {statusLabel ? (
+        <span className={`shrink-0 rounded-full px-2.5 py-1.5 text-[10px] font-black ${
+          selected
+            ? 'bg-white/12 text-white'
             : 'bg-black/[0.055] text-black/50'
-      }`}>
-        {statusLabel}
-      </span>
+        }`}>
+          {statusLabel}
+        </span>
+      ) : null}
     </button>
   );
 };

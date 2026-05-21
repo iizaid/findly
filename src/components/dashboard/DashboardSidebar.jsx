@@ -1,7 +1,6 @@
 import {
   BarChart3,
   ListChecks,
-  LogOut,
   Map,
   ScanSearch,
   Settings,
@@ -10,7 +9,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { getAssetUrl } from '../../lib/assets';
+import UserAvatar from '../common/UserAvatar';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: BarChart3 },
@@ -60,13 +59,7 @@ const DashboardSidebar = ({ user, workspace, credits, currentPath, onNavigate, o
       {/* Workspace Context */}
       <div className="px-4 pb-2">
         <div className="flex items-center gap-3 rounded-[14px] bg-white/[0.06] p-3 backdrop-blur-md">
-          {user?.avatarUrl ? (
-            <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner" />
-          ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-white/20 to-white/5 shadow-inner">
-              <span className="text-sm font-semibold text-white">{workspace?.name?.charAt(0)?.toUpperCase() || 'W'}</span>
-            </div>
-          )}
+          <UserAvatar user={user} size="sm" variant="dark" className="shadow-inner" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-medium text-white">{workspace?.name || 'Workspace'}</p>
             <p className="truncate text-[11px] text-white/50">{planName}</p>
@@ -111,18 +104,7 @@ const DashboardSidebar = ({ user, workspace, credits, currentPath, onNavigate, o
           onClick={onLogout}
           className="group flex w-full items-center gap-3 rounded-[14px] p-2 outline-none transition-colors hover:bg-white/[0.06]"
         >
-          {user?.avatarUrl ? (
-            <div className="relative h-9 w-9 shrink-0">
-              <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-full w-full rounded-full object-cover" />
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-                <LogOut size={14} className="text-white" />
-              </div>
-            </div>
-          ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 transition-colors group-hover:bg-white/20 group-hover:text-white">
-              <LogOut size={16} />
-            </div>
-          )}
+          <UserAvatar user={user} size="sm" variant="dark" showLogoutOverlay />
           <div className="min-w-0 flex-1 text-left">
             <p className="truncate text-[13px] font-medium text-white/90">{user?.name || 'Account'}</p>
             <p className="truncate text-[11px] text-white/50">Log out</p>

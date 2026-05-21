@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
-import { getAssetUrl } from '../lib/assets';
+import UserAvatar from './common/UserAvatar';
 
 const navItems = [
   { label: 'Film', target: 'product-film' },
@@ -124,11 +124,7 @@ const Navbar = ({ ready = false, currentUser, onAuthOpen, onNavigate, onLogout }
         <div className="flex items-center gap-2">
           {currentUser ? (
             <>
-              {currentUser.avatarUrl && (
-                <div className="hidden md:flex h-9 w-9 overflow-hidden rounded-full border border-black/10">
-                  <img src={getAssetUrl(currentUser.avatarUrl)} alt="" className="h-full w-full object-cover" />
-                </div>
-              )}
+              <UserAvatar user={currentUser} size="sm" className="hidden md:flex" />
               <button
                 type="button"
                 onClick={handleDashboardClick}

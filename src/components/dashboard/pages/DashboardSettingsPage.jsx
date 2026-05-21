@@ -2,8 +2,8 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import { LogOut, User, Building2, Shield, WalletCards, Bell, Loader2, Trash2, Eye, EyeOff } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import AvatarCropperModal from '../AvatarCropperModal';
+import UserAvatar from '../../common/UserAvatar';
 import { apiRequest } from '../../../lib/api';
-import { getAssetUrl } from '../../../lib/assets';
 
 const TABS = [
   { id: 'general', label: 'General', icon: User },
@@ -323,17 +323,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
             <div className="space-y-7 max-w-xl">
               {/* Avatar Section */}
               <div className="flex items-center gap-5">
-                {user?.avatarUrl ? (
-                  <img 
-                    src={getAssetUrl(user.avatarUrl)} 
-                    alt={user.name} 
-                    className="flex h-20 w-20 items-center justify-center rounded-[24px] object-cover bg-black/5"
-                  />
-                ) : (
-                  <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-accent text-3xl font-black text-black">
-                    {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                  </div>
-                )}
+                <UserAvatar user={user} size="lg" rounded="rounded-[24px]" />
                 <div>
                   <input 
                     type="file" 
@@ -477,13 +467,11 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                       <tr key={member.id} className="group">
                         <td className="py-4">
                           <div className="flex items-center gap-3">
-                            {user?.avatarUrl && member.isYou ? (
-                              <img src={getAssetUrl(user.avatarUrl)} alt="" className="h-10 w-10 rounded-xl object-cover" />
-                            ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent font-black text-black">
-                                {member.name.charAt(0).toUpperCase()}
-                              </div>
-                            )}
+                            <UserAvatar
+                              user={member.isYou ? user : null}
+                              size="md"
+                              rounded="rounded-xl"
+                            />
                             <div>
                               <p className="font-bold text-black">
                                 {member.name} {member.isYou && <span className="ml-2 rounded-lg bg-black/5 px-2 py-0.5 text-[10px] font-bold text-black/50 uppercase tracking-wider">You</span>}
