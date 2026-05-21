@@ -18,6 +18,8 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GENERIC_BUSINESS_NAMES = new Set(['home', 'homepage', 'welcome', 'website', 'unknown business']);
 
+const elapsedMs = (startedAtMs) => Math.max(0, Date.now() - startedAtMs);
+
 const signal = (key, label, severity = 'INFO', confidenceContribution = 0, description = null) => ({
   key,
   label,
@@ -154,7 +156,7 @@ const businessNameFrom = ({ archivedMetadata, seedBusinessName = null, title = n
   return preferred.length > 180 ? preferred.slice(0, 180) : preferred;
 };
 
-const restoreCacheRecord = (cacheRecord) => {
+const restoreCacheRecord = (cacheRecord, overrides = {}) => {
   const metadata = cacheRecord.metadata || {};
   const latestCaptureAt = toDate(cacheRecord.captureTimestamp);
   return {
@@ -166,6 +168,11 @@ const restoreCacheRecord = (cacheRecord) => {
     normalizedUrl: cacheRecord.normalizedUrl,
     normalizedDomain: cacheRecord.normalizedDomain,
     fromCache: true,
+    cacheHit: true,
+    durationMs: 0,
+    timeout: false,
+    skippedReason: null,
+    archivedHtmlFetched: Boolean(metadata.archivedMetadata),
     indexId: cacheRecord.indexId || null,
     latestCaptureAt,
     captureCount: Number(metadata.captureCount) || 0,
@@ -176,6 +183,7 @@ const restoreCacheRecord = (cacheRecord) => {
     metadata: metadata.archivedMetadata || null,
     websiteProjection: metadata.websiteProjection || null,
     debug: metadata.debug || null,
+    ...overrides,
   };
 };
 
@@ -188,6 +196,11 @@ const buildNoopResult = (overrides = {}) => ({
   normalizedUrl: null,
   normalizedDomain: null,
   fromCache: false,
+  cacheHit: false,
+  durationMs: 0,
+  timeout: false,
+  skippedReason: null,
+  archivedHtmlFetched: false,
   indexId: null,
   latestCaptureAt: null,
   captureCount: 0,
@@ -282,8 +295,14 @@ const insertOpenWebEvidenceCache = async ({
 };
 
 export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false } = {}) => {
+  const startedAtMs = Date.now();
+
   if (!env.OPEN_WEB_EVIDENCE_ENABLED || !env.COMMON_CRAWL_ENABLED || env.OPEN_WEB_EVIDENCE_PROVIDER !== 'common_crawl') {
-    return buildNoopResult({ enabled: false });
+    return buildNoopResult({
+      enabled: false,
+      durationMs: elapsedMs(startedAtMs),
+      skippedReason: 'DISABLED',
+    });
   }
 
   let normalizedUrl;
@@ -292,6 +311,8 @@ export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false }
   } catch {
     return buildNoopResult({
       normalizedUrl: String(websiteUrl || '').trim() || null,
+      durationMs: elapsedMs(startedAtMs),
+      skippedReason: 'UNSAFE_URL',
       signals: [signal(
         'OPEN_WEB_EVIDENCE_SKIPPED_UNSAFE_URL',
         'Skipped unsafe URL',
@@ -305,7 +326,12 @@ export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false }
   const normalizedDomain = domainForUrl(normalizedUrl);
   if (!forceRefresh) {
     const cached = await findCachedOpenWebEvidence({ normalizedUrl });
-    if (cached) return restoreCacheRecord(cached);
+    if (cached) {
+      return restoreCacheRecord(cached, {
+        durationMs: elapsedMs(startedAtMs),
+        cacheHit: true,
+      });
+    }
   }
 
   try {
@@ -344,6 +370,9 @@ export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false }
       insufficient: lookup.records.length === 0 || confidenceScore < 50,
       normalizedUrl,
       normalizedDomain,
+      durationMs: elapsedMs(startedAtMs),
+      cacheHit: false,
+      archivedHtmlFetched,
       indexId: lookup.indexId,
       latestCaptureAt,
       captureCount: lookup.records.length,
@@ -407,7 +436,10 @@ export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false }
       expiresAt: cacheExpiry(),
     });
 
-    return result;
+    return {
+      ...result,
+      durationMs: elapsedMs(startedAtMs),
+    };
   } catch (error) {
     if (env.OPEN_WEB_EVIDENCE_FAIL_OPEN) {
       logger.warn('open_web_evidence.lookup.failed', {
@@ -419,6 +451,9 @@ export const lookupOpenWebEvidence = async ({ websiteUrl, forceRefresh = false }
       return buildNoopResult({
         normalizedUrl,
         normalizedDomain,
+        durationMs: elapsedMs(startedAtMs),
+        timeout: timeoutLike,
+        skippedReason: timeoutLike ? 'TIMEOUT' : 'PROVIDER_UNAVAILABLE',
         signals: [signal(
           timeoutLike ? 'OPEN_WEB_EVIDENCE_TIMEOUT' : 'ARCHIVED_EVIDENCE_INSUFFICIENT',
           timeoutLike ? 'Open web evidence timed out' : 'Archived evidence unavailable',
@@ -485,6 +520,10 @@ const buildOpenWebCandidate = ({ result, campaign, seed }) => {
       captureCount: result.captureCount,
       confidenceReasons,
       paidProviderSkippedEligible: result.shouldSkipPaid,
+      durationMs: result.durationMs,
+      cacheHit: result.cacheHit,
+      timeout: result.timeout,
+      skippedReason: result.skippedReason,
     },
     confidenceScore: result.confidenceScore,
     attributionRequired: false,
@@ -496,6 +535,8 @@ export const collectOpenWebEvidenceCandidates = async ({
   localResults = [],
   evidenceCandidates = [],
 } = {}) => {
+  const startedAtMs = Date.now();
+
   if (!env.OPEN_WEB_EVIDENCE_ENABLED || !env.OPEN_WEB_EVIDENCE_ENABLE_SEARCH_ASSIST) {
     return {
       openWebUsed: false,
@@ -503,11 +544,18 @@ export const collectOpenWebEvidenceCandidates = async ({
       linkedCandidates: [],
       promotableCandidates: [],
       results: [],
+      durationMs: elapsedMs(startedAtMs),
+      seedCount: 0,
+      limitedSeedCount: 0,
+      lookupCount: 0,
+      skippedUnsafeSeedCount: 0,
+      skippedReason: 'DISABLED',
     };
   }
 
   const seeds = [];
   const seenUrls = new Set();
+  let skippedUnsafeSeedCount = 0;
   const addSeed = (seed) => {
     const candidateUrl = candidateUrlFromSeed(seed);
     if (!candidateUrl) return;
@@ -515,6 +563,7 @@ export const collectOpenWebEvidenceCandidates = async ({
     try {
       normalizedUrl = normalizeWebsiteUrl(candidateUrl);
     } catch {
+      skippedUnsafeSeedCount += 1;
       return;
     }
     if (seenUrls.has(normalizedUrl)) return;
@@ -541,7 +590,7 @@ export const collectOpenWebEvidenceCandidates = async ({
   let cacheHits = 0;
   for (const seed of limitedSeeds) {
     const result = await lookupOpenWebEvidence({ websiteUrl: seed.websiteUrl });
-    if (result.fromCache) cacheHits += 1;
+    if (result.fromCache || result.cacheHit) cacheHits += 1;
     const candidate = buildOpenWebCandidate({ result, campaign, seed });
     results.push({ seed, result, candidate });
   }
@@ -556,5 +605,11 @@ export const collectOpenWebEvidenceCandidates = async ({
       .map((item) => item.candidate)
       .filter((candidate) => candidate?.promotableToCatalog),
     results,
+    durationMs: elapsedMs(startedAtMs),
+    seedCount: seeds.length,
+    limitedSeedCount: limitedSeeds.length,
+    lookupCount: results.length,
+    skippedUnsafeSeedCount,
+    skippedReason: results.length === 0 ? 'NO_ELIGIBLE_SEEDS' : null,
   };
 };
