@@ -197,6 +197,28 @@ model AuthAbuseEvent {
   @@index([userId])
 }
 
+model OpenWebEvidenceCache {
+  id               String   @id @default(cuid())
+  normalizedDomain String
+  normalizedUrl    String?
+  provider         String   @default("common_crawl")
+  sourceType       String   @default("OPEN_WEB_ARCHIVE")
+  indexId          String?
+  captureTimestamp DateTime?
+  evidenceHash     String
+  confidenceScore  Int      @default(0)
+  signals          Json
+  metadata         Json?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([provider, evidenceHash])
+  @@index([normalizedDomain, expiresAt])
+  @@index([normalizedUrl, expiresAt])
+  @@index([confidenceScore])
+}
+
 model EmailVerificationToken {
   id        String    @id @default(cuid())
   userId    String

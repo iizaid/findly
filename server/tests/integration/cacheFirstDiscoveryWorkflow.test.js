@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { gzipSync } from 'node:zlib';
 
 process.env.NODE_ENV = 'test';
 process.env.PORT ??= '4114';
@@ -10,9 +11,21 @@ let prisma;
 let runCampaign;
 let env;
 let clearProviderCache;
+let clearCommonCrawlIndexCache;
 let userId;
 let workspaceId;
 const unique = Date.now().toString(36);
+
+const buildWarcBuffer = (body) => gzipSync(Buffer.from([
+  'WARC/1.0',
+  'WARC-Type: response',
+  'WARC-Target-URI: https://openweb-search.example.com/',
+  '',
+  'HTTP/1.1 200 OK',
+  'Content-Type: text/html; charset=utf-8',
+  '',
+  body,
+].join('\r\n'), 'utf8'));
 
 const createCampaign = (data = {}) => prisma.searchCampaign.create({
   data: {
@@ -36,6 +49,29 @@ beforeAll(async () => {
   ({ runCampaign } = await import('../../src/modules/search/search.service.js'));
   ({ env } = await import('../../src/config/env.js'));
   ({ clearProviderCache } = await import('../../src/modules/search/providerCache.service.js'));
+  ({ clearCommonCrawlIndexCache } = await import('../../src/modules/search/providers/commonCrawlProvider.service.js'));
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "OpenWebEvidenceCache" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "normalizedDomain" TEXT NOT NULL,
+      "normalizedUrl" TEXT,
+      "provider" TEXT NOT NULL DEFAULT 'common_crawl',
+      "sourceType" TEXT NOT NULL DEFAULT 'OPEN_WEB_ARCHIVE',
+      "indexId" TEXT,
+      "captureTimestamp" TIMESTAMP(3),
+      "evidenceHash" TEXT NOT NULL,
+      "confidenceScore" INTEGER NOT NULL DEFAULT 0,
+      "signals" JSONB NOT NULL,
+      "metadata" JSONB,
+      "expiresAt" TIMESTAMP(3) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "OpenWebEvidenceCache_provider_evidenceHash_key"
+    ON "OpenWebEvidenceCache"("provider", "evidenceHash")
+  `);
   env.LIVE_SERP_DISCOVERY_ENABLED = true;
   env.SERPAPI_API_KEY = 'test-serp-key';
   env.SERPAPI_BASE_URL = 'https://serpapi.com/search.json';
@@ -65,6 +101,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.restoreAllMocks();
   clearProviderCache();
+  clearCommonCrawlIndexCache();
   env.LIVE_SEARCH_METADATA_DISCOVERY_ENABLED = false;
   env.LIVE_SERP_DISCOVERY_ENABLED = true;
   env.SEARCH_METADATA_PROVIDER_PRIMARY = 'serper';
@@ -73,6 +110,11 @@ beforeEach(() => {
   env.SEARCH_METADATA_MIN_AVERAGE_CONFIDENCE = 55;
   env.SERPER_API_KEY = 'test-serper-key';
   env.SERPAPI_API_KEY = 'test-serp-key';
+  env.OPEN_WEB_EVIDENCE_ENABLED = true;
+  env.OPEN_WEB_EVIDENCE_ENABLE_SEARCH_ASSIST = true;
+  env.COMMON_CRAWL_ENABLED = true;
+  env.COMMON_CRAWL_FETCH_WARC_ENABLED = true;
+  env.OPEN_WEB_EVIDENCE_MAX_RESULTS_PER_DOMAIN = 1;
 });
 
 afterAll(async () => {
@@ -321,5 +363,185 @@ describe('cache-first live discovery workflow', () => {
     expect(leadList.filters.discovery.unlinkedEvidenceCandidatesCount).toBeGreaterThanOrEqual(1);
     expect(leadList.filters.discovery.evidenceSkippedUnlinkedCount).toBeGreaterThanOrEqual(1);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('promotes high-confidence open web evidence before paid discovery when reusable seeds exist', async () => {
+    const websiteUrl = `https://openweb-phase4-${unique}.example.com/`;
+    const warcBuffer = buildWarcBuffer(`
+      <html>
+        <head>
+          <title>Open Web Roastery ${unique}</title>
+          <meta name="description" content="Archived roastery homepage in Open Web City ${unique}, Open Web Land." />
+        </head>
+        <body>
+          <a href="/contact">Contact</a>
+          <a href="/menu">Menu</a>
+        </body>
+      </html>
+    `);
+
+    await prisma.leadEvidence.create({
+      data: {
+        userId,
+        workspaceId,
+        targetSource: 'WEBSITE',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: websiteUrl,
+        title: `Open Web Roastery ${unique}`,
+        extractedFields: {
+          businessName: `Open Web Roastery ${unique}`,
+          city: `Open Web City ${unique}`,
+          country: 'Open Web Land',
+          category: `Open Web Cafes ${unique}`,
+          websiteUrl,
+        },
+        confidenceScore: 92,
+        storeUntil: null,
+      },
+    });
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 'CC-MAIN-2026-08' }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          url: websiteUrl,
+          timestamp: '20260210120000',
+          status: '200',
+          mime: 'text/html',
+          length: String(warcBuffer.byteLength),
+          offset: '100',
+          filename: 'crawl-data/CC-MAIN-2026-08/segments/test/warc/CC-MAIN-test.warc.gz',
+          digest: 'SEARCHOPENWEB123',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 206,
+        arrayBuffer: async () => warcBuffer,
+      });
+
+    const campaign = await createCampaign({
+      country: 'Open Web Land',
+      city: `Open Web City ${unique}`,
+      businessTypes: [`Open Web Cafes ${unique}`],
+      sources: ['WEBSITE'],
+      requestedLimit: 1,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { disableLiveDiscovery: true },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.resultCount).toBeGreaterThanOrEqual(1);
+    expect(result.externalDiscoveryUsed).toBe(false);
+    expect(result.openWebEvidenceUsed).toBe(true);
+    expect(result.promotedToCatalogCount).toBeGreaterThanOrEqual(1);
+
+    const promoted = await prisma.leadCatalog.findFirst({
+      where: { websiteUrl, source: 'OPEN_WEB_EVIDENCE' },
+    });
+    expect(promoted).toBeTruthy();
+
+    const leadList = await prisma.leadList.findUnique({
+      where: { id: result.leadListId },
+      include: { leadItems: true },
+    });
+    expect(JSON.stringify(leadList)).not.toContain('Common Crawl');
+    expect(JSON.stringify(leadList)).not.toContain('CC-MAIN');
+  });
+
+  it('still falls back to paid discovery when open web evidence is insufficient', async () => {
+    const { LocalDatasetAdapter } = await import('../../src/modules/search/adapters/LocalDatasetAdapter.js');
+    const { SerpAdapter } = await import('../../src/modules/search/adapters/SerpAdapter.js');
+    vi.spyOn(LocalDatasetAdapter.prototype, 'run').mockResolvedValue([]);
+    vi.spyOn(SerpAdapter, 'isConfigured').mockReturnValue(true);
+    vi.spyOn(SerpAdapter.prototype, 'run').mockImplementation(async function () {
+      this.metadata = {
+        providerUsed: 'SERPAPI',
+        fallbackUsed: false,
+        queriesUsed: 1,
+        providerStats: [],
+        quality: null,
+        skippedReason: null,
+      };
+      return [{
+        targetSource: 'INSTAGRAM',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: `https://instagram.com/openweb_paid_${unique}`,
+        externalId: `openweb-paid-${unique}`,
+        title: `Paid Fallback Cafe ${unique} | Instagram`,
+        snippet: `Fallback Web Cafes ${unique} in Fallback Web City ${unique}, Fallback Web Land`,
+        extractedFields: {
+          businessName: `Paid Fallback Cafe ${unique}`,
+          category: `Fallback Web Cafes ${unique}`,
+          city: `Fallback Web City ${unique}`,
+          country: 'Fallback Web Land',
+          platformUrl: `https://instagram.com/openweb_paid_${unique}`,
+          platformUsername: `openweb_paid_${unique}`,
+          provider: 'SERPAPI',
+        },
+        rawMetadata: {
+          provider: 'SERPAPI',
+          confidenceReasons: ['CATEGORY_MATCH', 'CITY_MATCH', 'COUNTRY_MATCH', 'TARGET_PLATFORM_MATCH'],
+        },
+        confidenceScore: 85,
+      }];
+    });
+
+    const websiteUrl = `https://openweb-insufficient-${unique}.example.com/`;
+    await prisma.leadEvidence.create({
+      data: {
+        userId,
+        workspaceId,
+        targetSource: 'WEBSITE',
+        discoveryMethod: 'SERPAPI_DISCOVERY',
+        sourceType: 'SERPAPI_ORGANIC_RESULT',
+        sourceUrl: websiteUrl,
+        title: `Weak Open Web ${unique}`,
+        extractedFields: {
+          businessName: `Weak Open Web ${unique}`,
+          city: `Fallback Web City ${unique}`,
+          country: 'Fallback Web Land',
+          category: `Fallback Web Cafes ${unique}`,
+          websiteUrl,
+        },
+        confidenceScore: 85,
+        storeUntil: null,
+      },
+    });
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 'CC-MAIN-2026-08' }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => '',
+      });
+
+    const campaign = await createCampaign({
+      country: 'Fallback Web Land',
+      city: `Fallback Web City ${unique}`,
+      businessTypes: [`Fallback Web Cafes ${unique}`],
+      sources: ['INSTAGRAM'],
+      requestedLimit: 6,
+      filters: {
+        goal: 'General opportunity discovery',
+        discovery: { forceLiveDiscovery: true },
+        budget: { maxSerpQueries: 1, maxEstimatedExternalCostMicrousd: 50000 },
+      },
+    });
+
+    const result = await runCampaign(campaign.id, userId);
+    expect(result.externalDiscoveryUsed).toBe(true);
+    expect(result.externalProvider).toBe('SERPAPI');
   });
 });

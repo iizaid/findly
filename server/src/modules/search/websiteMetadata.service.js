@@ -267,6 +267,19 @@ const signal = (key, severity, confidence, reason, support = null) => ({
   support,
 });
 
+const mergeSignals = (...groups) => {
+  const seen = new Set();
+  const merged = [];
+  for (const group of groups) {
+    for (const item of group || []) {
+      if (!item?.key || seen.has(item.key)) continue;
+      seen.add(item.key);
+      merged.push(item);
+    }
+  }
+  return merged;
+};
+
 export const generateWebsiteOpportunitySignals = ({ reachable, statusCode, metadata = {}, warnings = [] }) => {
   const signals = [];
   if (!reachable) {
@@ -470,6 +483,7 @@ export const enrichLeadWebsite = async ({
   workspaceId,
   forceRefresh = false,
   fetcher = safeFetchTextWithLimit,
+  prefetchedOpenWebEvidence = null,
 } = {}) => {
   const policyCheck = assertSourceAllowedForStage('WEBSITE_METADATA', STAGES.WEBSITE_ENRICHMENT);
   if (!policyCheck.allowed) throw new AppError(errorCodes.FORBIDDEN, policyCheck.reason, 403);
@@ -486,7 +500,23 @@ export const enrichLeadWebsite = async ({
     if (cached) return buildCachedResult(cached);
   }
 
-  const analysis = await analyzeWebsiteMetadata({ websiteUrl: normalizedUrl, fetcher });
+  const useOpenWebOnly = Boolean(prefetchedOpenWebEvidence?.shouldSkipLiveFetch && prefetchedOpenWebEvidence?.websiteProjection);
+  const baseAnalysis = useOpenWebOnly
+    ? prefetchedOpenWebEvidence.websiteProjection
+    : await analyzeWebsiteMetadata({ websiteUrl: normalizedUrl, fetcher });
+  const analysis = {
+    ...baseAnalysis,
+    metadata: baseAnalysis.metadata || prefetchedOpenWebEvidence?.metadata || null,
+    signals: mergeSignals(
+      baseAnalysis.signals || [],
+      prefetchedOpenWebEvidence?.websiteProjection?.signals || [],
+    ),
+    warnings: [...new Set([
+      ...(baseAnalysis.warnings || []),
+      ...(prefetchedOpenWebEvidence ? ['OPEN_WEB_EVIDENCE_USED'] : []),
+      ...(prefetchedOpenWebEvidence?.websiteProjection?.warnings || []),
+    ])],
+  };
   const evidence = await prisma.$transaction(async (tx) => recordLeadEvidence({
     tx,
     userId: requestedByUserId,
@@ -505,6 +535,14 @@ export const enrichLeadWebsite = async ({
       finalUrl: analysis.finalUrl,
       metadata: analysis.metadata,
       signals: analysis.signals,
+      openWebEvidence: prefetchedOpenWebEvidence
+        ? {
+            confidenceScore: prefetchedOpenWebEvidence.confidenceScore,
+            captureCount: prefetchedOpenWebEvidence.captureCount,
+            latestCaptureAt: prefetchedOpenWebEvidence.latestCaptureAt?.toISOString?.() || null,
+            signals: prefetchedOpenWebEvidence.signals?.map((item) => item.key) || [],
+          }
+        : null,
     },
     rawMetadata: {
       reachable: analysis.reachable,
@@ -517,6 +555,7 @@ export const enrichLeadWebsite = async ({
         maxBytes: env.WEBSITE_FETCH_MAX_BYTES,
         maxRedirects: env.WEBSITE_FETCH_MAX_REDIRECTS,
       },
+      openWebEvidenceUsed: Boolean(prefetchedOpenWebEvidence),
     },
     confidenceScore: confidenceFromSignals(analysis.signals),
     robotsStatus: analysis.metadata?.robotsMeta || null,

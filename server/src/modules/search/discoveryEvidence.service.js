@@ -45,6 +45,7 @@ export const calculateDefaultStoreUntil = (sourceType, discoveryMethod, targetSo
   const target = (targetSource || '').toString().toUpperCase();
 
   if (method === 'LOCAL_DATASET' || method === 'CSV_IMPORT') return null;
+  if (method === 'OPEN_WEB_EVIDENCE' || type.includes('OPEN_WEB')) return addDays(90);
   if (method === 'WEBSITE_METADATA' || type.includes('WEBSITE')) return addDays(90);
   if (method === 'GOOGLE_PLACES' || type.includes('GOOGLE_PLACE')) return addDays(365);
   if (method === 'SERPAPI_DISCOVERY' || SOCIAL_TARGETS.has(target) || type.includes('SERP')) return addDays(30);

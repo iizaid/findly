@@ -133,19 +133,21 @@ export const evaluateEvidenceReuseCoverage = ({ campaign, localResults = [], evi
   const requestedLimit = Math.max(1, Number(campaign?.requestedLimit) || 20);
   const linkedEvidence = evidenceCandidates.filter(e => e.catalogLeadId);
   const unlinkedEvidence = evidenceCandidates.filter(e => !e.catalogLeadId);
-  const totalCount = localResults.length + linkedEvidence.length;
+  const promotableOpenWebEvidence = unlinkedEvidence.filter((e) => e.promotableToCatalog === true);
+  const totalCount = localResults.length + linkedEvidence.length + promotableOpenWebEvidence.length;
   const coverageRatio = Math.min(1, totalCount / requestedLimit);
   
   return {
     evidenceCount: evidenceCandidates.length,
     linkedEvidenceCount: linkedEvidence.length,
     unlinkedEvidenceCount: unlinkedEvidence.length,
+    promotableOpenWebCount: promotableOpenWebEvidence.length,
     reusableCatalogLeadCount: linkedEvidence.length,
     highConfidenceUnlinkedCount: unlinkedEvidence.filter(e => (Number(e.confidenceScore) || 0) >= DEFAULT_MIN_CONFIDENCE).length,
-    reusableForLeadListCount: linkedEvidence.length,
+    reusableForLeadListCount: linkedEvidence.length + promotableOpenWebEvidence.length,
     coverageRatio,
     enoughEvidence: totalCount >= requestedLimit,
-    savedExternalCallsEstimate: linkedEvidence.length,
+    savedExternalCallsEstimate: linkedEvidence.length + promotableOpenWebEvidence.length,
     skippedReasons: unlinkedEvidence.length > 0 ? ['UNLINKED_EVIDENCE_NOT_DIRECTLY_REUSABLE'] : [],
   };
 };

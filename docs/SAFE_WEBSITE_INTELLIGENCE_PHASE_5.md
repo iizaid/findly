@@ -19,7 +19,7 @@ It can detect:
 
 ## What Phase 5 Does Not Add
 
-Phase 5 does not add crawling, scraping, browser automation, Playwright, Puppeteer, proxy use, social scraping, direct social APIs, Snov.io, Common Crawl runtime, SpiderFoot runtime, Google Maps scraper runtime, payments, or outreach generation.
+Phase 5 does not add crawling, scraping, browser automation, Playwright, Puppeteer, proxy use, social scraping, direct social APIs, Snov.io, SpiderFoot runtime, Google Maps scraper runtime, payments, or outreach generation.
 
 ## Why This Is Not Scraping
 
@@ -185,6 +185,15 @@ Processing behavior:
 Recovery limitation:
 
 Phase 5C uses durable DB records and explicit `process-next` processing. It does not add Redis, BullMQ, cron, or an unbounded worker loop. If a process stops mid-job, admins can retry processing the same job after restart.
+
+## Open Web Evidence Note
+
+Findly now also supports a separate backend-only Open Web Evidence Layer documented in `docs/OPEN_WEB_EVIDENCE_LAYER.md`.
+
+- It is not user-facing.
+- It does not add a Common Crawl source selector.
+- It does not store raw HTML.
+- It can contribute archived public-web signals before live homepage fetches when enabled.
 
 ## Future Work
 

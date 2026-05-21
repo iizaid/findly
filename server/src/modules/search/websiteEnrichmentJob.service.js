@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { assertSourceAllowedForStage, STAGES } from './sourceIntelligencePolicy.service.js';
 import { enrichLeadWebsite, normalizeWebsiteUrl } from './websiteMetadata.service.js';
+import { lookupOpenWebEvidence } from './openWebEvidence.service.js';
 
 export const WEBSITE_ENRICHMENT_JOB_TYPE = 'WEBSITE_ENRICHMENT_RUN';
 
@@ -171,6 +172,7 @@ export const buildWebsiteEnrichmentJobItemDto = (item) => ({
   errorCode: item.errorCode || null,
   errorMessage: item.errorMessage || null,
   signalsSummary: item.signalsSummary || null,
+  openWebEvidence: item.openWebEvidence || null,
   startedAt: item.startedAt || null,
   completedAt: item.completedAt || null,
   createdAt: item.createdAt || null,
@@ -441,12 +443,19 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
     await heartbeat();
 
     try {
+      const openWebEvidence = env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS
+        ? await lookupOpenWebEvidence({
+            websiteUrl: item.normalizedWebsiteUrl || item.websiteUrl,
+            forceRefresh: Boolean(payload.forceRefresh),
+          })
+        : null;
       const result = await enrichLeadWebsite({
         catalogLeadId: item.catalogLeadId,
         websiteUrl: item.normalizedWebsiteUrl || item.websiteUrl,
         requestedByUserId: job.userId,
         workspaceId: job.workspaceId,
         forceRefresh: Boolean(payload.forceRefresh),
+        prefetchedOpenWebEvidence: openWebEvidence,
         ...(fetcher ? { fetcher } : {}),
       });
       const completed = nowIso();
@@ -459,6 +468,14 @@ export const processWebsiteEnrichmentJob = async ({ jobId, maxItems, fetcher, us
         errorCode: null,
         errorMessage: null,
         signalsSummary: signalSummary(result.signals || []),
+        openWebEvidence: openWebEvidence?.found
+          ? {
+              used: true,
+              cached: Boolean(openWebEvidence.fromCache),
+              confidenceScore: openWebEvidence.confidenceScore,
+              signalsCount: openWebEvidence.signals?.length || 0,
+            }
+          : null,
         completedAt: completed,
         updatedAt: completed,
       };

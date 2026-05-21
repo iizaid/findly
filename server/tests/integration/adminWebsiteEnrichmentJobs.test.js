@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { gzipSync } from 'node:zlib';
 
 process.env.NODE_ENV = 'test';
 process.env.PORT ??= '4135';
@@ -19,6 +20,8 @@ let secondLead;
 let lockLead;
 let createWebsiteEnrichmentJob;
 let processWebsiteEnrichmentJob;
+let env;
+let clearCommonCrawlIndexCache;
 
 const unique = Date.now().toString(36);
 const adminEmail = `admin.website.jobs.${unique}@findly.local`;
@@ -53,10 +56,45 @@ const fetcher = vi.fn(async (url) => ({
   redirectsFollowed: 0,
 }));
 
+const buildWarcBuffer = (body) => gzipSync(Buffer.from([
+  'WARC/1.0',
+  'WARC-Type: response',
+  'WARC-Target-URI: https://phase5c-openweb.example.com/',
+  '',
+  'HTTP/1.1 200 OK',
+  'Content-Type: text/html; charset=utf-8',
+  '',
+  body,
+].join('\r\n'), 'utf8'));
+
 beforeAll(async () => {
   ({ createApp } = await import('../../src/app.js'));
   ({ prisma } = await import('../../src/db/prisma.js'));
+  ({ env } = await import('../../src/config/env.js'));
   ({ createWebsiteEnrichmentJob, processWebsiteEnrichmentJob } = await import('../../src/modules/search/websiteEnrichmentJob.service.js'));
+  ({ clearCommonCrawlIndexCache } = await import('../../src/modules/search/providers/commonCrawlProvider.service.js'));
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "OpenWebEvidenceCache" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "normalizedDomain" TEXT NOT NULL,
+      "normalizedUrl" TEXT,
+      "provider" TEXT NOT NULL DEFAULT 'common_crawl',
+      "sourceType" TEXT NOT NULL DEFAULT 'OPEN_WEB_ARCHIVE',
+      "indexId" TEXT,
+      "captureTimestamp" TIMESTAMP(3),
+      "evidenceHash" TEXT NOT NULL,
+      "confidenceScore" INTEGER NOT NULL DEFAULT 0,
+      "signals" JSONB NOT NULL,
+      "metadata" JSONB,
+      "expiresAt" TIMESTAMP(3) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "OpenWebEvidenceCache_provider_evidenceHash_key"
+    ON "OpenWebEvidenceCache"("provider", "evidenceHash")
+  `);
 
   const app = createApp();
   agentAdmin = request.agent(app);
@@ -355,5 +393,77 @@ describe('admin website enrichment jobs', () => {
     expect(refreshed.succeededItems).toBe(1);
     expect(refreshed.items[0].cached).toBe(false);
     expect(refreshFetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses open web evidence silently and avoids exposing Common Crawl internals', async () => {
+    clearCommonCrawlIndexCache();
+    env.OPEN_WEB_EVIDENCE_ENABLED = true;
+    env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS = true;
+    env.COMMON_CRAWL_ENABLED = true;
+    env.COMMON_CRAWL_FETCH_WARC_ENABLED = true;
+    env.OPEN_WEB_EVIDENCE_MAX_RESULTS_PER_DOMAIN = 1;
+
+    const archivedHtml = `
+      <html>
+        <head>
+          <title>Phase 5C Open Web ${unique}</title>
+          <meta name="description" content="Archived metadata with contact and menu paths." />
+        </head>
+        <body>
+          <a href="/contact">Contact</a>
+          <a href="/menu">Menu</a>
+        </body>
+      </html>
+    `;
+    const warcBuffer = buildWarcBuffer(archivedHtml);
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 'CC-MAIN-2026-08' }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          url: `https://phase5c-${unique}.example.com/`,
+          timestamp: '20260210120000',
+          status: '200',
+          mime: 'text/html',
+          length: String(warcBuffer.byteLength),
+          offset: '100',
+          filename: 'crawl-data/CC-MAIN-2026-08/segments/test/warc/CC-MAIN-test.warc.gz',
+          digest: 'OPENWEB123',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 206,
+        arrayBuffer: async () => warcBuffer,
+      });
+
+    const noLiveFetcher = vi.fn(async () => {
+      throw new Error('Live fetcher should not run when archived evidence is sufficient.');
+    });
+
+    const job = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id],
+      forceRefresh: true,
+    });
+
+    const processed = await processWebsiteEnrichmentJob({ jobId: job.id, fetcher: noLiveFetcher });
+
+    expect(processed.status).toBe('COMPLETED');
+    expect(processed.succeededItems).toBe(1);
+    expect(processed.items[0].openWebEvidence).toMatchObject({
+      used: true,
+      confidenceScore: expect.any(Number),
+    });
+    expect(noLiveFetcher).not.toHaveBeenCalled();
+    expect(JSON.stringify(processed)).not.toContain('Common Crawl');
+    expect(JSON.stringify(processed)).not.toContain('CC-MAIN');
   });
 });

@@ -40,6 +40,7 @@ describe('Source Intelligence Policy', () => {
     const allowed = listRuntimeAllowedSources();
     expect(allowed.some(p => p.key === 'SERPER')).toBe(true);
     expect(allowed.some(p => p.key === 'GOOGLE_PLACES')).toBe(true);
+    expect(allowed.some(p => p.key === 'OPEN_WEB_EVIDENCE')).toBe(true);
     expect(allowed.some(p => p.key === 'CSV_IMPORT')).toBe(false);
     expect(allowed.some(p => p.key === 'SPIDERFOOT')).toBe(false);
   });
@@ -59,7 +60,7 @@ describe('Source Intelligence Policy', () => {
     const allowedLive = listSourcesAllowedForStage(STAGES.LIVE_DISCOVERY).map(p => p.key);
     const blockedLive = listSourcesBlockedForStage(STAGES.LIVE_DISCOVERY).map(p => p.key);
 
-    expect(allowedLive).toEqual(expect.arrayContaining(['SERPER', 'SERPAPI']));
+    expect(allowedLive).toEqual(expect.arrayContaining(['SERPER', 'SERPAPI', 'OPEN_WEB_EVIDENCE']));
     expect(allowedLive).not.toContain('GOOGLE_PLACES');
     expect(allowedLive).not.toContain('WEBSITE_METADATA');
     expect(blockedLive).toEqual(expect.arrayContaining([
@@ -107,6 +108,7 @@ describe('Source Intelligence Policy', () => {
     expect(assertSourceAllowedForStage('HUGGING_FACE_DATASETS', STAGES.ADMIN_IMPORT).allowed).toBe(true);
     expect(assertSourceAllowedForStage('GOOGLE_MAPS_SCRAPER_OUTPUT', STAGES.LIVE_DISCOVERY).allowed).toBe(false);
     expect(assertSourceAllowedForStage('COMMON_CRAWL', STAGES.LIVE_DISCOVERY).allowed).toBe(false);
+    expect(assertSourceAllowedForStage('OPEN_WEB_EVIDENCE', STAGES.LIVE_DISCOVERY).allowed).toBe(true);
     expect(assertSourceAllowedForStage('SPIDERFOOT', STAGES.ADMIN_IMPORT).allowed).toBe(false);
 
     const hf = getSourcePolicy('HUGGING_FACE_DATASETS');
