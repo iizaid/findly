@@ -144,4 +144,54 @@ describe('admin website enrichment jobs open web failure fallback', () => {
     expect(JSON.stringify(processed)).not.toContain('CC-MAIN');
     expect(JSON.stringify(processed)).not.toContain('<html');
   });
+
+  it('continues with live website fetch when Open Web Evidence is disabled', async () => {
+    vi.restoreAllMocks();
+    clearCommonCrawlIndexCache();
+    env.OPEN_WEB_EVIDENCE_ENABLED = false;
+    env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS = true;
+    env.OPEN_WEB_EVIDENCE_FAIL_OPEN = true;
+    env.COMMON_CRAWL_ENABLED = true;
+
+    global.fetch = vi.fn();
+    const liveFetcher = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      text: html,
+      truncated: false,
+      finalUrl: url,
+      redirectsFollowed: 0,
+    }));
+
+    const job = await createWebsiteEnrichmentJob({
+      requestedByUserId: adminUser.id,
+      workspaceId: workspace.id,
+      targetType: 'CATALOG_LEAD',
+      mode: 'EXPLICIT_IDS',
+      catalogLeadIds: [catalogLead.id],
+      forceRefresh: true,
+    });
+
+    const processed = await processWebsiteEnrichmentJob({ jobId: job.id, fetcher: liveFetcher });
+
+    expect(processed.status).toBe('COMPLETED');
+    expect(processed.succeededItems).toBe(1);
+    expect(processed.failedItems).toBe(0);
+    expect(processed.items[0].openWebEvidence).toMatchObject({
+      used: false,
+      skippedReason: 'DISABLED',
+      shouldSkipLiveFetch: false,
+    });
+    expect(processed.items[0].liveFetchUsed).toBe(true);
+    expect(processed.summary.observability).toMatchObject({
+      openWebEvidenceUsedCount: 0,
+      liveFetchUsedCount: 1,
+    });
+    expect(liveFetcher).toHaveBeenCalledTimes(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(processed)).not.toContain('Common Crawl');
+    expect(JSON.stringify(processed)).not.toContain('CC-MAIN');
+    expect(JSON.stringify(processed)).not.toContain('<html');
+  });
 });
