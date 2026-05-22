@@ -40,6 +40,25 @@ const makeEmail = (suffix) => {
   return email;
 };
 
+const cleanupCreatedTwoFactorState = async () => {
+  const users = await prisma.user.findMany({
+    where: { email: { in: [...createdEmails] } },
+    select: { id: true },
+  });
+  const userIds = users.map((user) => user.id);
+
+  if (userIds.length > 0) {
+    await prisma.twoFactorChallenge.deleteMany({
+      where: { userId: { in: userIds } },
+    });
+    await prisma.userTwoFactorSetting.deleteMany({
+      where: { userId: { in: userIds } },
+    });
+  }
+
+  await prisma.user.deleteMany({ where: { email: { in: [...createdEmails] } } });
+};
+
 const getCsrfToken = async (agent) => {
   const response = await agent.get('/api/csrf-token').expect(200);
   return response.body.data.csrfToken;
@@ -92,16 +111,12 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   clearTestOutbox();
-  await prisma.twoFactorChallenge.deleteMany({});
-  await prisma.userTwoFactorSetting.deleteMany({});
-  await prisma.user.deleteMany({ where: { email: { in: [...createdEmails] } } });
+  await cleanupCreatedTwoFactorState();
 });
 
 afterAll(async () => {
   if (!prisma) return;
-  await prisma.twoFactorChallenge.deleteMany({}).catch(() => {});
-  await prisma.userTwoFactorSetting.deleteMany({}).catch(() => {});
-  await prisma.user.deleteMany({ where: { email: { in: [...createdEmails] } } }).catch(() => {});
+  await cleanupCreatedTwoFactorState().catch(() => {});
   await prisma.$disconnect();
 });
 

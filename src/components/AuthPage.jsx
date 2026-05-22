@@ -787,54 +787,78 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
                   <h2 className="mt-4 text-5xl font-bold leading-[1.02] tracking-tighter md:text-6xl">
                     Confirm it is you.
                   </h2>
-                  <p className="mt-6 max-w-xl text-base font-semibold leading-8 text-secondary">
+                  <p className="mt-6 max-w-2xl text-base font-semibold leading-8 text-secondary">
                     Enter the 6-digit code from your authenticator app, or use one of your backup codes.
                     {accountEmail ? <> This sign-in is for <span className="text-black">{accountEmail}</span>.</> : null}
                   </p>
-                  {twoFactorChallenge.expiresAt ? (
-                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-secondary">
-                      Challenge expires at {new Date(twoFactorChallenge.expiresAt).toLocaleTimeString()}
-                    </p>
-                  ) : null}
-                  <form className="mt-8 max-w-xl space-y-5" onSubmit={handleVerifyTwoFactor} noValidate>
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-black">Authenticator or backup code</label>
-                      <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
-                        <Shield size={18} className="text-secondary" />
-                        <input
-                          value={twoFactorCode}
-                          onChange={(event) => setTwoFactorCode(event.target.value.toUpperCase())}
-                          maxLength={32}
-                          required
-                          className="w-full bg-transparent text-sm font-semibold uppercase tracking-[0.18em] outline-none placeholder:text-secondary/50"
-                          placeholder="123456 or ABCD-EFGH"
-                          autoComplete="one-time-code"
-                          inputMode="text"
-                        />
+                  <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start">
+                    <form className="space-y-5 rounded-[28px] border border-black/[0.08] bg-white p-5 shadow-sm md:p-6" onSubmit={handleVerifyTwoFactor} noValidate>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-black">Enter your verification code</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
+                            Use the current code from your authenticator app or one of your one-time backup codes.
+                          </p>
+                        </div>
+                        {twoFactorChallenge.expiresAt ? (
+                          <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Challenge expires</p>
+                            <p className="mt-1 text-sm font-bold text-black">{new Date(twoFactorChallenge.expiresAt).toLocaleTimeString()}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-bold text-black">Authenticator or backup code</label>
+                        <div className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                          <Shield size={18} className="text-secondary" />
+                          <input
+                            value={twoFactorCode}
+                            onChange={(event) => setTwoFactorCode(event.target.value.toUpperCase())}
+                            maxLength={32}
+                            required
+                            className="w-full bg-transparent text-sm font-semibold uppercase tracking-[0.18em] outline-none placeholder:text-secondary/50"
+                            placeholder="123456 or ABCD-EFGH"
+                            autoComplete="one-time-code"
+                            inputMode="text"
+                          />
+                        </div>
+                      </div>
+                      {status && (
+                        <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
+                          {status.message}
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="submit"
+                          disabled={isVerifyingTwoFactor}
+                          className="inline-flex h-12 items-center justify-center rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
+                        >
+                          {isVerifyingTwoFactor ? 'Verifying...' : 'Verify code'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelTwoFactor}
+                          className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04]"
+                        >
+                          Back to login
+                        </button>
+                      </div>
+                    </form>
+                    <div className="space-y-4 rounded-[28px] border border-black/[0.08] bg-[#FBFBFA] p-5 md:p-6">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black text-white">
+                        <Shield size={20} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-black">What you can use here</p>
+                        <ul className="mt-3 space-y-2 text-xs font-semibold leading-5 text-secondary">
+                          <li>6-digit authenticator code from Google Authenticator, Microsoft Authenticator, Authy, or 1Password.</li>
+                          <li>One unused backup code if your phone is unavailable.</li>
+                          <li>Use “Back to login” if the challenge expired or you started sign-in on the wrong account.</li>
+                        </ul>
                       </div>
                     </div>
-                    {status && (
-                      <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${status.type === 'success' ? 'bg-accent/25 text-black' : 'bg-red-50 text-red-700'}`}>
-                        {status.message}
-                      </div>
-                    )}
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="submit"
-                        disabled={isVerifyingTwoFactor}
-                        className="inline-flex h-12 items-center justify-center rounded-full bg-black px-6 text-sm font-bold text-white transition-colors hover:bg-accent hover:text-black disabled:opacity-50"
-                      >
-                        {isVerifyingTwoFactor ? 'Verifying...' : 'Verify code'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCancelTwoFactor}
-                        className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04]"
-                      >
-                        Back to login
-                      </button>
-                    </div>
-                  </form>
+                  </div>
                 </div>
               ) : (
                 <>

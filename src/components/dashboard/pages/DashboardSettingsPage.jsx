@@ -401,12 +401,39 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
 
   const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
   const canUpdatePassword = currentPassword && newPassword.length >= 10 && passwordsMatch;
+  const workspaceRoleLabel = workspace?.ownerId === user?.id ? 'Workspace owner' : 'Workspace member';
+  const accountPlanLabel = user?.plan === 'PRO' ? 'Pro plan' : 'Free plan';
+  const securityHealthLabel = twoFA ? '2FA enabled' : 'Password only';
 
   return (
-    <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)]">
       {/* Sidebar Navigation */}
-      <DashboardCard className="p-5 self-start">
-        <p className="px-3 text-xs font-bold uppercase tracking-[0.2em] text-secondary mb-3">Settings</p>
+      <DashboardCard className="sticky top-6 self-start p-5">
+        <div className="rounded-[24px] border border-black/[0.06] bg-[#F7F8F6] p-4">
+          <div className="flex items-center gap-3">
+            <UserAvatar user={user} size="lg" rounded="rounded-[20px]" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-black">{user?.name || 'Your account'}</p>
+              <p className="truncate text-xs font-semibold text-secondary">{user?.email || ''}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-2xl bg-white px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Plan</p>
+              <p className="mt-1 text-xs font-bold text-black">{accountPlanLabel}</p>
+            </div>
+            <div className="rounded-2xl bg-white px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Security</p>
+              <p className="mt-1 text-xs font-bold text-black">{securityHealthLabel}</p>
+            </div>
+          </div>
+          <div className="mt-2 rounded-2xl bg-white px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Workspace role</p>
+            <p className="mt-1 text-xs font-bold text-black">{workspaceRoleLabel}</p>
+          </div>
+        </div>
+
+        <p className="mb-3 mt-5 px-3 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Settings</p>
         <nav className="flex flex-col space-y-1">
           {TABS.map((tab) => {
             const Icon = tab.icon;
@@ -440,17 +467,40 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
       </DashboardCard>
 
       {/* Main Content Area */}
-      <div className="flex-1">
+      <div className="flex-1 space-y-5">
         {activeTab === 'general' && (
           <DashboardCard className="p-5 md:p-7 relative overflow-hidden">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Settings</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tighter md:text-4xl mb-7">General</h2>
-            
-            <div className="space-y-7 max-w-xl">
-              {/* Avatar Section */}
-              <div className="flex items-center gap-5">
-                <UserAvatar user={user} size="lg" rounded="rounded-[24px]" />
+            <div className="rounded-[28px] border border-black/[0.06] bg-[#FBFBFA] p-5 md:p-6">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Account profile</p>
+              <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
+                  <h2 className="text-3xl font-bold tracking-tighter text-black md:text-4xl">General</h2>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-secondary">
+                    Update the identity details your workspace sees first: profile photo, display name, and the verified email tied to this account.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-white px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Email</p>
+                    <p className="mt-1 text-xs font-bold text-black">{user?.emailVerified ? 'Verified' : 'Pending'}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Role</p>
+                    <p className="mt-1 text-xs font-bold text-black">{workspaceRoleLabel}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 col-span-2 sm:col-span-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Security</p>
+                    <p className="mt-1 text-xs font-bold text-black">{securityHealthLabel}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="rounded-[28px] border border-black/[0.08] bg-[#FBFBFA] p-5 md:p-6">
+              {/* Avatar Section */}
+                <div className="flex flex-col items-start gap-5">
+                  <UserAvatar user={user} size="lg" rounded="rounded-[24px]" />
                   <input 
                     type="file" 
                     accept="image/png, image/jpeg, image/webp" 
@@ -458,70 +508,90 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                     onChange={handleAvatarChange} 
                     className="hidden" 
                   />
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingAvatar}
-                    className="rounded-full flex items-center justify-center gap-2 bg-[#F7F8F6] px-5 py-2.5 text-sm font-bold text-black hover:bg-white border border-black/[0.08] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
-                  >
-                    {isUploadingAvatar && <Loader2 size={16} className="animate-spin" />}
-                    {isUploadingAvatar ? 'Uploading...' : 'Upload new picture'}
-                  </button>
-                  {user?.avatarUrl && (
+                  <div>
+                    <p className="text-sm font-bold text-black">Profile photo</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
+                      A clear identity photo makes workspace ownership and activity logs easier to scan.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button 
-                      onClick={handleRemoveAvatar}
-                      disabled={isDeletingAvatar}
-                      className="rounded-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-colors outline-none disabled:opacity-50"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      className="rounded-full flex items-center justify-center gap-2 bg-white px-5 py-2.5 text-sm font-bold text-black hover:bg-black/[0.02] border border-black/[0.08] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
                     >
-                      {isDeletingAvatar ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                      Remove
+                      {isUploadingAvatar && <Loader2 size={16} className="animate-spin" />}
+                      {isUploadingAvatar ? 'Uploading...' : 'Upload new picture'}
                     </button>
-                  )}
-                </div>
-                <p className="mt-2 text-xs font-semibold text-secondary">JPG, PNG, or WebP. Max size 2MB.</p>
-                </div>
-              </div>
-
-              <div className="border-t border-black/[0.04]" />
-
-              {/* Profile Details */}
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-black">Full Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="h-11 w-full rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-sm font-bold text-black outline-none transition-all hover:bg-white focus:border-black/20 focus:bg-white focus:ring-2 focus:ring-black/5"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-black">Email Address</label>
-                  <input
-                    type="email"
-                    value={user?.email || ''}
-                    disabled
-                    className="h-11 w-full rounded-2xl border border-black/5 bg-black/[0.04] px-4 text-sm font-bold text-black/50 outline-none cursor-not-allowed"
-                  />
-                  <p className="text-xs font-semibold text-secondary">Email changes require a fresh verification flow and are not enabled yet.</p>
+                    {user?.avatarUrl && (
+                      <button 
+                        onClick={handleRemoveAvatar}
+                        disabled={isDeletingAvatar}
+                        className="rounded-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-colors outline-none disabled:opacity-50"
+                      >
+                        {isDeletingAvatar ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs font-semibold text-secondary">JPG, PNG, or WebP. Max size 2MB.</p>
                 </div>
               </div>
 
-              {profileMessage && (
-                <div className={`rounded-xl px-4 py-3 text-sm font-bold ${profileMessage.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {profileMessage.text}
+              <div className="space-y-7 rounded-[28px] border border-black/[0.08] bg-white p-5 md:p-6">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-black">Full Name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="h-11 w-full rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-sm font-bold text-black outline-none transition-all hover:bg-white focus:border-black/20 focus:bg-white focus:ring-2 focus:ring-black/5"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-black">Email Address</label>
+                    <input
+                      type="email"
+                      value={user?.email || ''}
+                      disabled
+                      className="h-11 w-full rounded-2xl border border-black/5 bg-black/[0.04] px-4 text-sm font-bold text-black/50 outline-none cursor-not-allowed"
+                    />
+                    <p className="text-xs font-semibold text-secondary">Email changes require a fresh verification flow and are not enabled yet.</p>
+                  </div>
                 </div>
-              )}
 
-              <div className="flex justify-end pt-4">
-                <button 
-                  onClick={handleUpdateProfile}
-                  disabled={isLoadingProfile}
-                  className="flex items-center gap-2 h-11 rounded-full bg-black px-6 text-sm font-bold text-white shadow-sm transition-all hover:bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-70"
-                >
-                  {isLoadingProfile && <Loader2 size={16} className="animate-spin" />}
-                  Save Changes
-                </button>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Verified email</p>
+                    <p className="mt-2 text-sm font-bold text-black">{user?.emailVerified ? 'Active' : 'Needs verification'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Plan</p>
+                    <p className="mt-2 text-sm font-bold text-black">{accountPlanLabel}</p>
+                  </div>
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Security</p>
+                    <p className="mt-2 text-sm font-bold text-black">{securityHealthLabel}</p>
+                  </div>
+                </div>
+
+                {profileMessage && (
+                  <div className={`rounded-xl px-4 py-3 text-sm font-bold ${profileMessage.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {profileMessage.text}
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2">
+                  <button 
+                    onClick={handleUpdateProfile}
+                    disabled={isLoadingProfile}
+                    className="flex items-center gap-2 h-11 rounded-full bg-black px-6 text-sm font-bold text-white shadow-sm transition-all hover:bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-70"
+                  >
+                    {isLoadingProfile && <Loader2 size={16} className="animate-spin" />}
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           </DashboardCard>
@@ -708,17 +778,36 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
             </DashboardCard>
 
             <DashboardCard className="p-5 md:p-7">
-              <h3 className="text-2xl font-bold tracking-tighter text-black mb-6">Additional Security</h3>
-              
-                <div className="max-w-xl space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Account protection</p>
+                  <h3 className="mt-2 text-2xl font-bold tracking-tighter text-black">Additional Security</h3>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-secondary">
+                    Use an authenticator app and recovery codes to keep sign-in protected even if your password is exposed.
+                  </p>
+                </div>
+                <div className="grid min-w-[220px] grid-cols-2 gap-3 self-start md:grid-cols-1">
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-secondary">Status</p>
+                    <p className="mt-2 text-sm font-bold text-black">{twoFA ? 'Protected' : 'Not enabled'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-black/[0.08] bg-[#F7F8F6] px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-secondary">Backup codes</p>
+                    <p className="mt-2 text-sm font-bold text-black">{twoFA ? (twoFactorState.backupCodeCountRemaining ?? 0) : 0} remaining</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                <div className="space-y-6 rounded-[28px] border border-black/[0.08] bg-[#FBFBFA] p-5 md:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <p className="text-sm font-bold text-black">Two-Factor Authentication (2FA)</p>
-                      <p className="mt-1 text-xs font-semibold text-secondary">
+                      <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
                         Protect your account with an authenticator app and one-time backup codes.
                       </p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] ${
+                    <span className={`inline-flex items-center self-start rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] ${
                       twoFA ? 'bg-accent/20 text-black' : 'bg-black/[0.06] text-secondary'
                     }`}>
                       {twoFA ? 'Enabled' : 'Disabled'}
@@ -745,16 +834,16 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                   )}
 
                   {twoFactorSetup && (
-                    <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-[#F7F8F6] p-5">
+                    <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-white p-5 shadow-sm">
                       <div className="space-y-2">
                         <p className="text-sm font-bold text-black">Step 1: Scan the QR code</p>
                         <p className="text-xs font-semibold text-secondary">
                           Use Google Authenticator, Microsoft Authenticator, Authy, 1Password, or another compatible app.
                         </p>
                       </div>
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                        <img src={twoFactorSetup.qrCodeDataUrl} alt="Two-factor QR code" className="h-44 w-44 rounded-2xl border border-black/[0.08] bg-white p-3" />
-                        <div className="space-y-3">
+                      <div className="grid gap-4 lg:grid-cols-[176px_minmax(0,1fr)] lg:items-start">
+                        <img src={twoFactorSetup.qrCodeDataUrl} alt="Two-factor QR code" className="h-44 w-44 rounded-2xl border border-black/[0.08] bg-[#F7F8F6] p-3" />
+                        <div className="space-y-3 min-w-0">
                           <div>
                             <p className="text-xs font-bold uppercase tracking-[0.18em] text-secondary">Manual setup key</p>
                             <p className="mt-2 rounded-2xl border border-black/[0.08] bg-white px-4 py-3 font-mono text-sm font-bold tracking-[0.18em] text-black">
@@ -800,7 +889,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
 
                   {twoFA && (
                     <>
-                      <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-[#F7F8F6] p-5">
+                      <div className="space-y-4 rounded-[22px] border border-black/[0.08] bg-white p-5 shadow-sm">
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <p className="text-sm font-bold text-black">Backup codes</p>
@@ -888,18 +977,24 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                       </div>
                     </>
                   )}
+                </div>
 
-                <div className="border-t border-black/[0.08]" />
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-black">Active Sessions</p>
-                    <p className="mt-1 text-xs font-semibold text-secondary">You are currently logged in on this device.</p>
+                <div className="space-y-4 rounded-[28px] border border-black/[0.08] bg-white p-5 md:p-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/[0.04] text-black">
+                      <Shield size={18} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-black">Active Sessions</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-secondary">
+                        You are currently logged in on this device. Sign out everywhere if you suspect another device still has access.
+                      </p>
+                    </div>
                   </div>
                   <button 
                     onClick={handleLogoutEverywhere}
                     disabled={isLoadingLogoutAll}
-                    className="flex items-center gap-2 h-10 rounded-xl bg-red-50 px-4 text-xs font-bold uppercase tracking-wider text-red-600 transition-all hover:bg-red-100 hover:text-red-700 outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:opacity-50"
+                    className="flex h-10 items-center justify-center gap-2 rounded-xl bg-red-50 px-4 text-xs font-bold uppercase tracking-wider text-red-600 transition-all hover:bg-red-100 hover:text-red-700 outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:opacity-50"
                   >
                     {isLoadingLogoutAll && <Loader2 size={14} className="animate-spin" />}
                     Log out everywhere
