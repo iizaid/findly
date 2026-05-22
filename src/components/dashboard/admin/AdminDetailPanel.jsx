@@ -148,7 +148,7 @@ const TechnicalSection = ({ data }) => {
   );
 };
 
-const signalGroupLabels = {
+const findingGroupLabels = {
   OPPORTUNITY: 'Opportunities',
   WARNING: 'Warnings',
   ERROR: 'Issues',
@@ -156,13 +156,19 @@ const signalGroupLabels = {
   INFO: 'Info',
 };
 
-const signalBadgeClass = {
+const findingBadgeClass = {
   OPPORTUNITY: 'bg-amber-50 text-amber-700',
   WARNING: 'bg-orange-50 text-orange-700',
   ERROR: 'bg-red-50 text-red-700',
   POSITIVE: 'bg-emerald-50 text-emerald-700',
   INFO: 'bg-blue-50 text-blue-700',
 };
+
+const formatFindingKey = (value = '') => value
+  .replace(/_/g, ' ')
+  .replace(/\bSIGNALS?\b/gi, '')
+  .replace(/\s{2,}/g, ' ')
+  .trim();
 
 const WebsiteIntelligenceCard = ({ lead }) => {
   const [loading, setLoading] = useState(false);
@@ -268,17 +274,17 @@ const WebsiteIntelligenceCard = ({ lead }) => {
           {intelligence.observedAt && <Row label="Checked">{fullDate(intelligence.observedAt)}</Row>}
           {intelligence.metadata?.title && <Row label="Title">{intelligence.metadata.title}</Row>}
 
-          {Object.entries(groupedSignals).map(([severity, signals]) => (
-            signals.length > 0 && (
+          {Object.entries(groupedSignals).map(([severity, findings]) => (
+            findings.length > 0 && (
               <div key={severity} className="rounded-[12px] border border-black/[0.04] bg-white px-3 py-2">
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-secondary">{signalGroupLabels[severity]}</p>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-secondary">{findingGroupLabels[severity]}</p>
                 <div className="space-y-2">
-                  {signals.slice(0, 5).map((signal) => (
-                    <div key={`${signal.key}-${signal.reason}`} className="text-[12px] leading-relaxed">
-                      <span className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${signalBadgeClass[severity]}`}>
-                        {signal.key.replace(/_/g, ' ')}
+                  {findings.slice(0, 5).map((finding) => (
+                    <div key={`${finding.key}-${finding.reason}`} className="text-[12px] leading-relaxed">
+                      <span className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${findingBadgeClass[severity]}`}>
+                        {formatFindingKey(finding.key)}
                       </span>
-                      <span className="font-semibold text-black/65">{signal.reason}</span>
+                      <span className="font-semibold text-black/65">{finding.reason}</span>
                     </div>
                   ))}
                 </div>

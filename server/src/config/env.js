@@ -233,6 +233,23 @@ export const envSchema = z.object({
   WEBSITE_FETCH_MAX_BYTES: z.coerce.number().int().min(10_000).max(2_000_000).default(512_000),
   WEBSITE_FETCH_MAX_REDIRECTS: z.coerce.number().int().min(0).max(10).default(3),
   WEBSITE_ENRICHMENT_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  GEO_ENRICHMENT_ENABLED: createBooleanParser(false),
+  GEO_PROVIDER_PRIMARY: z.enum(['geoapify', 'locationiq', 'none']).default('geoapify'),
+  GEO_PROVIDER_FALLBACK: z.enum(['geoapify', 'locationiq', 'none']).default('locationiq'),
+  GEOAPIFY_API_KEY: z.string().optional(),
+  GEOAPIFY_BASE_URL: z.string().url().default('https://api.geoapify.com/v1/geocode/search'),
+  GEOAPIFY_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(8000),
+  LOCATIONIQ_API_KEY: z.string().optional(),
+  LOCATIONIQ_BASE_URL: z.string().url().default('https://us1.locationiq.com/v1/search'),
+  LOCATIONIQ_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(8000),
+  GEO_CACHE_TTL_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+  GEO_MIN_CONFIDENCE_TO_MAP: z.coerce.number().int().min(1).max(100).default(70),
+  GEO_MIN_CONFIDENCE_TO_SAVE: z.coerce.number().int().min(1).max(100).default(55),
+  GEO_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(200).default(50),
+  GEO_ENRICHMENT_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
+  GEO_ENRICHMENT_ITEM_DELAY_MS: z.coerce.number().int().min(0).max(10000).default(250),
+  GEO_PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+  GEO_PROVIDER_FAIL_OPEN: createBooleanParser(true),
   OPEN_WEB_EVIDENCE_ENABLED: createBooleanParser(true),
   OPEN_WEB_EVIDENCE_PROVIDER: z.enum(['common_crawl']).default('common_crawl'),
   OPEN_WEB_EVIDENCE_FAIL_OPEN: createBooleanParser(true),
@@ -373,6 +390,27 @@ export const envSchema = z.object({
         code: 'custom',
         path: [field],
         message: `${field} is required in production.`,
+      });
+    }
+  }
+
+  if (value.GEO_ENRICHMENT_ENABLED) {
+    const usesGeoapify = value.GEO_PROVIDER_PRIMARY === 'geoapify' || value.GEO_PROVIDER_FALLBACK === 'geoapify';
+    const usesLocationIq = value.GEO_PROVIDER_PRIMARY === 'locationiq' || value.GEO_PROVIDER_FALLBACK === 'locationiq';
+
+    if (usesGeoapify && !value.GEOAPIFY_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GEOAPIFY_API_KEY'],
+        message: 'GEOAPIFY_API_KEY is required when Geoapify geocoding is enabled in production.',
+      });
+    }
+
+    if (usesLocationIq && !value.LOCATIONIQ_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LOCATIONIQ_API_KEY'],
+        message: 'LOCATIONIQ_API_KEY is required when LocationIQ geocoding is enabled in production.',
       });
     }
   }

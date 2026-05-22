@@ -9,9 +9,9 @@ import {
   Radar,
 } from 'lucide-react';
 
-const signals = [
+const indicators = [
   { icon: Camera, label: 'Instagram active', value: 'recent posts and visual products', points: '+18' },
-  { icon: MapPin, label: 'Google rating 4.7', value: 'strong trust signal from public reviews', points: '+16' },
+  { icon: MapPin, label: 'Google rating 4.7', value: 'strong trust from public reviews', points: '+16' },
   { icon: Globe2, label: 'No website found', value: 'no central page for menu, offers, or SEO', points: '+28' },
   { icon: MessageCircle, label: 'WhatsApp-only flow', value: 'orders depend on manual replies', points: '+14' },
 ];
@@ -24,8 +24,8 @@ const outputs = [
 
 const MotionDiv = motion.div;
 
-const SignalTile = ({ signal, index }) => {
-  const Icon = signal.icon;
+const IndicatorTile = ({ item, index }) => {
+  const Icon = item.icon;
 
   return (
     <MotionDiv
@@ -42,10 +42,10 @@ const SignalTile = ({ signal, index }) => {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-black">{signal.label}</p>
-            <span className="rounded-full bg-accent px-2 py-1 text-[11px] font-bold text-black">{signal.points}</span>
+            <p className="text-sm font-semibold text-black">{item.label}</p>
+            <span className="rounded-full bg-accent px-2 py-1 text-[11px] font-bold text-black">{item.points}</span>
           </div>
-          <p className="mt-0.5 text-xs font-medium leading-5 text-secondary">{signal.value}</p>
+          <p className="mt-0.5 text-xs font-medium leading-5 text-secondary">{item.value}</p>
         </div>
       </div>
     </MotionDiv>
@@ -125,8 +125,8 @@ const OpportunityEngineSection = ({ onNotice }) => {
             </svg>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {signals.map((signal, index) => (
-                <SignalTile key={signal.label} signal={signal} index={index} />
+              {indicators.map((item, index) => (
+                <IndicatorTile key={item.label} item={item} index={index} />
               ))}
             </div>
 

@@ -23,6 +23,15 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => (
         View Lead List
         <ArrowRight size={16} />
       </button>
+      {resultSummary.leadListId && (
+        <button
+          type="button"
+          onClick={() => onNavigate?.(`/dashboard/map?listId=${resultSummary.leadListId}`)}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/[0.08] bg-white px-5 text-sm font-bold text-black transition-colors hover:bg-[#F6FFD2]"
+        >
+          View on Map
+        </button>
+      )}
       <button
         type="button"
         onClick={onStartNew}

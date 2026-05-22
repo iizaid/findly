@@ -1,5 +1,6 @@
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { logger } from '../../utils/logger.js';
+import { processGeoEnrichmentJob, GEO_ENRICHMENT_JOB_TYPE } from '../geo/geoEnrichment.service.js';
 import { runCampaign } from '../search/search.service.js';
 import { processWebsiteEnrichmentJob, WEBSITE_ENRICHMENT_JOB_TYPE } from '../search/websiteEnrichmentJob.service.js';
 import { claimNextJob, markJobCompleted, markJobFailed } from './jobQueue.service.js';
@@ -18,6 +19,10 @@ export const processJob = async (job) => {
 
     if (job.type === WEBSITE_ENRICHMENT_JOB_TYPE) {
       return processWebsiteEnrichmentJob({ jobId: job.id, useExistingLock: true });
+    }
+
+    if (job.type === GEO_ENRICHMENT_JOB_TYPE) {
+      return processGeoEnrichmentJob({ jobId: job.id });
     }
 
     throw new AppError(errorCodes.VALIDATION_ERROR, `Unsupported job type: ${job.type}.`, 400);

@@ -75,6 +75,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [page, setPage] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
 
   useEffect(() => {
@@ -162,6 +163,10 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   }, [selectedListId, filterSource, filterCity, filterScore, filterStatus, filterMissingWeb, sortBy, sortOrder]);
 
   useEffect(() => {
+    setSelectedLeadIds([]);
+  }, [selectedListId]);
+
+  useEffect(() => {
     if (!selectedListId) {
       setActiveList(null);
       return;
@@ -195,6 +200,13 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   };
 
   const getTargetId = (lead) => lead.leadListItemId || lead.id;
+  const toggleLeadSelection = (leadId) => {
+    setSelectedLeadIds((current) => (
+      current.includes(leadId)
+        ? current.filter((item) => item !== leadId)
+        : [...current, leadId]
+    ));
+  };
 
   const updateStatus = async (lead, newStatus) => {
     const targetId = getTargetId(lead);
@@ -431,9 +443,40 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                 Sources: {listPlatformLabel(activeList)}
               </p>
             </div>
-            <span className="inline-flex h-8 items-center rounded-lg bg-black/[0.04] px-3 text-[12px] font-medium text-black/70">
-              Showing {leads.length} of {totalLeads || activeList.leadCount || 0} leads
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex h-8 items-center rounded-lg bg-black/[0.04] px-3 text-[12px] font-medium text-black/70">
+                Showing {leads.length} of {totalLeads || activeList.leadCount || 0} leads
+              </span>
+              <button
+                type="button"
+                onClick={() => onNavigate?.(`/dashboard/map?listId=${activeList.id}`)}
+                className="inline-flex h-8 items-center rounded-lg bg-[#B6FF00] px-3 text-[12px] font-bold text-black transition-colors hover:bg-[#C8FF3D]"
+              >
+                View list on map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedLeadIds.length > 0 && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#B6FF00]/70 bg-[#F6FFD2] px-4 py-3">
+          <p className="text-[13px] font-bold text-black">{selectedLeadIds.length} selected for Lead Map</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate?.(`/dashboard/map?leadIds=${selectedLeadIds.join(',')}`)}
+              className="inline-flex h-10 items-center rounded-xl bg-black px-4 text-[13px] font-semibold text-white transition-colors hover:bg-black/85"
+            >
+              View selected on map
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedLeadIds([])}
+              className="inline-flex h-10 items-center rounded-xl border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
+            >
+              Clear selection
+            </button>
           </div>
         </div>
       )}
@@ -477,7 +520,8 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       <div className="mt-5 overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-sm ring-1 ring-black/5">
         <div className="overflow-x-auto">
           <div className="min-w-[1200px]">
-            <div className="grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] gap-2 border-b border-black/[0.04] bg-[#FBFBFB] px-5 py-3 text-[12px] font-medium text-black/50">
+            <div className="grid grid-cols-[0.36fr_1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] gap-2 border-b border-black/[0.04] bg-[#FBFBFB] px-5 py-3 text-[12px] font-medium text-black/50">
+              <span>Select</span>
               <span>Business</span>
               <span>Category</span>
               <span>City</span>
@@ -509,8 +553,17 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                     const googleMapsUrl = safeExternalUrl(lead.googleMapsUrl);
                     
                     return (
-                      <div key={targetId} className="flex flex-col">
-                        <div className={`grid grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-black/90 transition-colors ${isExpanded ? 'bg-black/[0.02]' : 'hover:bg-black/[0.01]'}`}>
+                        <div key={targetId} className="flex flex-col">
+                        <div className={`grid grid-cols-[0.36fr_1.35fr_0.85fr_0.65fr_0.65fr_0.65fr_0.7fr_0.75fr_0.8fr_0.55fr_0.65fr_0.65fr] items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-black/90 transition-colors ${isExpanded ? 'bg-black/[0.02]' : 'hover:bg-black/[0.01]'}`}>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedLeadIds.includes(lead.id)}
+                              onChange={() => toggleLeadSelection(lead.id)}
+                              className="h-4 w-4 rounded border-black/20 accent-black"
+                              aria-label={`Select ${lead.businessName}`}
+                            />
+                          </div>
                           <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
                             <p className="truncate font-semibold text-black">{lead.businessName}</p>
                             {lead.rating && <p className="text-[11px] text-black/50 mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}

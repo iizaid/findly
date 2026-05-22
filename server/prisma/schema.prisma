@@ -59,6 +59,7 @@ enum JobType {
   SEARCH_CAMPAIGN_RUN
   CAMPAIGN_ANALYSIS_RUN
   WEBSITE_ENRICHMENT_RUN
+  GEO_ENRICHMENT_RUN
   EXPORT_RUN
 }
 
@@ -260,6 +261,31 @@ model OpenWebEvidenceCache {
   @@index([normalizedDomain, expiresAt])
   @@index([normalizedUrl, expiresAt])
   @@index([confidenceScore])
+}
+
+model GeoLocationCache {
+  id                String   @id @default(cuid())
+  normalizedQuery   String
+  normalizedCountry String?
+  normalizedCity    String?
+  provider          String
+  providerPlaceId   String?
+  latitude          Float
+  longitude         Float
+  geoPoint          Unsupported("geography(Point,4326)")?
+  confidence        Int      @default(0)
+  accuracy          String
+  resultType        String?
+  normalizedAddress String?
+  sourceHash        String
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, sourceHash])
+  @@index([normalizedQuery])
+  @@index([provider, confidence])
+  @@index([expiresAt])
 }
 
 model EmailVerificationToken {
@@ -743,6 +769,17 @@ model LeadCatalog {
   reviewCount           Int?
   latitude              Float?
   longitude             Float?
+  geoPoint              Unsupported("geography(Point,4326)")?
+  geoStatus             String    @default("NOT_RESOLVED")
+  geoSource             String?
+  geoProvider           String?
+  geoConfidence         Int?
+  geoAccuracy           String?
+  geoAddressNormalized  String?
+  geoResolvedAt         DateTime?
+  geoFailedAt           DateTime?
+  geoFailureReason      String?
+  geoUpdatedAt          DateTime?
   normalizedFingerprint String?
   rawData               Json?
   detectedSignals       Json?
@@ -768,6 +805,9 @@ model LeadCatalog {
   @@index([city])
   @@index([country])
   @@index([country, city])
+  @@index([geoStatus])
+  @@index([geoConfidence])
+  @@index([geoResolvedAt])
   @@index([importedAt])
   @@index([createdAt])
 }
@@ -800,6 +840,17 @@ model Lead {
   reviewCount           Int?
   latitude              Float?
   longitude             Float?
+  geoPoint              Unsupported("geography(Point,4326)")?
+  geoStatus             String     @default("NOT_RESOLVED")
+  geoSource             String?
+  geoProvider           String?
+  geoConfidence         Int?
+  geoAccuracy           String?
+  geoAddressNormalized  String?
+  geoResolvedAt         DateTime?
+  geoFailedAt           DateTime?
+  geoFailureReason      String?
+  geoUpdatedAt          DateTime?
   normalizedFingerprint String?
   rawData               Json?
   detectedSignals       Json?
@@ -838,6 +889,9 @@ model Lead {
   @@index([userId, workspaceId, status])
   @@index([workspaceId, source, sourceId])
   @@index([country, city])
+  @@index([geoStatus])
+  @@index([geoConfidence])
+  @@index([geoResolvedAt])
   @@index([importedAt])
   @@index([createdAt])
 }

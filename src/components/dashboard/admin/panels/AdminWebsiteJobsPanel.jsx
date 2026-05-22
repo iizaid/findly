@@ -206,7 +206,7 @@ const AdminWebsiteJobsPanel = () => {
                 <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr] bg-black/[0.02] px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-secondary">
                   <span>Lead</span>
                   <span>Status</span>
-                  <span>Signals</span>
+                  <span>Findings</span>
                 </div>
                 {(activeJob.items || []).map((item) => (
                   <div key={item.id} className="grid grid-cols-[1.2fr_0.8fr_0.8fr] items-center gap-2 border-t border-black/[0.05] px-3 py-3 text-sm">

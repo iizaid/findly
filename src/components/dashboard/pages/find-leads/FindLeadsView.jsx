@@ -137,7 +137,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
               <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                 {search.sourcesLoading && (
                   <div className="rounded-2xl border border-black/5 bg-white px-4 py-3 text-[13px] font-medium text-black/50">
-                    Loading signal status...
+                    Loading source availability...
                   </div>
                 )}
                 {search.sourceOptions.map((source) => (

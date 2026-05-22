@@ -7,6 +7,7 @@ import {
   cleanupStaleJobs,
   heartbeatJob,
   markJobCancelled,
+  markJobCompleted,
   markJobFailed,
 } from '../modules/jobs/jobQueue.service.js';
 import {
@@ -15,15 +16,14 @@ import {
   markCampaignFailed,
 } from '../modules/search/campaignJob.service.js';
 import { runCampaign } from '../modules/search/search.service.js';
+import { GEO_ENRICHMENT_JOB_TYPE, processGeoEnrichmentJob } from '../modules/geo/geoEnrichment.service.js';
+import { processWebsiteEnrichmentJob, WEBSITE_ENRICHMENT_JOB_TYPE } from '../modules/search/websiteEnrichmentJob.service.js';
 
 const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
-export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search-worker-${randomUUID()}` } = {}) => {
-  const job = await claimNextJob({ workerId, type: 'SEARCH_CAMPAIGN_RUN' });
-  if (!job) return null;
-
+const processClaimedSearchJob = async ({ job, workerId }) => {
   const startedAt = Date.now();
   const campaignId = job.campaignId || job.payload?.campaignId;
 
@@ -83,6 +83,69 @@ export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search
   }
 };
 
+export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search-worker-${randomUUID()}` } = {}) => {
+  const job = await claimNextJob({ workerId, type: 'SEARCH_CAMPAIGN_RUN' });
+  if (!job) return null;
+  return processClaimedSearchJob({ job, workerId });
+};
+
+export const processNextWorkerJob = async ({ workerId = env.WORKER_ID || `search-worker-${randomUUID()}` } = {}) => {
+  const job = await claimNextJob({ workerId });
+  if (!job) return null;
+
+  if (job.type === 'SEARCH_CAMPAIGN_RUN') {
+    return processClaimedSearchJob({ job, workerId });
+  }
+
+  if (job.type === WEBSITE_ENRICHMENT_JOB_TYPE) {
+    const result = await processWebsiteEnrichmentJob({ jobId: job.id, useExistingLock: true });
+    logger.info('search_worker.job.completed', {
+      workerId,
+      jobId: job.id,
+      type: job.type,
+    });
+    return { jobId: job.id, status: 'COMPLETED', result };
+  }
+
+  if (job.type === GEO_ENRICHMENT_JOB_TYPE) {
+    try {
+      const summary = await processGeoEnrichmentJob({ jobId: job.id });
+      await markJobCompleted({
+        jobId: job.id,
+        payload: {
+          ...(job.payload || {}),
+          summary,
+        },
+      });
+      logger.info('search_worker.job.completed', {
+        workerId,
+        jobId: job.id,
+        type: job.type,
+        ...summary,
+      });
+      return { jobId: job.id, status: 'COMPLETED', result: summary };
+    } catch (error) {
+      const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
+      const errorMessage = error instanceof AppError ? error.message : 'Geo enrichment job failed.';
+      await markJobFailed({ jobId: job.id, errorCode, errorMessage }).catch(() => {});
+      logger.warn('search_worker.job.failed', {
+        workerId,
+        jobId: job.id,
+        type: job.type,
+        errorCode,
+      });
+      return { jobId: job.id, status: 'FAILED', errorCode };
+    }
+  }
+
+  await markJobFailed({
+    jobId: job.id,
+    errorCode: errorCodes.VALIDATION_ERROR,
+    errorMessage: `Unsupported job type: ${job.type}.`,
+  }).catch(() => {});
+  return { jobId: job.id, status: 'FAILED', errorCode: errorCodes.VALIDATION_ERROR };
+};
+
 export const createSearchWorker = ({
   workerId = env.WORKER_ID || `search-worker-${randomUUID()}`,
   concurrency = env.MAX_SEARCH_WORKER_CONCURRENCY,
@@ -108,7 +171,7 @@ export const createSearchWorker = ({
   };
 
   const launchOne = () => {
-    const promise = processNextSearchJob({ workerId })
+    const promise = processNextWorkerJob({ workerId })
       .catch((error) => {
         logger.error('search_worker.unhandled_job_error', {
           workerId,

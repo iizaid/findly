@@ -14,6 +14,7 @@ import { adminRouter } from './modules/admin/admin.routes.js';
 import { creditRouter } from './modules/credits/credit.routes.js';
 import { csrfRouter } from './modules/csrf/csrf.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { geoRouter, leadMapRouter } from './modules/geo/geo.routes.js';
 import { healthRouter, readyRouter } from './modules/health/health.routes.js';
 import { jobRouter } from './modules/jobs/job.routes.js';
 import { sessionRouter } from './modules/sessions/session.routes.js';
@@ -57,6 +58,8 @@ export const createApp = () => {
   app.use('/api/workspaces', workspaceRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/jobs', jobRouter);
+  app.use('/api/geo', geoRouter);
+  app.use('/api/lead-map', leadMapRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/users', usersRouter);
 

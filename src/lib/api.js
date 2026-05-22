@@ -146,6 +146,30 @@ export const processWebsiteEnrichmentJob = (jobId) => apiRequest(
   { method: 'POST', body: JSON.stringify({}) },
 );
 
+export const getLeadMap = ({ leadIds = [], listId = null } = {}) => {
+  const params = new URLSearchParams();
+  if (leadIds.length) params.set('leadIds', leadIds.join(','));
+  if (listId) params.set('listId', listId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest(`/api/lead-map${suffix}`);
+};
+
+export const startLeadMapEnrichment = ({ leadIds = [], listId = null, forceRefresh = false } = {}) => apiRequest(
+  '/api/lead-map/enrich',
+  {
+    method: 'POST',
+    body: JSON.stringify({
+      leadIds,
+      ...(listId ? { listId } : {}),
+      forceRefresh,
+    }),
+  },
+);
+
+export const getGeoEnrichmentJob = (jobId) => apiRequest(
+  `/api/geo/enrichment/jobs/${encodeURIComponent(jobId)}`,
+);
+
 export const getCsrfToken = async () => {
   csrfTokenPromise ??= fetch(`${getApiBaseUrl()}/api/csrf-token`, {
     credentials: 'include',
