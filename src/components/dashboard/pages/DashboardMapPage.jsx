@@ -6,7 +6,7 @@ import {
   AlertCircle,
   ExternalLink,
   Loader2,
-  Map,
+  Map as MapIcon,
   MapPin,
   RefreshCcw,
   Route,
@@ -112,7 +112,7 @@ const DashboardMapPage = ({ onNavigate }) => {
   const [jobState, setJobState] = useState({ submitting: false, polling: false, message: '' });
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const markersRef = useRef(new Map());
+  const markersRef = useRef(new globalThis.Map());
 
   useEffect(() => {
     if (!selection.leadIds.length && !selection.listId) {
@@ -501,7 +501,7 @@ const DashboardMapPage = ({ onNavigate }) => {
 
         <DashboardCard className="!bg-black p-5 text-white md:p-6">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#B6FF00] text-black">
-            <Map size={22} />
+            <MapIcon size={22} />
           </div>
           <h3 className="mt-5 text-2xl font-bold tracking-tight">No fake markers.</h3>
           <p className="mt-3 text-sm font-semibold leading-7 text-white/65">
