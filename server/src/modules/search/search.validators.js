@@ -16,6 +16,18 @@ const publicCampaignSourceSchema = z.enum([
   'X',
 ]);
 
+const presenceTargetSchema = z.enum([
+  'INSTAGRAM',
+  'FACEBOOK',
+  'LINKEDIN',
+  'TIKTOK',
+  'YELP',
+  'TRIPADVISOR',
+  'YOUTUBE',
+  'X',
+  'REDDIT',
+]);
+
 const sourceSchema = publicCampaignSourceSchema;
 
 export const createProfileSchema = z.object({
@@ -40,6 +52,7 @@ export const createCampaignSchema = z.object({
     city: z.string().trim().min(1).max(80).optional(),
     businessTypes: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
     sources: z.array(publicCampaignSourceSchema).min(1).max(10).optional(),
+    presenceTargets: z.array(presenceTargetSchema).max(10).optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
     requestedLimit: z.number().int().min(1).max(100).optional().default(20),
   }),

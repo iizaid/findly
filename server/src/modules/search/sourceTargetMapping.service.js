@@ -16,6 +16,30 @@ export const SOURCE_TARGETS = Object.freeze({
   CSV: 'CSV',
 });
 
+export const DISCOVERY_SOURCE_KEYS = new Set([
+  'GOOGLE_MAPS',
+  'WEBSITE',
+  'SERPAPI',
+  'LOCAL_DATASET',
+  'CSV',
+  'DATASET_IMPORT',
+  'INSTAGRAM_DATASET',
+  'GOOGLE_MAPS_DATASET',
+  'MANUAL_ADMIN',
+]);
+
+export const PRESENCE_TARGET_KEYS = new Set([
+  'INSTAGRAM',
+  'TIKTOK',
+  'FACEBOOK',
+  'REDDIT',
+  'LINKEDIN',
+  'YOUTUBE',
+  'X',
+  'TRIPADVISOR',
+  'YELP',
+]);
+
 export const DISCOVERY_METHODS = Object.freeze({
   LOCAL_DATASET: 'LOCAL_DATASET',
   CSV_IMPORT: 'CSV_IMPORT',
@@ -40,7 +64,7 @@ const signalReasonFor = (source) => {
   const optionalApi = source === 'REDDIT' || source === 'YELP' || source === 'TRIPADVISOR'
     ? ' or an optional approved API'
     : ' or an optional official API';
-  return `${source} is treated as a platform signal target. Direct scraping and login automation are disabled; future discovery uses compliant search-result metadata${optionalApi}.`;
+  return `${source} is treated as a public presence target. Direct scraping and login automation are disabled; discovery uses compliant search-result metadata${optionalApi}.`;
 };
 
 const DATASET_SOURCES = new Set(['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN']);
@@ -105,7 +129,7 @@ const buildMapping = (source) => {
       enrichmentOnly: false,
       importOnly: false,
       reason: signalReasonFor(source),
-      notes: 'Local cache is used now; future compliant search-result metadata can produce LeadEvidence for this signal.',
+      notes: 'Local cache is used now; compliant search-result metadata can produce LeadEvidence for this public presence target.',
     };
   }
 
@@ -116,11 +140,11 @@ const buildMapping = (source) => {
       discoveryMethod: DISCOVERY_METHODS.WEBSITE_METADATA,
       adapter: 'WEBSITE',
       runnable: false,
-      targetOnly: true,
+      targetOnly: false,
       directPlatformApi: false,
-      enrichmentOnly: true,
+      enrichmentOnly: false,
       importOnly: false,
-      notes: 'Website metadata is an enrichment signal, not a standalone campaign source.',
+      notes: 'Website discovery uses Findly’s business index first and website metadata enrichment when available.',
     };
   }
 
@@ -142,22 +166,49 @@ export const normalizeSelectedSources = (sources = []) => {
   return [...new Set(input.map(normalizeSource).filter(Boolean))];
 };
 
+export const normalizePresenceTargets = (targets = []) => normalizeSelectedSources(targets)
+  .filter((target) => PRESENCE_TARGET_KEYS.has(target));
+
+export const normalizeCampaignTargeting = (campaign = {}) => {
+  const rawSources = normalizeSelectedSources(campaign.sources || []);
+  const filterTargets = campaign?.filters?.presenceTargets;
+  const rawPresenceTargets = normalizePresenceTargets([
+    ...(Array.isArray(campaign.presenceTargets) ? campaign.presenceTargets : []),
+    ...(Array.isArray(filterTargets) ? filterTargets : []),
+  ]);
+  const legacyPresenceTargets = rawSources.filter((source) => PRESENCE_TARGET_KEYS.has(source));
+  const discoverySources = rawSources.filter((source) => DISCOVERY_SOURCE_KEYS.has(source));
+  const presenceTargets = [...new Set([...rawPresenceTargets, ...legacyPresenceTargets])];
+
+  return {
+    rawSources,
+    discoverySources: discoverySources.length > 0
+      ? discoverySources
+      : (presenceTargets.length > 0 ? ['LOCAL_DATASET'] : []),
+    presenceTargets,
+    legacyPresenceTargets,
+  };
+};
+
 export const mapTargetSourcesToDiscoveryMethods = (sources = []) => normalizeSelectedSources(sources).map(buildMapping);
 
 export const buildDiscoveryPlan = ({ campaign }) => {
-  const mappings = mapTargetSourcesToDiscoveryMethods(campaign?.sources || []);
-  const targetSources = mappings.map((item) => item.targetSource).filter(Boolean);
+  const { discoverySources, presenceTargets } = normalizeCampaignTargeting(campaign);
+  const mappings = mapTargetSourcesToDiscoveryMethods([...discoverySources, ...presenceTargets]);
+  const targetSources = [...new Set(mappings.map((item) => item.targetSource).filter(Boolean))];
   const geography = [campaign?.city, campaign?.country].filter(Boolean).join(', ') || null;
   const businessTypes = Array.isArray(campaign?.businessTypes) ? campaign.businessTypes : [];
   const expandedQuery = [
     campaign?.query,
     businessTypes.join(', '),
     geography,
-    mappings.map((item) => item.targetSource).join(', '),
+    presenceTargets.length ? `focus on ${presenceTargets.join(', ')}` : null,
   ].filter(Boolean).join(' | ') || 'Findly discovery query';
 
   return {
     campaignId: campaign?.id || null,
+    discoverySources,
+    presenceTargets,
     targetSources,
     mappings,
     runnableMappings: mappings.filter((item) => item.runnable),

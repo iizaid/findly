@@ -25,7 +25,7 @@ import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 import { GooglePlacesAdapter } from './adapters/GooglePlacesAdapter.js';
 import { SerpAdapter } from './adapters/SerpAdapter.js';
 import { env } from '../../config/env.js';
-import { buildDiscoveryPlan } from './sourceTargetMapping.service.js';
+import { buildDiscoveryPlan, normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 import { assertDiscoveryBudget } from './campaignBudget.service.js';
 import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
 import { promoteHighConfidenceEvidenceBatch } from './evidencePromotion.service.js';
@@ -42,11 +42,11 @@ const SOURCE_TO_DISCOVERY_METHOD = {
   WEBSITE: 'WEBSITE_METADATA',
 };
 
-const fallbackReasonFor = (sources = []) => {
+const fallbackReasonFor = (sources = [], presenceTargets = []) => {
   if (sources.includes('GOOGLE_MAPS')) return 'GOOGLE_PLACES_NOT_CONNECTED_USING_LOCAL_CACHE';
   if (sources.includes('SERPAPI')) return 'SEARCH_METADATA_DISCOVERY_DISABLED_USING_LOCAL_CACHE';
-  if (sources.some((source) => ['INSTAGRAM', 'FACEBOOK', 'TIKTOK', 'LINKEDIN', 'YOUTUBE', 'X', 'TRIPADVISOR', 'YELP', 'REDDIT'].includes(source))) {
-    return 'PLATFORM_SIGNAL_TARGET_USING_LOCAL_CACHE';
+  if (presenceTargets.some((source) => ['INSTAGRAM', 'FACEBOOK', 'TIKTOK', 'LINKEDIN', 'YOUTUBE', 'X', 'TRIPADVISOR', 'YELP', 'REDDIT'].includes(source))) {
+    return 'PRESENCE_TARGET_USING_LOCAL_CACHE';
   }
   if (sources.includes('WEBSITE')) return 'WEBSITE_ENRICHMENT_SEARCH_NOT_CONNECTED';
   return 'PROVIDERS_NOT_CONNECTED';
@@ -142,7 +142,7 @@ const runExternalDiscoveryIfNeeded = async ({ campaign, _localResults, _evidence
     } else if (plan.maxQueriesAllowed > 0) {
       try {
         const adapter = new SerpAdapter(campaign, {
-          targetSources: campaign.sources.filter((source) => SEARCH_METADATA_SOURCE_KEYS.includes(source)),
+          targetSources: normalizeCampaignTargeting(campaign).presenceTargets.filter((source) => SEARCH_METADATA_SOURCE_KEYS.includes(source)),
           missingResultCount: Math.min(missingResultCount, plan.maxExternalResults),
         });
         candidates.push(...await adapter.run());
@@ -333,12 +333,23 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     throw new AppError(code, `Campaign cannot be run while status is ${campaign.status}.`, 409);
   }
 
-  const sources = campaign.sources || [];
+  const targeting = normalizeCampaignTargeting(campaign);
+  const sources = targeting.discoverySources;
+  const presenceTargets = targeting.presenceTargets;
   if (sources.length === 0) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Campaign requires at least one source.', 400);
   }
 
-  const discoveryPlan = buildDiscoveryPlan({ campaign });
+  const normalizedCampaign = {
+    ...campaign,
+    sources,
+    filters: {
+      ...(campaign.filters || {}),
+      presenceTargets,
+    },
+  };
+
+  const discoveryPlan = buildDiscoveryPlan({ campaign: normalizedCampaign });
   const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
   const externalSourceKeys = sources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = externalSourceKeys.map((source) => ({ source, ...getRunnableAdapter(source) }));
@@ -356,11 +367,11 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
     }
     return runLocalDatasetCampaign({
-      campaign,
+      campaign: normalizedCampaign,
       userId,
       jobId,
       fallbackUsed: !localDatasetRequested,
-      platformsRequested: sources,
+      platformsRequested: [...new Set([...sources, ...presenceTargets])],
       discoveryPlan,
     });
   }
@@ -381,7 +392,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
   }
   assertDiscoveryBudget({
-    campaign,
+    campaign: normalizedCampaign,
     plannedDiscoveryCalls: runnableExternalSources.length,
     discoveryMethod: runnableExternalSources[0]?.source ? SOURCE_TO_DISCOVERY_METHOD[runnableExternalSources[0].source] : 'UNKNOWN',
   });
@@ -406,7 +417,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         where: { id: campaign.id },
         data: { lastStep: `Searching ${source.status.label}` },
       });
-      const adapter = new source.Adapter(campaign);
+      const adapter = new source.Adapter(normalizedCampaign);
       normalizedLeadGroups.push(...await adapter.run());
       await assertNotCancelled({ jobId, campaignId: campaign.id });
     }
@@ -621,7 +632,9 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     },
   });
   const sourceRequested = platformsRequested.join(',');
-  const fallbackReason = fallbackUsed ? fallbackReasonFor(platformsRequested) : null;
+  const fallbackReason = fallbackUsed
+    ? fallbackReasonFor(campaign.sources || [], campaign.filters?.presenceTargets || [])
+    : null;
   assertDiscoveryBudget({
     campaign,
     plannedDiscoveryCalls: 1,
@@ -634,7 +647,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       campaignId: campaign.id,
       progressCurrent: 0,
       progressTotal: campaign.requestedLimit || 20,
-      lastStep: 'Searching local business index for selected signals',
+      lastStep: 'Searching local business index for the selected focus',
     });
     const matchedLeads = await adapter.run();
     await assertNotCancelled({ jobId, campaignId: campaign.id });
@@ -721,13 +734,13 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       lastStep: 'Scoring leads',
     });
     const message = estimatedTotalResults > 0
-      ? 'Search completed across selected platforms.'
-      : 'No matching local leads found yet. Try broader filters, fewer platform signals, or import more local data.';
+      ? 'Search completed across the selected discovery and focus setup.'
+      : 'No matching local leads found yet. Try broader filters, fewer focus targets, or import more local data.';
 
     const listNameParts = [
       Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
       campaign.city,
-      'Signal Targets',
+      'Focus',
     ].filter(Boolean);
 
     const leadListResult = await prisma.$transaction(async (tx) => {

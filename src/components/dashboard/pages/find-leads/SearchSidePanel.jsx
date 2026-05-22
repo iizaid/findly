@@ -1,18 +1,23 @@
 import { Database, Goal, MapPin, Sparkles } from 'lucide-react';
 import DashboardCard from '../../DashboardCard';
 
-const SearchSidePanel = ({ selectedPlatformCount, selectedPlatformNames }) => (
+const SearchSidePanel = ({
+  selectedDiscoveryCount,
+  selectedDiscoveryNames,
+  selectedPresenceCount,
+  selectedPresenceNames,
+}) => (
   <div className="space-y-5">
     <DashboardCard className="p-5 md:p-6">
       <p className="mt-2 text-[13px] font-semibold leading-relaxed text-black/50">
-        A focused search setup that turns your service, location, and source choices into a saved lead list.
+        A focused search setup that turns your service, location, discovery choices, and public presence focus into a saved lead list.
       </p>
       <div className="mt-6 grid gap-3">
         {[
           [Sparkles, 'Service fit', 'Matches leads to the service being sold.', 'bg-[#B6FF00] text-black'],
           [MapPin, 'Location intent', 'Country and governorate shape the search scope.', 'bg-[#B6FF00] text-black'],
-          [Database, 'Source mix', `${selectedPlatformCount} selected source${selectedPlatformCount === 1 ? '' : 's'}${selectedPlatformNames ? `: ${selectedPlatformNames}` : ''}.`, 'bg-[#B6FF00] text-black'],
-          [Goal, 'Opportunity goal', 'Prioritizes the focus behind the selected search goal.', 'bg-[#B6FF00] text-black'],
+          [Database, 'Search mix', `${selectedDiscoveryCount} selected source${selectedDiscoveryCount === 1 ? '' : 's'}${selectedDiscoveryNames ? `: ${selectedDiscoveryNames}` : ''}.`, 'bg-[#B6FF00] text-black'],
+          [Goal, 'Presence focus', `${selectedPresenceCount} selected focus target${selectedPresenceCount === 1 ? '' : 's'}${selectedPresenceNames ? `: ${selectedPresenceNames}` : ''}.`, 'bg-[#B6FF00] text-black'],
         ].map(([Icon, title, description, colorClass]) => (
           <div key={title} className="flex gap-3 rounded-xl border border-black/5 bg-black/[0.02] p-4">
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${colorClass}`}>

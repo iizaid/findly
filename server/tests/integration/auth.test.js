@@ -687,13 +687,13 @@ describe('Findly auth, verification, and foundation API', () => {
     const sourceResponse = await request(createApp()).get('/api/sources/status').expect(200);
     const googleMaps = sourceResponse.body.data.sources.find((source) => source.key === 'GOOGLE_MAPS');
     const website = sourceResponse.body.data.sources.find((source) => source.key === 'WEBSITE');
-    const reddit = sourceResponse.body.data.sources.find((source) => source.key === 'REDDIT');
+    const reddit = sourceResponse.body.data.presenceTargets.find((source) => source.key === 'REDDIT');
     expectNoUserFacingSourceDisclosure(sourceResponse.body.data);
     expect(googleMaps.status).toMatch(/^(ready|later|index_ready)$/);
     expect(googleMaps).not.toHaveProperty('apiKey');
     expect(website.available).toBe(true);
     expect(reddit).toBeTruthy();
-    expect(reddit.reason).toMatch(/business intelligence index|unified discovery later/);
+    expect(reddit.reason).toMatch(/guide discovery and analysis|login-based scraping/);
     if (process.env.REDDIT_CLIENT_SECRET) {
       expect(JSON.stringify(reddit)).not.toContain(process.env.REDDIT_CLIENT_SECRET);
     }
@@ -879,10 +879,13 @@ describe('Findly auth, verification, and foundation API', () => {
 
     const sourceStatusResponse = await agent.get('/api/search/sources/status').expect(200);
     const googleMaps = sourceStatusResponse.body.data.sources.find((source) => source.key === 'GOOGLE_MAPS');
+    const instagramFocus = sourceStatusResponse.body.data.presenceTargets.find((target) => target.key === 'INSTAGRAM');
     expectNoUserFacingSourceDisclosure(sourceStatusResponse.body.data);
     expect(sourceStatusResponse.body.data.sources.find((source) => source.key === 'LOCAL_DATASET')).toBeUndefined();
     expect(googleMaps.searchable).toBe(true);
-    expect(googleMaps.reason).toMatch(/Ready to search online business sources.|Available from Findly’s current business intelligence index./);
+    expect(googleMaps.reason).toMatch(/Ready through a compliant source or official business API.|Available from Findly’s current business intelligence index./);
+    expect(instagramFocus.selectable).toBe(true);
+    expect(instagramFocus.comingSoon).toBe(false);
 
     const optionsResponse = await agent.get('/api/search/options').expect(200);
     expectNoUserFacingSourceDisclosure(optionsResponse.body.data);
@@ -897,6 +900,8 @@ describe('Findly auth, verification, and foundation API', () => {
     expect(optionsResponse.body.data.cities).not.toContain('Jordan / Online');
     expect(optionsResponse.body.data.cities).not.toContain('Multi-Governorate');
     expect(optionsResponse.body.data.searchGoals).toContain('Find businesses without websites');
+    expect(optionsResponse.body.data.sources.some((source) => source.key === 'GOOGLE_MAPS')).toBe(true);
+    expect(optionsResponse.body.data.presenceTargets.some((target) => target.key === 'INSTAGRAM')).toBe(true);
 
     const csrfToken = await getCsrfToken(agent);
     const balanceBeforeFallback = (await agent.get('/api/credits').expect(200)).body.data.credits.balance;

@@ -39,10 +39,10 @@ const iconColorClass = {
 };
 
 const PlatformButton = ({ source, selected, onClick }) => {
-  const disabled = !source.canRun;
+  const disabled = source.selectable === false || (!source.canRun && source.kind === 'discovery_source');
   const Icon = iconMap[source.key] || Search;
-  const isSearchReady = Boolean(source.searchable || source.available);
-  const statusLabel = isSearchReady ? null : 'Later';
+  const isSearchReady = Boolean(source.searchable || source.available || source.kind === 'presence_target');
+  const statusLabel = source.kind === 'discovery_source' && !isSearchReady ? 'Later' : null;
 
   return (
     <button

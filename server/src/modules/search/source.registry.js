@@ -5,69 +5,59 @@ import { SerpAdapter } from './adapters/SerpAdapter.js';
 import { WebsiteAdapter } from './adapters/WebsiteAdapter.js';
 import { CsvAdapter } from './adapters/CsvAdapter.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
+import { DISCOVERY_SOURCE_KEYS, PRESENCE_TARGET_KEYS } from './sourceTargetMapping.service.js';
 
-const comingLaterSources = [
+const presenceTargetDefinitions = [
   {
     key: 'INSTAGRAM',
-    label: 'Instagram Signals',
-    description: 'Target businesses with Instagram presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have Instagram presence without direct platform scraping.',
-    reason: 'Instagram is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'Instagram',
+    description: 'Use public business information and search metadata to identify Instagram presence.',
   },
   {
     key: 'FACEBOOK',
-    label: 'Facebook Signals',
-    description: 'Target businesses with Facebook presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have Facebook presence without direct platform scraping.',
-    reason: 'Facebook is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'Facebook',
+    description: 'Use public business information and search metadata to identify Facebook presence.',
   },
   {
     key: 'LINKEDIN',
-    label: 'LinkedIn Signals',
-    description: 'Target businesses with LinkedIn presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have LinkedIn presence without direct platform scraping.',
-    reason: 'LinkedIn is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'LinkedIn',
+    description: 'Use public business information and search metadata to identify LinkedIn presence.',
   },
   {
     key: 'TIKTOK',
-    label: 'TikTok Signals',
-    description: 'Target businesses with TikTok presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have TikTok presence without direct platform scraping.',
-    reason: 'TikTok is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'TikTok',
+    description: 'Use public business information and search metadata to identify TikTok presence.',
   },
   {
     key: 'TRIPADVISOR',
-    label: 'TripAdvisor Signals',
-    description: 'Target hospitality businesses with TripAdvisor visibility using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have TripAdvisor visibility without direct platform scraping.',
-    reason: 'TripAdvisor is a target signal. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'TripAdvisor',
+    description: 'Use public business information and search metadata to identify TripAdvisor presence.',
   },
   {
     key: 'YOUTUBE',
-    label: 'YouTube Signals',
-    description: 'Target businesses with YouTube presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have YouTube presence without direct platform scraping.',
-    reason: 'YouTube is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'YouTube',
+    description: 'Use public business information and search metadata to identify YouTube presence.',
   },
   {
     key: 'X',
-    label: 'X Signals',
-    description: 'Target businesses with X presence using local data first and compliant search metadata when enabled.',
-    group: 'platform_signal',
-    estimatedUseCase: 'Find businesses that appear to have X presence without direct platform scraping.',
-    reason: 'X is a target signal, not a direct scraping source. Discovery uses local cache first and can use compliant search metadata when enabled.',
+    label: 'X',
+    description: 'Use public business information and search metadata to identify X presence.',
+  },
+  {
+    key: 'YELP',
+    label: 'Yelp',
+    description: 'Use public business information and search metadata to identify Yelp presence.',
+  },
+  {
+    key: 'REDDIT',
+    label: 'Reddit',
+    description: 'Use public business information and search metadata to identify Reddit presence.',
   },
 ];
 
 const adapterEntries = [
   { group: 'search', Adapter: GooglePlacesAdapter },
-  { group: 'signals', Adapter: RedditAdapter },
+  { group: 'directory', Adapter: RedditAdapter },
   { group: 'directory', Adapter: YelpAdapter },
   { group: 'search', Adapter: SerpAdapter },
   { group: 'enrichment', Adapter: WebsiteAdapter },
@@ -75,33 +65,56 @@ const adapterEntries = [
   { group: 'import', Adapter: CsvAdapter },
 ];
 
-const targetOnlyAdapterKeys = new Set(['SERPAPI', 'YELP', 'REDDIT']);
+const targetOnlyAdapterKeys = new Set(['YELP', 'REDDIT']);
 
 export const adapterRegistry = Object.fromEntries(adapterEntries.map(({ Adapter }) => [Adapter.key, Adapter]));
 
+const internalDiscoveryStatuses = adapterEntries.map(({ group, Adapter }) => {
+  const status = Adapter.getStatus();
+  const discoveryOnly = DISCOVERY_SOURCE_KEYS.has(Adapter.key);
+  const targetOnly = targetOnlyAdapterKeys.has(Adapter.key);
+
+  return {
+    ...status,
+    group,
+    kind: discoveryOnly ? 'discovery_source' : (PRESENCE_TARGET_KEYS.has(Adapter.key) || targetOnly ? 'presence_target' : 'internal'),
+    executable: !targetOnly && Adapter.key !== 'WEBSITE' && Adapter.key !== 'LOCAL_DATASET' && Adapter.key !== 'CSV',
+    selectable: discoveryOnly || PRESENCE_TARGET_KEYS.has(Adapter.key) || targetOnly,
+    directScraping: Adapter.key === 'GOOGLE_MAPS',
+  };
+});
+
+export const getPresenceTargetDefinitions = () => presenceTargetDefinitions.map((target) => ({
+  ...target,
+  kind: 'presence_target',
+  selectable: true,
+  executable: false,
+  directScraping: false,
+  status: 'ready',
+  configured: false,
+  available: true,
+  searchable: false,
+  comingSoon: false,
+  reason: 'These options guide discovery and analysis. Findly does not perform direct login-based scraping.',
+  group: 'presence_target',
+}));
+
 export const getSourceStatuses = () => [
-  ...adapterEntries.map(({ group, Adapter }) => {
-    const status = Adapter.getStatus();
-    if (!targetOnlyAdapterKeys.has(Adapter.key)) {
-      return { ...status, group };
+  ...internalDiscoveryStatuses.map((source) => {
+    if (!targetOnlyAdapterKeys.has(source.key)) {
+      return source;
     }
 
     return {
-      ...status,
-      group,
+      ...source,
       available: false,
-      comingSoon: true,
-      reason: `${status.label} is treated as a signal target or search metadata path. Discovery uses local cache first; direct scraping and login automation are disabled.`,
+      comingSoon: false,
+      executable: false,
+      selectable: false,
+      reason: `${source.label} is used as search metadata or a public presence target. Direct scraping and login automation are disabled.`,
     };
   }),
-  ...comingLaterSources.map((source) => ({
-    ...source,
-    status: 'coming_later',
-    configured: false,
-    available: false,
-    comingSoon: true,
-    requiresApiKey: false,
-  })),
+  ...getPresenceTargetDefinitions(),
 ];
 
 export const getSourceStatusByKey = (key) => getSourceStatuses().find((source) => source.key === key);
@@ -115,7 +128,7 @@ export const getRunnableAdapter = (key) => {
   return {
     Adapter,
     status: executionDisabled && status
-      ? { ...status, reason: `${status.label} is treated as a target signal or enrichment adapter. Live campaign execution uses local cache now; direct scraping and login automation are disabled.` }
+      ? { ...status, reason: `${status.label} is used for discovery guidance or enrichment. Live campaign execution uses compliant sources and local cache only.` }
       : status,
     runnable,
   };

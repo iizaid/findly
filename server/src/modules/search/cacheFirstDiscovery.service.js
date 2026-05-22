@@ -29,7 +29,8 @@ const averageScore = (localResults = []) => {
   return Math.round(total / localResults.length);
 };
 
-const selectedSources = (campaign = {}) => Array.isArray(campaign.sources) ? campaign.sources : [];
+const selectedSources = (campaign = {}) => normalizeCampaignTargeting(campaign).discoverySources;
+const selectedPresenceTargets = (campaign = {}) => normalizeCampaignTargeting(campaign).presenceTargets;
 
 const freshnessStatusFor = (localResults = []) => {
   if (!localResults.length) return 'NO_LOCAL_RESULTS';
@@ -103,7 +104,7 @@ export const evaluateLocalCoverage = ({ campaign, localResults = [] }) => {
     enoughCoverage,
     strongEnough,
     freshnessStatus,
-    selectedSignals: selectedSources(campaign),
+    selectedSignals: [...new Set([...selectedSources(campaign), ...selectedPresenceTargets(campaign)])],
     externalAllowed: decision === 'RUN_EXTERNAL',
     maxExternalResults: overrides.maxExternalResults,
     warnings,
@@ -152,3 +153,4 @@ export const mergeLocalAndExternalResults = ({ campaign, localResults = [], exte
 
   return merged;
 };
+import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';

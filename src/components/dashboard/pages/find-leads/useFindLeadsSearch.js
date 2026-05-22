@@ -3,9 +3,11 @@ import { ApiError, apiRequest } from '../../../../lib/api';
 import {
   DEFAULT_GOALS,
   EMPTY_FORM_STATE,
-  MAX_SELECTED_PLATFORMS,
+  MAX_SELECTED_DISCOVERY_SOURCES,
+  MAX_SELECTED_PRESENCE_TARGETS,
   PLATFORM_LABELS,
-  PREFERRED_SOURCE_ORDER,
+  PREFERRED_DISCOVERY_SOURCE_ORDER,
+  PREFERRED_PRESENCE_TARGET_ORDER,
   STORAGE_KEY,
   delay,
 } from './searchConfig';
@@ -31,21 +33,26 @@ const loadSavedFormState = () => {
   }
 };
 
-const buildCampaignQuery = ({ service, businessType, goal, city, country }) => {
+const buildCampaignQuery = ({ service, businessType, goal, city, country, presenceTargets = [] }) => {
   const subject = [businessType, service].filter(Boolean).join(' for ');
   const geography = [city, country].filter(Boolean).join(', ');
   const intent = goal ? ` - ${goal}` : '';
-  return [subject, geography].filter(Boolean).join(' in ') + intent;
+  const focus = presenceTargets.length
+    ? ` - focus on ${presenceTargets.map((target) => PLATFORM_LABELS[target] || target).join(', ')} public presence`
+    : '';
+  return [subject, geography].filter(Boolean).join(' in ') + intent + focus;
 };
 
-const normalizeSourceOptions = (sources = []) => [...sources]
-  .filter((source) => PREFERRED_SOURCE_ORDER.includes(source.key))
-  .sort((a, b) => PREFERRED_SOURCE_ORDER.indexOf(a.key) - PREFERRED_SOURCE_ORDER.indexOf(b.key))
+const normalizeOptions = (items = [], order = []) => [...items]
+  .filter((item) => order.includes(item.key))
+  .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
   .map((source) => ({
     ...source,
     id: source.key,
     name: PLATFORM_LABELS[source.key] || source.label || source.key,
-    canRun: Boolean(source.searchable || source.available),
+    canRun: source.kind === 'presence_target'
+      ? Boolean(source.selectable !== false)
+      : Boolean(source.searchable || source.available),
   }));
 
 const pollCampaignStatus = async (campaignId, jobId = null) => {
@@ -67,8 +74,10 @@ const pollCampaignStatus = async (campaignId, jobId = null) => {
 };
 
 export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
-  const [selectedSources, setSelectedSources] = useState(['INSTAGRAM']);
-  const [sourceOptions, setSourceOptions] = useState([]);
+  const [selectedDiscoverySources, setSelectedDiscoverySources] = useState([]);
+  const [selectedPresenceTargets, setSelectedPresenceTargets] = useState(['INSTAGRAM']);
+  const [discoverySourceOptions, setDiscoverySourceOptions] = useState([]);
+  const [presenceTargetOptions, setPresenceTargetOptions] = useState([]);
   const [searchOptions, setSearchOptions] = useState({
     services: [],
     businessTypes: [],
@@ -86,9 +95,14 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   const [resultSummary, setResultSummary] = useState(null);
   const [pendingSearch, setPendingSearch] = useState(null);
 
-  const selectedPlatformNames = useMemo(
-    () => selectedSources.map((source) => PLATFORM_LABELS[source] || source).join(', '),
-    [selectedSources],
+  const selectedDiscoveryNames = useMemo(
+    () => selectedDiscoverySources.map((source) => PLATFORM_LABELS[source] || source).join(', '),
+    [selectedDiscoverySources],
+  );
+
+  const selectedPresenceNames = useMemo(
+    () => selectedPresenceTargets.map((source) => PLATFORM_LABELS[source] || source).join(', '),
+    [selectedPresenceTargets],
   );
 
   useEffect(() => {
@@ -99,7 +113,8 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
         if (!mounted) return;
         const nextOptions = response.data || {};
         const searchGoals = nextOptions.searchGoals || DEFAULT_GOALS;
-        const orderedSources = normalizeSourceOptions(nextOptions.sources || []);
+        const orderedSources = normalizeOptions(nextOptions.sources || [], PREFERRED_DISCOVERY_SOURCE_ORDER);
+        const orderedPresenceTargets = normalizeOptions(nextOptions.presenceTargets || [], PREFERRED_PRESENCE_TARGET_ORDER);
 
         setSearchOptions({
           services: nextOptions.services || [],
@@ -110,24 +125,36 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
           searchGoals,
           maxResultsOptions: nextOptions.maxResultsOptions || [10, 20, 50],
         });
-        setSourceOptions(orderedSources);
+        setDiscoverySourceOptions(orderedSources);
+        setPresenceTargetOptions(orderedPresenceTargets);
         setFormState((current) => ({ ...current, goal: current.goal || searchGoals[0] || DEFAULT_GOALS[0] }));
 
-        const preferred = orderedSources.find((source) => source.key === 'INSTAGRAM' && source.canRun)
-          || orderedSources.find((source) => source.key === 'GOOGLE_MAPS' && source.canRun)
+        const preferred = orderedSources.find((source) => source.key === 'GOOGLE_MAPS' && source.canRun)
+          || orderedSources.find((source) => source.key === 'WEBSITE' && source.canRun)
           || orderedSources.find((source) => source.canRun);
 
         if (preferred) {
-          setSelectedSources((current) => (
+          setSelectedDiscoverySources((current) => (
             current.some((id) => orderedSources.some((source) => source.id === id && source.canRun))
               ? current
               : [preferred.id]
           ));
         }
+
+        const preferredTarget = orderedPresenceTargets.find((target) => target.key === 'INSTAGRAM')
+          || orderedPresenceTargets[0];
+        if (preferredTarget) {
+          setSelectedPresenceTargets((current) => (
+            current.some((id) => orderedPresenceTargets.some((target) => target.id === id))
+              ? current
+              : [preferredTarget.id]
+          ));
+        }
       })
       .catch(() => {
         if (!mounted) return;
-        setSourceOptions([]);
+        setDiscoverySourceOptions([]);
+        setPresenceTargetOptions([]);
         setError('Source status could not be loaded. Refresh the page and try again.');
       })
       .finally(() => {
@@ -151,7 +178,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
-  const toggleSource = (sourceObj) => {
+  const toggleDiscoverySource = (sourceObj) => {
     if (!sourceObj.canRun) {
       setError('This source is not available for search yet. Choose an available source to continue.');
       return;
@@ -159,12 +186,29 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
 
     setError(null);
     clearResultSummary();
-    setSelectedSources((current) => {
+    setSelectedDiscoverySources((current) => {
       if (current.includes(sourceObj.id)) {
         return current.length === 1 ? current : current.filter((id) => id !== sourceObj.id);
       }
-      if (current.length >= MAX_SELECTED_PLATFORMS) {
-        setError(`You can select up to ${MAX_SELECTED_PLATFORMS} platforms per search.`);
+      if (current.length >= MAX_SELECTED_DISCOVERY_SOURCES) {
+        setError(`You can select up to ${MAX_SELECTED_DISCOVERY_SOURCES} discovery sources per search.`);
+        return current;
+      }
+      return [...current, sourceObj.id];
+    });
+  };
+
+  const togglePresenceTarget = (sourceObj) => {
+    if (sourceObj.selectable === false) return;
+
+    setError(null);
+    clearResultSummary();
+    setSelectedPresenceTargets((current) => {
+      if (current.includes(sourceObj.id)) {
+        return current.filter((id) => id !== sourceObj.id);
+      }
+      if (current.length >= MAX_SELECTED_PRESENCE_TARGETS) {
+        setError(`You can select up to ${MAX_SELECTED_PRESENCE_TARGETS} focus targets per search.`);
         return current;
       }
       return [...current, sourceObj.id];
@@ -191,7 +235,8 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     setResultSummary({
       leadListId: campaign.leadListId || runData.leadListId,
       count: leadsReturned,
-      platformsRequested: runData.platformsRequested || selectedSources,
+      discoverySourcesRequested: selectedDiscoverySources,
+      presenceTargetsRequested: selectedPresenceTargets,
     });
     onUpdate?.();
   };
@@ -255,12 +300,12 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       return;
     }
 
-    if (selectedSources.length < 1) {
+    if (selectedDiscoverySources.length < 1) {
       setError('Please select at least one source to proceed.');
       return;
     }
 
-    const unreadySource = selectedSources.find((id) => !sourceOptions.find((source) => source.id === id)?.canRun);
+    const unreadySource = selectedDiscoverySources.find((id) => !discoverySourceOptions.find((source) => source.id === id)?.canRun);
     if (unreadySource) {
       setError('One of the selected sources is not ready to run yet.');
       return;
@@ -301,13 +346,18 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
         body: JSON.stringify({
           workspaceId: workspace?.id,
           name: `${businessType} in ${city}`,
-          query: buildCampaignQuery({ service, businessType, goal, city, country }),
+          query: buildCampaignQuery({ service, businessType, goal, city, country, presenceTargets: selectedPresenceTargets }),
           serviceProfileId: profileRes.data.profile.id,
           businessTypes: [businessType],
           country,
           city,
-          sources: selectedSources,
-          filters: { goal },
+          sources: selectedDiscoverySources,
+          presenceTargets: selectedPresenceTargets,
+          filters: {
+            goal,
+            presenceTargets: selectedPresenceTargets,
+            presenceTargetMode: 'prioritize',
+          },
           requestedLimit: Number(maxResults) || 20,
         }),
       });
@@ -345,8 +395,10 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   };
 
   return {
-    selectedSources,
-    sourceOptions,
+    selectedDiscoverySources,
+    selectedPresenceTargets,
+    discoverySourceOptions,
+    presenceTargetOptions,
     searchOptions,
     formState,
     sourcesLoading,
@@ -355,9 +407,11 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     searchStep,
     resultSummary,
     pendingSearch,
-    selectedPlatformNames,
+    selectedDiscoveryNames,
+    selectedPresenceNames,
     updateField,
-    toggleSource,
+    toggleDiscoverySource,
+    togglePresenceTarget,
     resetForNewSearch,
     checkPendingSearchStatus,
     cancelPendingSearch,

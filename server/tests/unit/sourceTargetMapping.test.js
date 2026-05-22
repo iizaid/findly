@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDiscoveryPlan,
   mapTargetSourcesToDiscoveryMethods,
+  normalizeCampaignTargeting,
+  normalizePresenceTargets,
   normalizeSelectedSources,
 } from '../../src/modules/search/sourceTargetMapping.service.js';
 
@@ -10,6 +12,10 @@ const mappingFor = (source) => mapTargetSourcesToDiscoveryMethods([source])[0];
 describe('source target mapping', () => {
   it('normalizes selected sources without duplicates', () => {
     expect(normalizeSelectedSources([' instagram ', 'INSTAGRAM', 'google_maps'])).toEqual(['INSTAGRAM', 'GOOGLE_MAPS']);
+  });
+
+  it('normalizes presence targets without duplicates', () => {
+    expect(normalizePresenceTargets([' instagram ', 'INSTAGRAM', 'google_maps', 'facebook'])).toEqual(['INSTAGRAM', 'FACEBOOK']);
   });
 
   it('maps social and directory platforms to unified search metadata targets', () => {
@@ -36,14 +42,13 @@ describe('source target mapping', () => {
     });
   });
 
-  it('maps website as enrichment only', () => {
+  it('maps website as a discovery source without direct scraping', () => {
     expect(mappingFor('WEBSITE')).toMatchObject({
       targetSource: 'WEBSITE',
       discoveryMethod: 'WEBSITE_METADATA',
       adapter: 'WEBSITE',
-      enrichmentOnly: true,
       runnable: false,
-      targetOnly: true,
+      targetOnly: false,
       directPlatformApi: false,
     });
   });
@@ -74,6 +79,19 @@ describe('source target mapping', () => {
     });
   });
 
+  it('splits discovery sources from presence targets with legacy compatibility', () => {
+    expect(normalizeCampaignTargeting({
+      sources: ['INSTAGRAM', 'GOOGLE_MAPS'],
+      presenceTargets: ['FACEBOOK'],
+      filters: { presenceTargets: ['YOUTUBE'] },
+    })).toEqual({
+      rawSources: ['INSTAGRAM', 'GOOGLE_MAPS'],
+      discoverySources: ['GOOGLE_MAPS'],
+      presenceTargets: ['FACEBOOK', 'YOUTUBE', 'INSTAGRAM'],
+      legacyPresenceTargets: ['INSTAGRAM'],
+    });
+  });
+
   it('builds a campaign discovery plan without network calls', () => {
     const plan = buildDiscoveryPlan({
       campaign: {
@@ -82,11 +100,14 @@ describe('source target mapping', () => {
         city: 'Amman',
         country: 'Jordan',
         businessTypes: ['Coffee Shop'],
-        sources: ['INSTAGRAM', 'LOCAL_DATASET'],
+        sources: ['GOOGLE_MAPS'],
+        filters: { presenceTargets: ['INSTAGRAM'] },
       },
     });
 
-    expect(plan.targetSources).toEqual(['INSTAGRAM', 'LOCAL_DATASET']);
+    expect(plan.discoverySources).toEqual(['GOOGLE_MAPS']);
+    expect(plan.presenceTargets).toEqual(['INSTAGRAM']);
+    expect(plan.targetSources).toEqual(['GOOGLE_MAPS', 'INSTAGRAM']);
     expect(plan.expandedQuery).toContain('Coffee Shop');
     expect(plan.geography).toBe('Amman, Jordan');
     expect(plan.disabledMappings).toHaveLength(1);

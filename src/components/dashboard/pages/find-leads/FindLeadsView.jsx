@@ -26,7 +26,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
         isVisible={search.isSubmitting && search.searchStep !== null}
         currentStep={search.searchStep || 0}
         steps={SEARCH_STEPS}
-        selectedPlatforms={search.selectedSources}
+        selectedPlatforms={[...search.selectedDiscoverySources, ...search.selectedPresenceTargets]}
         criteria={search.formState}
         pendingSearch={search.pendingSearch}
         onCancel={() => {
@@ -44,7 +44,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Findly search console</p>
               <h2 className="mt-2 text-3xl font-bold tracking-tight text-black md:text-4xl">Find Leads</h2>
               <p className="mt-2 max-w-2xl text-[14px] font-semibold leading-6 text-black/50">
-                Choose your offer, audience, location, and the sources Findly should use.
+                Choose your offer, audience, location, where Findly should search, and which public presence to prioritize.
               </p>
             </div>
           </div>
@@ -129,9 +129,12 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
 
             <fieldset className="md:col-span-2 mt-3 rounded-[24px] border border-black/[0.06] bg-black/[0.015] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <legend className="text-[13px] font-bold text-black">Sources</legend>
+                <div>
+                  <legend className="text-[13px] font-bold text-black">Search using</legend>
+                  <p className="mt-1 text-[12px] font-medium text-black/45">Choose where Findly should discover businesses.</p>
+                </div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-secondary">
-                  {search.selectedSources.length} selected
+                  {search.selectedDiscoverySources.length} selected
                 </span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
@@ -140,8 +143,28 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
                     Loading source availability...
                   </div>
                 )}
-                {search.sourceOptions.map((source) => (
-                  <PlatformButton key={source.id} source={source} selected={search.selectedSources.includes(source.id)} onClick={() => search.toggleSource(source)} />
+                {search.discoverySourceOptions.map((source) => (
+                  <PlatformButton key={source.id} source={source} selected={search.selectedDiscoverySources.includes(source.id)} onClick={() => search.toggleDiscoverySource(source)} />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="md:col-span-2 rounded-[24px] border border-black/[0.06] bg-black/[0.015] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <legend className="text-[13px] font-bold text-black">Focus on</legend>
+                  <p className="mt-1 text-[12px] font-medium text-black/45">Choose what public presence Findly should look for.</p>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-secondary">
+                  {search.selectedPresenceTargets.length} selected
+                </span>
+              </div>
+              <div className="mb-3 rounded-2xl border border-black/[0.06] bg-white px-4 py-3 text-[12px] font-semibold leading-5 text-black/55">
+                These options guide discovery and analysis. Findly does not perform direct login-based scraping.
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                {search.presenceTargetOptions.map((target) => (
+                  <PlatformButton key={target.id} source={target} selected={search.selectedPresenceTargets.includes(target.id)} onClick={() => search.togglePresenceTarget(target)} />
                 ))}
               </div>
             </fieldset>
@@ -164,7 +187,12 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
           </form>
         </DashboardCard>
 
-        <SearchSidePanel selectedPlatformCount={search.selectedSources.length} selectedPlatformNames={search.selectedPlatformNames} />
+        <SearchSidePanel
+          selectedDiscoveryCount={search.selectedDiscoverySources.length}
+          selectedDiscoveryNames={search.selectedDiscoveryNames}
+          selectedPresenceCount={search.selectedPresenceTargets.length}
+          selectedPresenceNames={search.selectedPresenceNames}
+        />
       </div>
     </>
   );

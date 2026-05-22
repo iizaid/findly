@@ -20,6 +20,7 @@ import { buildRuleBasedAnalysisData, toLeadAnalysisCreateData } from './analysis
 import { runLeadAnalysisAiReview } from '../ai/leadAnalysisAi.service.js';
 import { markCampaignCancelled, markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
 import { env } from '../../config/env.js';
+import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 import {
   getSupportedJordanGovernorates,
   leadMatchesGovernorate,
@@ -204,8 +205,8 @@ const inferAnalysisMetadata = (analysis = {}) => {
 // SOURCE STATUS
 // ═══════════════════════════════════════
 export const getSourceStatus = asyncHandler(async (_req, res) => {
-  const sources = await getSourceStatusesWithRuntime({ userId: _req.user.id });
-  return successResponse(res, { sources }, 'Source statuses loaded.');
+  const { sources, presenceTargets } = await getSourceStatusesWithRuntime({ userId: _req.user.id });
+  return successResponse(res, { sources, presenceTargets }, 'Source statuses loaded.');
 });
 
 export const getSearchOptions = asyncHandler(async (req, res) => {
@@ -219,7 +220,7 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     source: { in: ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'] },
   };
 
-  const [leads, sources] = await Promise.all([
+  const [leads, sourceSets] = await Promise.all([
     prisma.leadCatalog.findMany({
       where: leadWhere,
       select: {
@@ -248,7 +249,8 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     governorates,
     cities,
     searchGoals: searchGoalPresets,
-    sources,
+    sources: sourceSets.sources,
+    presenceTargets: sourceSets.presenceTargets,
     maxResultsOptions: [10, 20, 50, 100],
   }, 'Search options loaded.');
 });
@@ -264,8 +266,8 @@ export const getDashboardIntelligence = asyncHandler(async (req, res) => {
   if (!workspace) return successResponse(res, {}, 'No workspace found.');
 
   const summary = await getDashboardSummary(req.user.id, workspace.workspaceId);
-  const sources = await getSourceStatusesWithRuntime({ userId: req.user.id, workspaceId: workspace.workspaceId });
-  return successResponse(res, { summary, sources }, 'Intelligence dashboard loaded.');
+  const sourceSets = await getSourceStatusesWithRuntime({ userId: req.user.id, workspaceId: workspace.workspaceId });
+  return successResponse(res, { summary, sources: sourceSets.sources, presenceTargets: sourceSets.presenceTargets }, 'Intelligence dashboard loaded.');
 });
 
 // ═══════════════════════════════════════
@@ -349,7 +351,18 @@ export const createNewCampaign = asyncHandler(async (req, res) => {
     }
   }
 
-  const campaign = await createCampaign({ userId: req.user.id, workspaceId: data.workspaceId, data });
+  const normalizedTargeting = normalizeCampaignTargeting(data);
+  const normalizedData = {
+    ...data,
+    sources: normalizedTargeting.discoverySources,
+    filters: {
+      ...(data.filters || {}),
+      presenceTargets: normalizedTargeting.presenceTargets,
+      presenceTargetMode: data.filters?.presenceTargetMode || 'prioritize',
+    },
+  };
+
+  const campaign = await createCampaign({ userId: req.user.id, workspaceId: data.workspaceId, data: normalizedData });
   return successResponse(res, { campaign: sanitizeCampaignForUserResponse(campaign) }, 'Campaign created.', 201);
 });
 

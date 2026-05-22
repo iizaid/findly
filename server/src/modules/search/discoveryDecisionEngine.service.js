@@ -2,6 +2,7 @@ import { getCampaignBudget, estimateExternalCostMicrousd } from './campaignBudge
 import { evaluateLocalCoverage, calculateMissingResultCount } from './cacheFirstDiscovery.service.js';
 import { evaluateEvidenceReuseCoverage } from './evidenceCache.service.js';
 import { getPolicyWarningsForCampaign } from './sourceIntelligencePolicy.service.js';
+import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 
 export const DISCOVERY_DECISION_REASONS = Object.freeze({
   LOCAL_COVERAGE_SUFFICIENT: 'LOCAL_COVERAGE_SUFFICIENT',
@@ -34,7 +35,8 @@ const SEARCH_METADATA_TARGET_SOURCES = new Set([
 
 const unique = (values) => [...new Set(values.filter(Boolean))];
 
-const getSources = (campaign) => Array.isArray(campaign?.sources) ? campaign.sources : [];
+const getSources = (campaign) => normalizeCampaignTargeting(campaign).discoverySources;
+const getPresenceTargets = (campaign) => normalizeCampaignTargeting(campaign).presenceTargets;
 
 const selectedOnlyLocalDataset = (sources) => sources.length > 0
   && sources.every((source) => source === 'LOCAL_DATASET');
@@ -126,12 +128,13 @@ export const buildDiscoveryPlan = ({
   const requestedLimit = Math.max(1, Number(campaign?.requestedLimit) || 20);
   const budget = getCampaignBudget(campaign);
   const sources = getSources(campaign);
+  const presenceTargets = getPresenceTargets(campaign);
   const localCoverage = evaluateLocalCoverage({ campaign, localResults });
   const evidenceCoverage = evaluateEvidenceReuseCoverage({ campaign, localResults, evidenceCandidates });
   const sourcePolicyWarnings = getPolicyWarningsForCampaign(campaign);
   const missingFromLocal = calculateMissingResultCount({ campaign, localResults });
   const missingCount = Math.max(0, missingFromLocal - evidenceCoverage.reusableForLeadListCount);
-  const searchMetadataRequested = sources.some((source) => SEARCH_METADATA_TARGET_SOURCES.has(source));
+  const searchMetadataRequested = presenceTargets.some((source) => SEARCH_METADATA_TARGET_SOURCES.has(source)) || sources.includes('SERPAPI');
   const googlePlacesRequested = sources.includes('GOOGLE_MAPS');
   const forceLiveDiscovery = campaign?.filters?.discovery?.forceLiveDiscovery === true;
   const disableLiveDiscovery = campaign?.filters?.discovery?.disableLiveDiscovery === true;

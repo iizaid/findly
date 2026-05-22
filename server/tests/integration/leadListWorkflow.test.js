@@ -937,6 +937,21 @@ describe('LeadList Workflow Architecture', () => {
       .send({ ...basePayload, name: 'Accepted Instagram source', sources: ['INSTAGRAM'] })
       .expect(201);
 
+    const separatedPayload = await agent1
+      .post('/api/search/campaigns')
+      .set('X-CSRF-Token', csrfToken)
+      .send({
+        ...basePayload,
+        name: 'Separated discovery and focus payload',
+        sources: ['GOOGLE_MAPS'],
+        presenceTargets: ['INSTAGRAM', 'FACEBOOK'],
+        filters: { goal: 'General opportunity discovery', presenceTargets: ['INSTAGRAM', 'FACEBOOK'] },
+      })
+      .expect(201);
+
+    expect(separatedPayload.body.data.campaign.sources).toEqual(['GOOGLE_MAPS']);
+    expect(separatedPayload.body.data.campaign.presenceTargets).toEqual(['INSTAGRAM', 'FACEBOOK']);
+
     await agent1
       .post('/api/search/campaigns')
       .set('X-CSRF-Token', csrfToken)

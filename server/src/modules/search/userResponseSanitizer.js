@@ -144,11 +144,15 @@ const publicSourceKeys = new Set([
 
 export const sanitizeCampaignForUserResponse = (campaign) => {
   if (!campaign) return campaign;
+  const presenceTargets = Array.isArray(campaign.filters?.presenceTargets)
+    ? campaign.filters.presenceTargets.filter((target) => publicSourceKeys.has(target))
+    : [];
   const { filters: _filters, ...safeCampaign } = campaign;
   return {
     ...safeCampaign,
     sources: Array.isArray(campaign.sources)
       ? campaign.sources.map((source) => (publicSourceKeys.has(source) ? source : 'ONLINE_SOURCE'))
       : campaign.sources,
+    presenceTargets,
   };
 };

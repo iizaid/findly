@@ -1,60 +1,62 @@
 import { prisma } from '../../db/prisma.js';
-import { getSourceStatuses as getBaseSourceStatuses } from './source.registry.js';
+import { getPresenceTargetDefinitions, getSourceStatuses as getBaseSourceStatuses } from './source.registry.js';
 
 const datasetSources = ['LOCAL_DATASET', 'DATASET_IMPORT', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'MANUAL_ADMIN'];
-const localFallbackSourceKeys = new Set([
-  'GOOGLE_MAPS',
-  'INSTAGRAM',
-  'FACEBOOK',
-  'WEBSITE',
-  'YELP',
-  'SERPAPI',
-  'TRIPADVISOR',
-  'YOUTUBE',
-  'X',
-  'LINKEDIN',
-  'TIKTOK',
-  'REDDIT',
-]);
+const localFallbackDiscoveryKeys = new Set(['GOOGLE_MAPS', 'WEBSITE', 'SERPAPI']);
+const userVisibleDiscoveryKeys = new Set(['GOOGLE_MAPS', 'WEBSITE', 'SERPAPI']);
 
-const userVisibleSourceKeys = new Set([
-  'GOOGLE_MAPS',
-  'INSTAGRAM',
-  'FACEBOOK',
-  'WEBSITE',
-  'YELP',
-  'SERPAPI',
-  'TRIPADVISOR',
-  'YOUTUBE',
-  'X',
-  'LINKEDIN',
-  'TIKTOK',
-  'REDDIT',
-]);
+const discoveryLabelOverrides = {
+  SERPAPI: 'Search Metadata',
+};
 
-const sanitizeSourceForUserResponse = (source, { fallbackAvailable = false } = {}) => {
-  if (!userVisibleSourceKeys.has(source.key)) return null;
+const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = false } = {}) => {
+  if (!userVisibleDiscoveryKeys.has(source.key)) return null;
 
-  const canSearch = Boolean(source.available || (fallbackAvailable && localFallbackSourceKeys.has(source.key)));
-  const later = Boolean(source.comingSoon) && !canSearch;
+  const canSearch = Boolean(source.available || (fallbackAvailable && localFallbackDiscoveryKeys.has(source.key)));
+  const later = !canSearch;
 
   return {
     key: source.key,
-    label: source.label,
+    label: discoveryLabelOverrides[source.key] || source.label,
+    kind: 'discovery_source',
     group: source.group,
     status: canSearch ? (source.available ? 'ready' : 'index_ready') : 'later',
     available: canSearch,
     searchable: canSearch,
+    selectable: true,
+    executable: Boolean(source.executable),
+    directScraping: Boolean(source.directScraping),
     comingSoon: later,
-    reason: canSearch 
-      ? (source.available ? 'Ready through a compliant source or official business API.' : 'Available from Findly’s current business intelligence index.') 
-      : 'This signal target will be available through unified discovery later.',
+    reason: canSearch
+      ? (source.available
+        ? 'Ready through a compliant source or official business API.'
+        : 'Available from Findly’s current business intelligence index.')
+      : 'This discovery source is not configured yet.',
   };
 };
 
+const sanitizePresenceTargetForUserResponse = (target) => ({
+  key: target.key,
+  label: target.label,
+  kind: 'presence_target',
+  group: 'presence_target',
+  status: 'ready',
+  available: true,
+  searchable: false,
+  selectable: true,
+  executable: false,
+  directScraping: false,
+  comingSoon: false,
+  description: target.description,
+  reason: 'These options guide discovery and analysis. Findly does not perform direct login-based scraping.',
+});
+
 export const getSourceStatuses = () => getBaseSourceStatuses()
-  .map((source) => sanitizeSourceForUserResponse(source))
+  .map((source) => sanitizeDiscoverySourceForUserResponse(source))
   .filter(Boolean);
+
+export const getPresenceTargetStatuses = () => getPresenceTargetDefinitions()
+  .map(sanitizePresenceTargetForUserResponse);
 
 export const getSourceStatusesWithRuntime = async (_context = {}) => {
   const catalogWhere = {
@@ -73,12 +75,12 @@ export const getSourceStatusesWithRuntime = async (_context = {}) => {
         searchable: fallbackAvailable,
         importedLeadCount: localLeadCount,
         reason: fallbackAvailable
-          ? "Platform signals are available from Findly's current business intelligence index."
+          ? "Available from Findly's current business intelligence index."
           : source.reason,
       };
     }
 
-    if (localFallbackSourceKeys.has(source.key) && (!source.configured || source.key === 'WEBSITE')) {
+    if (localFallbackDiscoveryKeys.has(source.key) && (!source.configured || source.key === 'WEBSITE')) {
       return {
         ...source,
         fallbackAvailable,
@@ -91,7 +93,10 @@ export const getSourceStatusesWithRuntime = async (_context = {}) => {
     return source;
   });
 
-  return internalStatuses
-    .map((source) => sanitizeSourceForUserResponse(source, { fallbackAvailable }))
-    .filter(Boolean);
+  return {
+    sources: internalStatuses
+      .map((source) => sanitizeDiscoverySourceForUserResponse(source, { fallbackAvailable }))
+      .filter(Boolean),
+    presenceTargets: getPresenceTargetStatuses(),
+  };
 };
