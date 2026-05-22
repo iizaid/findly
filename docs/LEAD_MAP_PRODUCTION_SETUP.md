@@ -63,6 +63,27 @@ Rules:
 
 Geo enrichment is processed through the existing worker loop. Production should run the API and the worker with a queue-compatible configuration.
 
+## Local PostGIS Docker
+
+Use the bundled compose file:
+
+```bash
+docker compose -f docker-compose.postgis.yml up -d
+```
+
+Local PostGIS connection string:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/findly?schema=public
+```
+
+Optional root scripts:
+
+```bash
+npm run db:postgis:up
+npm run db:postgis:down
+```
+
 ## Troubleshooting
 
 ### Map style missing

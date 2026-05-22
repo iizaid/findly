@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "db:postgis:up": "docker compose -f docker-compose.postgis.yml up -d",
+    "db:postgis:down": "docker compose -f docker-compose.postgis.yml down",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

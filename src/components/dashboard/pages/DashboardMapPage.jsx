@@ -408,7 +408,25 @@ const DashboardMapPage = ({ onNavigate }) => {
                   <div className="flex min-h-[560px] items-center justify-center p-6">
                     <div className="flex max-w-lg items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
                       <AlertCircle size={18} className="mt-0.5 shrink-0" />
-                      <p className="text-sm font-bold">{state.message}</p>
+                      <div className="space-y-2">
+                        <p className="text-sm font-bold">{state.message}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className="inline-flex h-9 items-center justify-center rounded-full bg-red-600 px-4 text-xs font-bold text-white transition-colors hover:bg-red-700"
+                          >
+                            Retry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('/dashboard/find-leads')}
+                            className="inline-flex h-9 items-center justify-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
+                          >
+                            Back to Find Leads
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : visibleLeads.length ? (

@@ -15,6 +15,7 @@ let userId;
 let workspaceId;
 let directLeadId;
 let catalogLeadId;
+let leadListId;
 
 beforeAll(async () => {
   ({ prisma } = await import('../../src/db/prisma.js'));
@@ -101,6 +102,7 @@ beforeAll(async () => {
       name: `Lead Map List ${unique}`,
     },
   });
+  leadListId = leadList.id;
 
   await prisma.leadListLead.create({
     data: {
@@ -157,6 +159,20 @@ describe('lead map API', () => {
       .expect(200);
 
     expect(response.body.data.summary.accessibleCount).toBe(2);
+  });
+
+  it('returns selected lead list items as not-mappable when they do not have reliable coordinates yet', async () => {
+    const response = await agent
+      .get(`/api/lead-map?listId=${leadListId}`)
+      .expect(200);
+
+    expect(response.body.data.summary.accessibleCount).toBe(1);
+    expect(response.body.data.summary.mappableCount).toBe(0);
+    expect(response.body.data.summary.notMappableCount).toBe(1);
+    expect(response.body.data.notMappable[0]).toMatchObject({
+      id: catalogLeadId,
+      canEnrich: true,
+    });
   });
 
   it('enforces the lead id cap', async () => {

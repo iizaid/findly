@@ -4,6 +4,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { enqueueGeoEnrichmentJob, resolveAccessibleLeadTargets } from './geoEnrichment.service.js';
 import { getLeadMapData } from './leadMap.service.js';
+import { assertGeoRuntimeReady } from './geoReadiness.service.js';
 
 const parseLeadIds = (value) => String(value || '')
   .split(',')
@@ -11,6 +12,7 @@ const parseLeadIds = (value) => String(value || '')
   .filter(Boolean);
 
 export const getLeadMap = asyncHandler(async (req, res) => {
+  await assertGeoRuntimeReady();
   const leadIds = parseLeadIds(req.validated.query.leadIds);
   const listId = req.validated.query.listId || null;
   const result = await getLeadMapData({
@@ -22,6 +24,7 @@ export const getLeadMap = asyncHandler(async (req, res) => {
 });
 
 export const createLeadMapEnrichmentJob = asyncHandler(async (req, res) => {
+  await assertGeoRuntimeReady();
   const leadIds = [...new Set(req.validated.body.leadIds || [])];
   const listId = req.validated.body.listId || null;
 

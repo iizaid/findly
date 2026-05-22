@@ -31,6 +31,13 @@ const loadSavedFormState = () => {
   }
 };
 
+const buildCampaignQuery = ({ service, businessType, goal, city, country }) => {
+  const subject = [businessType, service].filter(Boolean).join(' for ');
+  const geography = [city, country].filter(Boolean).join(', ');
+  const intent = goal ? ` - ${goal}` : '';
+  return [subject, geography].filter(Boolean).join(' in ') + intent;
+};
+
 const normalizeSourceOptions = (sources = []) => [...sources]
   .filter((source) => PREFERRED_SOURCE_ORDER.includes(source.key))
   .sort((a, b) => PREFERRED_SOURCE_ORDER.indexOf(a.key) - PREFERRED_SOURCE_ORDER.indexOf(b.key))
@@ -264,6 +271,10 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       setError('Complete the service, business type, goal, country, and governorate before starting the search.');
       return;
     }
+    if (!workspace?.id) {
+      setError('Workspace context is still loading. Refresh the page and try again.');
+      return;
+    }
 
     setIsSubmitting(true);
     setSearchStep(0);
@@ -290,6 +301,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
         body: JSON.stringify({
           workspaceId: workspace?.id,
           name: `${businessType} in ${city}`,
+          query: buildCampaignQuery({ service, businessType, goal, city, country }),
           serviceProfileId: profileRes.data.profile.id,
           businessTypes: [businessType],
           country,

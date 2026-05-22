@@ -79,6 +79,18 @@ Use a PostGIS-capable image, for example:
 image: postgis/postgis:16-3.4
 ```
 
+This repo includes a ready local compose file:
+
+```bash
+docker compose -f docker-compose.postgis.yml up -d
+```
+
+Local PostGIS `DATABASE_URL`:
+
+```env
+postgresql://postgres:postgres@localhost:5433/findly?schema=public
+```
+
 ### Hosted Postgres
 
 - Neon: use a plan/runtime that supports PostGIS extensions.
