@@ -4,21 +4,31 @@ import { AppError, errorCodes } from '../../utils/AppError.js';
 import { leadGeoSelect } from './leadGeoEligibility.service.js';
 import { buildNotMappableReason, isLeadMappable } from './geoValidation.service.js';
 
-const mapLeadSelect = {
+const analysisSelect = {
+  orderBy: { createdAt: 'desc' },
+  take: 1,
+  select: {
+    opportunityScore: true,
+    scoreLevel: true,
+    suggestedService: true,
+  },
+};
+
+const mapDirectLeadSelect = {
   ...leadGeoSelect,
   rating: true,
   reviewCount: true,
   phone: true,
   source: true,
-  analyses: {
-    orderBy: { createdAt: 'desc' },
-    take: 1,
-    select: {
-      opportunityScore: true,
-      scoreLevel: true,
-      suggestedService: true,
-    },
-  },
+  analyses: analysisSelect,
+};
+
+const mapCatalogLeadSelect = {
+  ...leadGeoSelect,
+  rating: true,
+  reviewCount: true,
+  phone: true,
+  source: true,
 };
 
 const buildMappableLead = (lead, type) => ({
@@ -78,7 +88,7 @@ export const getLeadMapData = async ({ userId, leadIds = [], listId = null }) =>
         userId,
         ...(dedupedLeadIds.length ? { id: { in: dedupedLeadIds } } : {}),
       },
-      select: mapLeadSelect,
+      select: mapDirectLeadSelect,
     }),
     prisma.leadListLead.findMany({
       where: {
@@ -97,8 +107,9 @@ export const getLeadMapData = async ({ userId, leadIds = [], listId = null }) =>
         id: true,
         leadId: true,
         catalogLeadId: true,
-        lead: { select: mapLeadSelect },
-        catalogLead: { select: mapLeadSelect },
+        analyses: analysisSelect,
+        lead: { select: mapDirectLeadSelect },
+        catalogLead: { select: mapCatalogLeadSelect },
       },
     }),
   ]);
@@ -107,7 +118,10 @@ export const getLeadMapData = async ({ userId, leadIds = [], listId = null }) =>
   const directMap = new Map(directLeads.map((lead) => [lead.id, lead]));
   for (const item of listItems) {
     if (item.catalogLead && !catalogMap.has(item.catalogLead.id)) {
-      catalogMap.set(item.catalogLead.id, item.catalogLead);
+      catalogMap.set(item.catalogLead.id, {
+        ...item.catalogLead,
+        analyses: item.analyses || [],
+      });
     }
     if (item.lead && !directMap.has(item.lead.id)) {
       directMap.set(item.lead.id, item.lead);
