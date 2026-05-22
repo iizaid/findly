@@ -19,9 +19,11 @@ vi.mock('../../src/modules/geo/providers/locationIqGeocoder.service.js', () => (
 }));
 
 let geocodeBusinessLocation;
+let normalizeProviderConfidence;
+let scoreGeoCandidate;
 
 beforeEach(async () => {
-  ({ geocodeBusinessLocation } = await import('../../src/modules/geo/geoProvider.service.js'));
+  ({ geocodeBusinessLocation, normalizeProviderConfidence, scoreGeoCandidate } = await import('../../src/modules/geo/geoProvider.service.js'));
   getCachedGeoResult.mockReset();
   saveGeoCacheResult.mockReset();
   geoapifyGeocode.mockReset();
@@ -104,5 +106,60 @@ describe('geocodeBusinessLocation', () => {
     expect(result.ok).toBe(false);
     expect(result.cacheHit).toBe(false);
     expect(result.reason).toBeTruthy();
+  });
+});
+
+describe('normalizeProviderConfidence', () => {
+  it.each([
+    [0.84, 84],
+    [0.85, 85],
+    [84, 84],
+    [85, 85],
+    ['0.9', 90],
+    ['90', 90],
+    [150, 100],
+  ])('normalizes %p to %p', (value, expected) => {
+    expect(normalizeProviderConfidence(value)).toBe(expected);
+  });
+
+  it.each([null, undefined, '', Number.NaN, -1, 'abc', Infinity])('returns null for invalid value %p', (value) => {
+    expect(normalizeProviderConfidence(value)).toBeNull();
+  });
+});
+
+describe('scoreGeoCandidate provider confidence boost', () => {
+  const input = {
+    businessName: 'Specialty Roastery',
+    address: 'Rainbow Street',
+    city: 'Amman',
+    country: 'Jordan',
+    category: 'coffee shop',
+  };
+
+  const baseCandidate = {
+    latitude: 31.955,
+    longitude: 35.945,
+    normalizedAddress: 'Rainbow Street, Amman, Jordan',
+    resultType: 'address',
+    accuracy: 'address',
+    city: 'Amman',
+    country: 'Jordan',
+    businessName: 'Specialty Roastery',
+    category: 'coffee shop',
+  };
+
+  it.each([
+    [0.84, false],
+    [0.85, true],
+    [84, false],
+    [85, true],
+    ['0.9', true],
+    ['90', true],
+    [null, false],
+    [Number.NaN, false],
+    ['abc', false],
+  ])('marks provider_confidence for %p => %p', (providerConfidence, shouldBoost) => {
+    const scored = scoreGeoCandidate({ ...baseCandidate, providerConfidence }, input);
+    expect(scored.reasons.includes('provider_confidence')).toBe(shouldBoost);
   });
 });

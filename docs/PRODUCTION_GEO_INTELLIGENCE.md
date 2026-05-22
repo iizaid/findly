@@ -54,6 +54,23 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 If local Postgres does not include the PostGIS package, the migration should fail. Do not bypass it. Fix the database runtime instead.
 
+### Preflight check
+
+Run:
+
+```bash
+cd server
+npm run check:postgis
+```
+
+The script reports one of three states:
+
+- PostGIS available and installed
+- PostGIS available but not installed in the current database
+- PostGIS not available in the current PostgreSQL runtime
+
+If the script reports that PostGIS is not available, the geo migration cannot be applied yet.
+
 ### Local Docker example
 
 Use a PostGIS-capable image, for example:
@@ -66,6 +83,47 @@ image: postgis/postgis:16-3.4
 
 - Neon: use a plan/runtime that supports PostGIS extensions.
 - Render / managed Postgres: verify extension support before running migrations.
+
+### Windows Prisma DLL lock
+
+If `npx prisma generate` fails on Windows with a `query_engine-windows.dll.node` rename or `EPERM` error:
+
+1. Stop local API, worker, and test processes.
+2. Close terminals still running `node`, `npm`, or `vitest`.
+3. Run:
+
+```powershell
+taskkill /F /IM node.exe
+```
+
+4. If the lock remains, delete these directories and reinstall dependencies:
+
+```powershell
+Remove-Item -Recurse -Force .\node_modules\.prisma\client
+Remove-Item -Recurse -Force .\node_modules\@prisma\client
+npm install
+```
+
+5. Run:
+
+```powershell
+cd server
+npx prisma generate
+```
+
+6. If the lock still remains, restart VS Code or restart Windows.
+
+This is an environment/process lock issue, not a schema bug.
+
+## Next commands after PostGIS is fixed
+
+```bash
+cd server
+npm run check:postgis
+npx prisma migrate dev --name add_production_geo_intelligence
+npx prisma generate
+npm test
+```
 
 ## Manual QA
 

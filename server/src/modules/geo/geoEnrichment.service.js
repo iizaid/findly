@@ -26,14 +26,17 @@ const buildCatalogInclude = {
   leadList: { select: { workspaceId: true } },
 };
 
-const setGeoPoint = async (tx, tableName, id, longitude, latitude) => {
-  await tx.$executeRawUnsafe(
-    `UPDATE "${tableName}" SET "geoPoint" = ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography WHERE "id" = $3`,
-    longitude,
-    latitude,
-    id,
-  );
-};
+const setLeadGeoPoint = async (tx, id, longitude, latitude) => tx.$executeRaw`
+  UPDATE "Lead"
+  SET "geoPoint" = ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326)::geography
+  WHERE "id" = ${id}
+`;
+
+const setLeadCatalogGeoPoint = async (tx, id, longitude, latitude) => tx.$executeRaw`
+  UPDATE "LeadCatalog"
+  SET "geoPoint" = ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326)::geography
+  WHERE "id" = ${id}
+`;
 
 const updateDirectLeadGeo = async (tx, lead, result) => {
   const data = {
@@ -62,7 +65,7 @@ const updateDirectLeadGeo = async (tx, lead, result) => {
   });
 
   if (result.ok) {
-    await setGeoPoint(tx, 'Lead', lead.id, result.longitude, result.latitude);
+    await setLeadGeoPoint(tx, lead.id, result.longitude, result.latitude);
   }
 };
 
@@ -93,7 +96,7 @@ const updateCatalogLeadGeo = async (tx, lead, result) => {
   });
 
   if (result.ok) {
-    await setGeoPoint(tx, 'LeadCatalog', lead.id, result.longitude, result.latitude);
+    await setLeadCatalogGeoPoint(tx, lead.id, result.longitude, result.latitude);
   }
 };
 

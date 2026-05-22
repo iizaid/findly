@@ -10,6 +10,7 @@
     "worker": "node src/workers/workerRunner.js",
     "lint": "node scripts/check-syntax.js",
     "test": "vitest run",
+    "check:postgis": "node scripts/check-postgis.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "import:datasets": "node scripts/import-datasets.js",

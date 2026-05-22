@@ -75,8 +75,40 @@ Your database runtime is missing PostGIS support. Fix the runtime, then rerun:
 
 ```bash
 cd server
+npm run check:postgis
 npx prisma migrate dev --name add_production_geo_intelligence
 ```
+
+If `npm run check:postgis` reports that PostGIS is not available, use a PostGIS-capable runtime such as `postgis/postgis:16-3.4` or enable the extension on your managed PostgreSQL service before retrying.
+
+### Windows Prisma DLL lock
+
+If `npx prisma generate` fails on Windows with `EPERM` or a `query_engine-windows.dll.node` rename error:
+
+1. Stop the API, worker, and test processes.
+2. Close terminals running `node`, `npm`, or `vitest`.
+3. Run:
+
+```powershell
+taskkill /F /IM node.exe
+```
+
+4. If needed, delete the generated Prisma client folders and reinstall:
+
+```powershell
+Remove-Item -Recurse -Force .\node_modules\.prisma\client
+Remove-Item -Recurse -Force .\node_modules\@prisma\client
+npm install
+```
+
+5. Then run:
+
+```powershell
+cd server
+npx prisma generate
+```
+
+6. If the lock remains, restart VS Code or Windows.
 
 ### No markers visible
 

@@ -14,7 +14,17 @@ const PROVIDERS = {
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
 
-const scoreCandidate = (candidate, input) => {
+export const normalizeProviderConfidence = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  const parsed = typeof value === 'string' ? Number(value.trim()) : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  if (parsed <= 1) return parsed * 100;
+  if (parsed <= 100) return parsed;
+  return 100;
+};
+
+export const scoreGeoCandidate = (candidate, input) => {
   let confidence = 0;
   const reasons = [];
 
@@ -53,7 +63,8 @@ const scoreCandidate = (candidate, input) => {
     reasons.push('address_match');
   }
 
-  if (candidate.providerConfidence >= 0.85 || candidate.providerConfidence >= 85) {
+  const providerConfidenceScore = normalizeProviderConfidence(candidate.providerConfidence);
+  if (providerConfidenceScore !== null && providerConfidenceScore >= 85) {
     confidence += 10;
     reasons.push('provider_confidence');
   }
@@ -156,7 +167,7 @@ export const geocodeBusinessLocation = async (input, options = {}) => {
     try {
       const candidates = await executeProvider(providerKey, normalizedInput);
       for (const candidate of candidates) {
-        const score = scoreCandidate(candidate, normalizedInput);
+        const score = scoreGeoCandidate(candidate, normalizedInput);
         const result = toNormalizedResult(candidate, normalizedInput, score, false);
         if (!bestResult || result.confidence > bestResult.confidence) {
           bestResult = result;
