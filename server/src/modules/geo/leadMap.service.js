@@ -83,13 +83,15 @@ export const getLeadMapData = async ({ userId, leadIds = [], listId = null }) =>
   }
 
   const [directLeads, listItems] = await Promise.all([
-    prisma.lead.findMany({
-      where: {
-        userId,
-        ...(dedupedLeadIds.length ? { id: { in: dedupedLeadIds } } : {}),
-      },
-      select: mapDirectLeadSelect,
-    }),
+    (dedupedLeadIds.length
+      ? prisma.lead.findMany({
+        where: {
+          userId,
+          id: { in: dedupedLeadIds },
+        },
+        select: mapDirectLeadSelect,
+      })
+      : Promise.resolve([])),
     prisma.leadListLead.findMany({
       where: {
         leadList: {
