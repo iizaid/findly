@@ -58,6 +58,19 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
             </div>
           )}
 
+          {!search.error && search.selectedSourceWarnings.length > 0 && (
+            <div className="mt-6 space-y-3">
+              {search.selectedSourceWarnings.map((warning) => (
+                <div key={warning} className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <p className="text-sm font-bold">{warning}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {!search.error && search.pendingSearch && !search.isSubmitting && (
             <div className="mt-6 rounded-2xl border border-yellow-200 bg-yellow-50 p-5">
               <div className="flex items-start gap-3">

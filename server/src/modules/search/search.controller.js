@@ -548,6 +548,7 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
       progressCurrent: true,
       progressTotal: true,
       lastStep: true,
+      filters: true,
       jobs: {
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -572,6 +573,7 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
         select: {
           id: true,
           resultCount: true,
+          filters: true,
         },
       },
     },
@@ -579,12 +581,23 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
 
   if (!campaign) throw new AppError(errorCodes.NOT_FOUND, 'Campaign not found.', 404);
 
+  const latestLeadList = campaign.leadLists?.[0] || null;
+  const campaignFilters = campaign.filters || {};
+  const leadListFilters = latestLeadList?.filters || {};
+
   return successResponse(res, {
     campaign: {
       ...campaign,
       job: campaign.jobs?.[0] || null,
-      leadListId: campaign.leadLists?.[0]?.id || null,
-      resultCount: campaign.resultCount || campaign.leadLists?.[0]?.resultCount || 0,
+      leadListId: latestLeadList?.id || null,
+      resultCount: campaign.resultCount || latestLeadList?.resultCount || 0,
+      layerSummary: leadListFilters?.discovery?.layerReport
+        || campaignFilters?.discoveryLayerReport
+        || [],
+      message: leadListFilters?.discovery?.message
+        || campaignFilters?.discoveryMessage
+        || null,
+      filters: undefined,
       jobs: undefined,
       leadLists: undefined,
     },

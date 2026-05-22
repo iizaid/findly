@@ -15,7 +15,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'Findly could not complete this source right now. Local data is used for these platforms today, so try another source or broaden your search.';
+      return 'One discovery layer could not run, but Findly will continue with available layers when fallback is possible.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
@@ -103,6 +103,13 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   const selectedPresenceNames = useMemo(
     () => selectedPresenceTargets.map((source) => PLATFORM_LABELS[source] || source).join(', '),
     [selectedPresenceTargets],
+  );
+
+  const selectedSourceWarnings = useMemo(
+    () => discoverySourceOptions
+      .filter((source) => selectedDiscoverySources.includes(source.id) && source.warning)
+      .map((source) => source.warning),
+    [discoverySourceOptions, selectedDiscoverySources],
   );
 
   useEffect(() => {
@@ -223,12 +230,6 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   const applyCompletedCampaign = (campaign, runData = {}) => {
     const leadsReturned = campaign.resultCount ?? campaign.leadsReturned ?? campaign.savedLeadsCount ?? 0;
 
-    if (leadsReturned === 0) {
-      setError('No matching local leads found yet. Try broader filters, fewer sources, or import more local data.');
-      setPendingSearch(null);
-      return;
-    }
-
     sessionStorage.removeItem(STORAGE_KEY);
     setFormState({ ...EMPTY_FORM_STATE, goal: searchOptions.searchGoals[0] || DEFAULT_GOALS[0] });
     setPendingSearch(null);
@@ -237,6 +238,9 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       count: leadsReturned,
       discoverySourcesRequested: selectedDiscoverySources,
       presenceTargetsRequested: selectedPresenceTargets,
+      layerSummary: campaign.layerSummary || [],
+      message: campaign.message || null,
+      providerWarnings: selectedSourceWarnings,
     });
     onUpdate?.();
   };
@@ -409,6 +413,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     pendingSearch,
     selectedDiscoveryNames,
     selectedPresenceNames,
+    selectedSourceWarnings,
     updateField,
     toggleDiscoverySource,
     togglePresenceTarget,

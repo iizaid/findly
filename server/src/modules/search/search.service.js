@@ -32,6 +32,11 @@ import { promoteHighConfidenceEvidenceBatch } from './evidencePromotion.service.
 import { findReusableEvidenceCandidates, convertEvidenceToReusableLeadCandidates } from './evidenceCache.service.js';
 import { buildDiscoveryPlan as buildBrainDiscoveryPlan } from './discoveryDecisionEngine.service.js';
 import { collectOpenWebEvidenceCandidates } from './openWebEvidence.service.js';
+import {
+  buildLayeredDiscoveryReport,
+  buildLayeredSearchMessage,
+  shouldUseLayeredDiscovery,
+} from './layeredDiscovery.service.js';
 
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK', 'REDDIT'];
@@ -357,6 +362,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
 
   const discoveryPlan = buildDiscoveryPlan({ campaign: normalizedCampaign });
   const localDatasetRequested = rawSources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
+  const layeredDiscoveryEligible = shouldUseLayeredDiscovery(normalizedCampaign);
   const externalSourceKeys = sources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = externalSourceKeys.map((source) => ({ source, ...getRunnableAdapter(source) }));
   const runnableExternalSources = runnableSources.filter((source) => source.runnable);
@@ -369,7 +375,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   const shouldUseLocalDataset = localDatasetRequested
     || (fallbackSourcesRequested && runnableExternalSources.length === 0 && allUnavailableSourcesCanFallback);
 
-  if (shouldUseLocalDataset) {
+  if (layeredDiscoveryEligible || shouldUseLocalDataset) {
     if (!await hasActiveSearchReservation({ userId, campaignId: campaign.id })) {
       await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
     }
@@ -740,10 +746,6 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       progressTotal: campaign.requestedLimit || 20,
       lastStep: 'Scoring leads',
     });
-    const message = estimatedTotalResults > 0
-      ? 'Search completed across the selected discovery and focus setup.'
-      : 'No matching local leads found yet. Try broader filters, fewer focus targets, or import more local data.';
-
     const listNameParts = [
       Array.isArray(campaign.businessTypes) && campaign.businessTypes[0] ? campaign.businessTypes[0] : campaign.query,
       campaign.city,
@@ -991,6 +993,20 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       }
 
       const finalResultCount = catalogIds.size;
+      const { layerSummary } = buildLayeredDiscoveryReport({
+        campaign,
+        matchedLeads,
+        evidenceCandidates,
+        openWebEvidence,
+        discoveryDecision,
+        externalDiscovery,
+        promotedExternalCount: promotedToCatalogCount + linkedDuplicateCount,
+        promotedOpenWebCount: openWebPromotedToCatalogCount + openWebLinkedDuplicateCount,
+      });
+      const message = buildLayeredSearchMessage({
+        resultCount: finalResultCount,
+        layerSummary,
+      });
       const creditsUsed = calculateSearchCreditsUsed(finalResultCount);
 
       await tx.leadList.update({
@@ -1014,7 +1030,21 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               searchMetadataMaxQueriesAllowed: discoveryDecision.searchMetadataPlan.maxQueriesAllowed,
               googlePlacesMaxQueriesAllowed: discoveryDecision.googlePlacesPlan.maxQueriesAllowed,
               finalResultCount,
+              layerReport: layerSummary,
+              message,
             },
+          },
+        },
+      });
+
+      await tx.searchCampaign.update({
+        where: { id: campaign.id },
+        data: {
+          filters: {
+            ...(campaign.filters || {}),
+            presenceTargets: campaign.filters?.presenceTargets || [],
+            discoveryLayerReport: layerSummary,
+            discoveryMessage: message,
           },
         },
       });
@@ -1091,6 +1121,8 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
         creditsUsed,
         evidenceCreatedCount: evidenceCreatedCount + openWebEvidenceCreatedCount,
         promotedToCatalogCount: promotedToCatalogCount + openWebPromotedToCatalogCount,
+        layerSummary,
+        message,
       };
     });
 
@@ -1138,7 +1170,8 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       evidenceCreatedCount: leadListResult.evidenceCreatedCount,
       promotedToCatalogCount: leadListResult.promotedToCatalogCount,
       externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,
-      message,
+      layerSummary: leadListResult.layerSummary,
+      message: leadListResult.message,
       jobId,
     };
   } catch (error) {
