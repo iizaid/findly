@@ -12,7 +12,8 @@ const discoveryLabelOverrides = {
 const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = false } = {}) => {
   if (!userVisibleDiscoveryKeys.has(source.key)) return null;
 
-  const canSearch = Boolean(source.available || (fallbackAvailable && localFallbackDiscoveryKeys.has(source.key)));
+  const sourceAvailable = Boolean(source.runtimeAvailable ?? source.available);
+  const canSearch = Boolean(sourceAvailable || (fallbackAvailable && localFallbackDiscoveryKeys.has(source.key)));
   const later = !canSearch;
 
   return {
@@ -20,7 +21,7 @@ const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = fa
     label: discoveryLabelOverrides[source.key] || source.label,
     kind: 'discovery_source',
     group: source.group,
-    status: canSearch ? (source.available ? 'ready' : 'index_ready') : 'later',
+    status: canSearch ? (sourceAvailable ? 'ready' : 'index_ready') : 'later',
     available: canSearch,
     searchable: canSearch,
     selectable: true,
@@ -28,7 +29,7 @@ const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = fa
     directScraping: Boolean(source.directScraping),
     comingSoon: later,
     reason: canSearch
-      ? (source.available
+      ? (sourceAvailable
         ? 'Ready through a compliant source or official business API.'
         : 'Available from Findly’s current business intelligence index.')
       : 'This discovery source is not configured yet.',

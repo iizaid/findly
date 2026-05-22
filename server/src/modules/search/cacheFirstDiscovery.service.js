@@ -29,7 +29,10 @@ const averageScore = (localResults = []) => {
   return Math.round(total / localResults.length);
 };
 
-const selectedSources = (campaign = {}) => normalizeCampaignTargeting(campaign).discoverySources;
+const selectedSources = (campaign = {}) => {
+  const targeting = normalizeCampaignTargeting(campaign);
+  return targeting.discoverySources.length > 0 ? targeting.discoverySources : targeting.rawSources;
+};
 const selectedPresenceTargets = (campaign = {}) => normalizeCampaignTargeting(campaign).presenceTargets;
 
 const freshnessStatusFor = (localResults = []) => {

@@ -354,7 +354,6 @@ export const createNewCampaign = asyncHandler(async (req, res) => {
   const normalizedTargeting = normalizeCampaignTargeting(data);
   const normalizedData = {
     ...data,
-    sources: normalizedTargeting.discoverySources,
     filters: {
       ...(data.filters || {}),
       presenceTargets: normalizedTargeting.presenceTargets,

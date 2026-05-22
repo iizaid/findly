@@ -35,7 +35,10 @@ const SEARCH_METADATA_TARGET_SOURCES = new Set([
 
 const unique = (values) => [...new Set(values.filter(Boolean))];
 
-const getSources = (campaign) => normalizeCampaignTargeting(campaign).discoverySources;
+const getSources = (campaign) => {
+  const targeting = normalizeCampaignTargeting(campaign);
+  return targeting.discoverySources.length > 0 ? targeting.discoverySources : targeting.rawSources;
+};
 const getPresenceTargets = (campaign) => normalizeCampaignTargeting(campaign).presenceTargets;
 
 const selectedOnlyLocalDataset = (sources) => sources.length > 0

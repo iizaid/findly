@@ -12,46 +12,55 @@ const presenceTargetDefinitions = [
     key: 'INSTAGRAM',
     label: 'Instagram',
     description: 'Use public business information and search metadata to identify Instagram presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'FACEBOOK',
     label: 'Facebook',
     description: 'Use public business information and search metadata to identify Facebook presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'LINKEDIN',
     label: 'LinkedIn',
     description: 'Use public business information and search metadata to identify LinkedIn presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'TIKTOK',
     label: 'TikTok',
     description: 'Use public business information and search metadata to identify TikTok presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'TRIPADVISOR',
     label: 'TripAdvisor',
     description: 'Use public business information and search metadata to identify TripAdvisor presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'YOUTUBE',
     label: 'YouTube',
     description: 'Use public business information and search metadata to identify YouTube presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'X',
     label: 'X',
     description: 'Use public business information and search metadata to identify X presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'YELP',
     label: 'Yelp',
     description: 'Use public business information and search metadata to identify Yelp presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
   {
     key: 'REDDIT',
     label: 'Reddit',
     description: 'Use public business information and search metadata to identify Reddit presence.',
+    estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
   },
 ];
 
@@ -73,9 +82,12 @@ const internalDiscoveryStatuses = adapterEntries.map(({ group, Adapter }) => {
   const status = Adapter.getStatus();
   const discoveryOnly = DISCOVERY_SOURCE_KEYS.has(Adapter.key);
   const targetOnly = targetOnlyAdapterKeys.has(Adapter.key);
+  const directExecutionDisabled = targetOnly || Adapter.key === 'SERPAPI';
 
   return {
     ...status,
+    runtimeAvailable: status.available,
+    available: directExecutionDisabled ? false : status.available,
     group,
     kind: discoveryOnly ? 'discovery_source' : (PRESENCE_TARGET_KEYS.has(Adapter.key) || targetOnly ? 'presence_target' : 'internal'),
     executable: !targetOnly && Adapter.key !== 'WEBSITE' && Adapter.key !== 'LOCAL_DATASET' && Adapter.key !== 'CSV',
@@ -95,8 +107,8 @@ export const getPresenceTargetDefinitions = () => presenceTargetDefinitions.map(
   available: true,
   searchable: false,
   comingSoon: false,
-  reason: 'These options guide discovery and analysis. Findly does not perform direct login-based scraping.',
-  group: 'presence_target',
+  reason: 'This option is treated as a target signal and uses local cache plus compliant search metadata.',
+  group: 'platform_signal',
 }));
 
 export const getSourceStatuses = () => [
@@ -111,7 +123,9 @@ export const getSourceStatuses = () => [
       comingSoon: false,
       executable: false,
       selectable: false,
-      reason: `${source.label} is used as search metadata or a public presence target. Direct scraping and login automation are disabled.`,
+      group: 'platform_signal',
+      reason: `${source.label} is handled as a target signal through metadata and local cache. Direct platform scraping is disabled.`,
+      estimatedUseCase: 'Acts as a target signal and guides local cache ranking plus compliant search metadata.',
     };
   }),
   ...getPresenceTargetDefinitions(),

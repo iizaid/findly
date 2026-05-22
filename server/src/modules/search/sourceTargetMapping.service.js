@@ -182,9 +182,7 @@ export const normalizeCampaignTargeting = (campaign = {}) => {
 
   return {
     rawSources,
-    discoverySources: discoverySources.length > 0
-      ? discoverySources
-      : (presenceTargets.length > 0 ? ['LOCAL_DATASET'] : []),
+    discoverySources,
     presenceTargets,
     legacyPresenceTargets,
   };

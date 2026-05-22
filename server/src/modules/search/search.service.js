@@ -334,31 +334,38 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
   }
 
   const targeting = normalizeCampaignTargeting(campaign);
+  const rawSources = targeting.rawSources;
   const sources = targeting.discoverySources;
   const presenceTargets = targeting.presenceTargets;
-  if (sources.length === 0) {
+  if (rawSources.length === 0 && presenceTargets.length === 0) {
     throw new AppError(errorCodes.VALIDATION_ERROR, 'Campaign requires at least one source.', 400);
   }
 
   const normalizedCampaign = {
     ...campaign,
-    sources,
     filters: {
       ...(campaign.filters || {}),
       presenceTargets,
     },
+    presenceTargets,
+  };
+
+  const executionCampaign = {
+    ...normalizedCampaign,
+    sources,
   };
 
   const discoveryPlan = buildDiscoveryPlan({ campaign: normalizedCampaign });
-  const localDatasetRequested = sources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
+  const localDatasetRequested = rawSources.some((source) => LOCAL_DATASET_SOURCES.includes(source));
   const externalSourceKeys = sources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
   const runnableSources = externalSourceKeys.map((source) => ({ source, ...getRunnableAdapter(source) }));
   const runnableExternalSources = runnableSources.filter((source) => source.runnable);
   const unavailable = runnableSources.find((source) => !source.runnable);
 
-  const fallbackSourcesRequested = externalSourceKeys.some((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
-  const allUnavailableSourcesCanFallback = externalSourceKeys.length > 0
-    && externalSourceKeys.every((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
+  const fallbackCandidates = rawSources.filter((source) => !LOCAL_DATASET_SOURCES.includes(source));
+  const fallbackSourcesRequested = fallbackCandidates.some((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
+  const allUnavailableSourcesCanFallback = fallbackCandidates.length > 0
+    && fallbackCandidates.every((source) => LOCAL_FALLBACK_SOURCE_KEYS.includes(source));
   const shouldUseLocalDataset = localDatasetRequested
     || (fallbackSourcesRequested && runnableExternalSources.length === 0 && allUnavailableSourcesCanFallback);
 
@@ -371,7 +378,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
       userId,
       jobId,
       fallbackUsed: !localDatasetRequested,
-      platformsRequested: [...new Set([...sources, ...presenceTargets])],
+      platformsRequested: [...new Set([...rawSources, ...presenceTargets])],
       discoveryPlan,
     });
   }
@@ -392,7 +399,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
     await assertSearchCreditsAvailable({ userId, requestedLimit: campaign.requestedLimit || 20 });
   }
   assertDiscoveryBudget({
-    campaign: normalizedCampaign,
+    campaign: executionCampaign,
     plannedDiscoveryCalls: runnableExternalSources.length,
     discoveryMethod: runnableExternalSources[0]?.source ? SOURCE_TO_DISCOVERY_METHOD[runnableExternalSources[0].source] : 'UNKNOWN',
   });
@@ -417,7 +424,7 @@ export const runCampaign = async (campaignId, userId, { jobId = null } = {}) => 
         where: { id: campaign.id },
         data: { lastStep: `Searching ${source.status.label}` },
       });
-      const adapter = new source.Adapter(normalizedCampaign);
+      const adapter = new source.Adapter(executionCampaign);
       normalizedLeadGroups.push(...await adapter.run());
       await assertNotCancelled({ jobId, campaignId: campaign.id });
     }
