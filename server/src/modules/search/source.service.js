@@ -13,10 +13,10 @@ const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = fa
   if (!userVisibleDiscoveryKeys.has(source.key)) return null;
 
   const sourceAvailable = Boolean(source.runtimeAvailable ?? source.available);
-  const canFallback = Boolean(fallbackAvailable && localFallbackDiscoveryKeys.has(source.key));
-  const canSearch = Boolean(sourceAvailable || canFallback);
+  const canContinue = Boolean(fallbackAvailable && localFallbackDiscoveryKeys.has(source.key));
+  const canSearch = Boolean(sourceAvailable || canContinue);
   const later = !canSearch;
-  const layerWarning = !sourceAvailable && canFallback
+  const layerWarning = !sourceAvailable && canContinue
     ? `${discoveryLabelOverrides[source.key] || source.label} is not configured yet. Findly will continue with available discovery layers.`
     : null;
 
@@ -32,7 +32,7 @@ const sanitizeDiscoverySourceForUserResponse = (source, { fallbackAvailable = fa
     selectable: true,
     executable: Boolean(source.executable),
     directScraping: Boolean(source.directScraping),
-    canFallback,
+    canContinue,
     comingSoon: later,
     warning: layerWarning,
     reason: canSearch
@@ -55,7 +55,7 @@ const sanitizePresenceTargetForUserResponse = (target) => ({
   selectable: true,
   executable: false,
   directScraping: false,
-  canFallback: true,
+  canContinue: true,
   comingSoon: false,
   description: target.description,
   reason: 'These options guide discovery and analysis. Findly does not perform direct login-based scraping.',

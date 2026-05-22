@@ -136,6 +136,20 @@ const summarizeSearchMetadataLayer = ({ context, discoveryDecision, externalDisc
     });
   }
 
+  if (used) {
+    return createLayerResult({
+      layerKey: DISCOVERY_LAYER_KEYS.SEARCH_METADATA,
+      status: acceptedCount > 0 ? 'COMPLETED' : 'NO_RESULTS',
+      reason: acceptedCount > 0 ? null : 'Search Metadata did not return accepted leads.',
+      providerConfigured: configured,
+      attempted: true,
+      leadsFound: externalDiscovery.candidates.length,
+      leadsAccepted: acceptedCount,
+      costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
+      warnings: externalDiscovery.metadata.searchMetadataFallbackUsed ? ['FALLBACK_PROVIDER_USED'] : [],
+    });
+  }
+
   if (!configured) {
     return createLayerResult({
       layerKey: DISCOVERY_LAYER_KEYS.SEARCH_METADATA,
@@ -143,20 +157,6 @@ const summarizeSearchMetadataLayer = ({ context, discoveryDecision, externalDisc
       reason: 'Search Metadata is not configured yet.',
       providerConfigured: false,
       attempted: false,
-    });
-  }
-
-  if (used) {
-    return createLayerResult({
-      layerKey: DISCOVERY_LAYER_KEYS.SEARCH_METADATA,
-      status: acceptedCount > 0 ? 'COMPLETED' : 'NO_RESULTS',
-      reason: acceptedCount > 0 ? null : 'Search Metadata did not return accepted leads.',
-      providerConfigured: true,
-      attempted: true,
-      leadsFound: externalDiscovery.candidates.length,
-      leadsAccepted: acceptedCount,
-      costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
-      warnings: externalDiscovery.metadata.searchMetadataFallbackUsed ? ['FALLBACK_PROVIDER_USED'] : [],
     });
   }
 
