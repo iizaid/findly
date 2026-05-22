@@ -48,6 +48,7 @@ import {
 } from './auth.controller.js';
 import { handleOAuthCallback, startOAuth } from './oauth.controller.js';
 import { oauthCallbackSchema, oauthStartSchema } from './oauth.schemas.js';
+import { repairTwoFactorStateForCurrentUser } from './twoFactorRepair.middleware.js';
 
 export const authRouter = Router();
 
@@ -68,6 +69,6 @@ authRouter.get('/me', requireAuth, me);
 authRouter.patch('/password', requireAuth, validate(updatePasswordSchema), updatePassword);
 authRouter.get('/2fa/status', requireAuth, requireVerifiedEmail, getTwoFactor);
 authRouter.post('/2fa/setup/start', requireAuth, requireVerifiedEmail, twoFactorSetupStartRateLimiter, validate(emptyAuthBodySchema), startTwoFactor);
-authRouter.post('/2fa/setup/confirm', requireAuth, requireVerifiedEmail, twoFactorSetupConfirmRateLimiter, validate(twoFactorConfirmSchema), confirmTwoFactor);
-authRouter.post('/2fa/disable', requireAuth, requireVerifiedEmail, twoFactorDisableRateLimiter, validate(twoFactorDisableSchema), disableTwoFactorForCurrentUser);
-authRouter.post('/2fa/backup-codes/regenerate', requireAuth, requireVerifiedEmail, twoFactorBackupRegenerateRateLimiter, validate(twoFactorConfirmSchema), regenerateBackupCodes);
+authRouter.post('/2fa/setup/confirm', requireAuth, requireVerifiedEmail, repairTwoFactorStateForCurrentUser, twoFactorSetupConfirmRateLimiter, validate(twoFactorConfirmSchema), confirmTwoFactor);
+authRouter.post('/2fa/disable', requireAuth, requireVerifiedEmail, repairTwoFactorStateForCurrentUser, twoFactorDisableRateLimiter, validate(twoFactorDisableSchema), disableTwoFactorForCurrentUser);
+authRouter.post('/2fa/backup-codes/regenerate', requireAuth, requireVerifiedEmail, repairTwoFactorStateForCurrentUser, twoFactorBackupRegenerateRateLimiter, validate(twoFactorConfirmSchema), regenerateBackupCodes);
