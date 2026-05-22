@@ -451,6 +451,35 @@ describe('Two-factor authentication', () => {
     expect(repairedUser.twoFactorEnabled).toBe(false);
   });
 
+  it('repairs a stale enabled flag in status and allows setup to restart when no active setting exists', async () => {
+    const email = makeEmail('repair-status-start');
+    const { agent } = await registerAndVerify({ email });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { twoFactorEnabled: true },
+    });
+
+    const statusResponse = await agent.get('/api/auth/2fa/status').expect(200);
+    expect(statusResponse.body.data.enabled).toBe(false);
+    expect(statusResponse.body.data.confirmedAt).toBeNull();
+    expect(statusResponse.body.data.backupCodeCountRemaining).toBe(0);
+
+    const repairedUser = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(repairedUser.twoFactorEnabled).toBe(false);
+
+    const setup = await startTwoFactorSetup(agent);
+    expect(setup.manualSetupKey).toBeTruthy();
+
+    const pendingSetting = await prisma.userTwoFactorSetting.findUnique({
+      where: { userId: user.id },
+    });
+    expect(pendingSetting.enabled).toBe(false);
+    expect(pendingSetting.pendingSecretEncrypted).toBeTruthy();
+    expect(pendingSetting.secretEncrypted).toBeNull();
+  });
+
   it('requires two-factor verification after OAuth login without exposing the challenge token in the URL', async () => {
     const email = makeEmail('oauth-two-factor');
     const { agent } = await registerAndVerify({ email });

@@ -37,3 +37,4 @@ server/uploads/
 *.sw?
 
 findly_backup_before_recovery*.sql
+Plan-For-Me/

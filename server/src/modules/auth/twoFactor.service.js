@@ -298,37 +298,43 @@ export const getTwoFactorChallengeCookieOptions = () => ({
 export const clearTwoFactorChallengeCookieOptions = getBaseCookieOptions(TWO_FACTOR_CHALLENGE_COOKIE_PATH);
 
 export const getTwoFactorStatus = async (userId) => {
+  const requirement = await getEffectiveTwoFactorRequirement(userId);
   const setting = await prisma.userTwoFactorSetting.findUnique({
     where: { userId },
     select: {
       enabled: true,
+      secretEncrypted: true,
       confirmedAt: true,
       backupCodesHash: true,
     },
   });
 
-  const remaining = parseBackupCodeHashes(setting?.backupCodesHash).length;
+  const hasActiveSetting = Boolean(setting?.enabled && setting?.secretEncrypted);
+  const remaining = requirement.required
+    ? parseBackupCodeHashes(setting?.backupCodesHash).length
+    : 0;
 
   return {
-    enabled: Boolean(setting?.enabled),
-    confirmedAt: setting?.confirmedAt || null,
+    enabled: requirement.required && hasActiveSetting,
+    confirmedAt: requirement.required && hasActiveSetting ? (setting?.confirmedAt || null) : null,
     backupCodeCountRemaining: remaining,
   };
 };
 
 export const startTwoFactorSetup = async ({ userId, req }) => {
   assertTwoFactorConfigured();
+  const requirement = await getEffectiveTwoFactorRequirement(userId);
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true, twoFactorEnabled: true },
+    select: { id: true, email: true, name: true },
   });
 
   if (!user) {
     throw new AppError(errorCodes.NOT_FOUND, 'User not found.', 404);
   }
 
-  if (user.twoFactorEnabled) {
+  if (requirement.required) {
     throw new AppError(errorCodes.TWO_FACTOR_ALREADY_ENABLED, 'Two-factor authentication is already enabled.', 409);
   }
 
