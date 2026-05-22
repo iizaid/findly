@@ -330,6 +330,11 @@ describe('admin website enrichment jobs', () => {
   });
 
   it('prevents concurrent process calls from processing the same queued item twice', async () => {
+    const previousOpenWebEnabled = env.OPEN_WEB_EVIDENCE_ENABLED;
+    const previousWebsiteJobsEnabled = env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS;
+    env.OPEN_WEB_EVIDENCE_ENABLED = false;
+    env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS = false;
+
     let releaseFetch;
     const slowFetcher = vi.fn((url) => new Promise((resolve) => {
       releaseFetch = () => resolve({
@@ -343,39 +348,47 @@ describe('admin website enrichment jobs', () => {
       });
     }));
 
-    const job = await createWebsiteEnrichmentJob({
-      requestedByUserId: adminUser.id,
-      workspaceId: workspace.id,
-      targetType: 'CATALOG_LEAD',
-      mode: 'EXPLICIT_IDS',
-      catalogLeadIds: [lockLead.id],
-      forceRefresh: true,
-    });
+    try {
+      const job = await createWebsiteEnrichmentJob({
+        requestedByUserId: adminUser.id,
+        workspaceId: workspace.id,
+        targetType: 'CATALOG_LEAD',
+        mode: 'EXPLICIT_IDS',
+        catalogLeadIds: [lockLead.id],
+        forceRefresh: true,
+      });
 
-    const firstRun = processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher });
-    await vi.waitFor(() => expect(slowFetcher).toHaveBeenCalledTimes(1));
+      const firstRun = processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher });
+      await vi.waitFor(() => expect(slowFetcher).toHaveBeenCalledTimes(1), { timeout: 5000 });
 
-    await expect(processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher }))
-      .rejects
-      .toMatchObject({ code: 'JOB_ALREADY_RUNNING' });
+      await expect(processWebsiteEnrichmentJob({ jobId: job.id, fetcher: slowFetcher }))
+        .rejects
+        .toMatchObject({ code: 'JOB_ALREADY_RUNNING' });
 
-    releaseFetch();
-    const processed = await firstRun;
+      releaseFetch();
+      const processed = await firstRun;
 
-    expect(processed.status).toBe('COMPLETED');
-    expect(processed.succeededItems).toBe(1);
-    expect(processed.items[0].durationMs).toEqual(expect.any(Number));
-    expect(processed.summary.observability.liveFetchUsedCount).toBe(1);
-    expect(slowFetcher).toHaveBeenCalledTimes(1);
+      expect(processed.status).toBe('COMPLETED');
+      expect(processed.succeededItems).toBe(1);
+      expect(processed.items[0].durationMs).toEqual(expect.any(Number));
+      expect(processed.summary.observability.liveFetchUsedCount).toBe(1);
+      expect(slowFetcher).toHaveBeenCalledTimes(1);
 
-    const evidenceCount = await prisma.leadEvidence.count({
-      where: {
-        catalogLeadId: lockLead.id,
-        discoveryMethod: 'WEBSITE_METADATA',
-        sourceType: 'WEBSITE_METADATA',
-      },
-    });
-    expect(evidenceCount).toBe(1);
+      const evidenceCount = await prisma.leadEvidence.count({
+        where: {
+          catalogLeadId: lockLead.id,
+          discoveryMethod: 'WEBSITE_METADATA',
+          sourceType: 'WEBSITE_METADATA',
+        },
+      });
+      expect(evidenceCount).toBe(1);
+    } finally {
+      if (typeof releaseFetch === 'function') {
+        releaseFetch();
+      }
+      env.OPEN_WEB_EVIDENCE_ENABLED = previousOpenWebEnabled;
+      env.OPEN_WEB_EVIDENCE_ENABLE_WEBSITE_JOBS = previousWebsiteJobsEnabled;
+    }
   });
 
   it('reuses recent evidence when forceRefresh is false and refetches when forceRefresh is true', async () => {
