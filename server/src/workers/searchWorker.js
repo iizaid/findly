@@ -70,9 +70,7 @@ export const processNextSearchJob = async ({ workerId = env.WORKER_ID || `search
       await markJobCancelled({ jobId: job.id, errorMessage }).catch(() => {});
       return { jobId: job.id, status: 'CANCELLED', errorCode };
     }
-    if (campaignId) {
-      await markCampaignFailed({ campaignId, errorCode, errorMessage }).catch(() => {});
-    }
+    await markCampaignFailed({ campaignId, errorCode, errorMessage }).catch(() => {});
     await markJobFailed({ jobId: job.id, errorCode, errorMessage }).catch(() => {});
     logger.warn('search_worker.job.failed', {
       workerId,

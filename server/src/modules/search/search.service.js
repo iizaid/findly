@@ -1161,14 +1161,14 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
   }
 };
 
-export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrichment = false, analysis = false } = {}) => {
+export const estimateCampaignCost = ({ requestedLimit = 20, sources = [], enrichment: _enrichment = false, analysis = false } = {}) => {
   const limit = Math.max(1, Math.min(requestedLimit, 100));
   const sourceBreakdown = sources
     .map((source) => ({ source, estimate: estimateSourceCost(source, { maxResults: limit }) }))
     .filter((item) => item.estimate);
   const baseSearchCost = SEARCH_BASE_CREDITS;
   const perLeadCost = SEARCH_PER_RETURNED_LEAD_CREDITS;
-  const enrichmentCost = enrichment ? 0 : 0;
+  const enrichmentCost = 0;
   const analysisCost = analysis ? limit : 0;
   const estimatedMax = baseSearchCost + (limit * perLeadCost) + enrichmentCost + analysisCost;
 

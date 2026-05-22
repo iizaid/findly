@@ -523,7 +523,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                               <a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
                                 <Link2 size={13} /> Visit
                               </a>
-                            ) : <span className={lead.websiteUrl ? 'text-red-500 text-[11px]' : 'text-red-500 text-[11px]'}>{lead.websiteUrl ? 'Invalid' : 'Missing'}</span>}
+                            ) : <span className="text-red-500 text-[11px]">{lead.websiteUrl ? 'Invalid' : 'Missing'}</span>}
                           </div>
                           <div>
                             {instagramUrl ? (

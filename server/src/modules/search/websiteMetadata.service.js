@@ -312,7 +312,7 @@ export const generateWebsiteOpportunitySignals = ({ reachable, statusCode, metad
 
   signals.push(descriptionLength >= 50
     ? signal('HAS_META_DESCRIPTION', 'POSITIVE', 75, 'Homepage has a useful meta description.')
-    : signal(descriptionLength > 0 ? 'WEAK_META_DESCRIPTION' : 'WEAK_META_DESCRIPTION', 'OPPORTUNITY', 75, 'Homepage meta description is missing or too thin.'));
+    : signal('WEAK_META_DESCRIPTION', 'OPPORTUNITY', 75, 'Homepage meta description is missing or too thin.'));
 
   signals.push(hasContact
     ? signal('HAS_CONTACT_LINK', 'POSITIVE', 85, 'Homepage exposes an obvious contact path.')

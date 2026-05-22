@@ -56,7 +56,7 @@ export const getSourceStatuses = () => getBaseSourceStatuses()
   .map((source) => sanitizeSourceForUserResponse(source))
   .filter(Boolean);
 
-export const getSourceStatusesWithRuntime = async () => {
+export const getSourceStatusesWithRuntime = async (_context = {}) => {
   const catalogWhere = {
     source: { in: datasetSources },
   };

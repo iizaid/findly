@@ -31,6 +31,8 @@ export const notFoundHandler = (req, _res, next) => {
 
 export const errorHandler = (err, req, res, _next) => {
   const requestId = req?.requestId;
+  const errorName = err?.name || 'Error';
+  const errorMessage = err?.message || 'Internal server error';
 
   if (err?.type === 'entity.parse.failed') {
     logBackendError(req, 400, errorCodes.INVALID_JSON, 'Malformed JSON body.');
@@ -81,17 +83,17 @@ export const errorHandler = (err, req, res, _next) => {
     requestId,
     method: req?.method,
     path: req?.originalUrl,
-    errorName: err?.name,
-    errorMessage: err?.message,
+    errorName,
+    errorMessage,
   });
 
   if (!env.IS_PRODUCTION) {
-    logBackendError(req, 500, errorCodes.INTERNAL_ERROR, err.message || 'Internal server error');
+    logBackendError(req, 500, errorCodes.INTERNAL_ERROR, errorMessage);
     return res.status(500).json({
       success: false,
       error: {
         code: errorCodes.INTERNAL_ERROR,
-        message: err.message || 'Internal server error',
+        message: errorMessage,
         requestId,
       },
     });

@@ -56,8 +56,6 @@ const catalogDataFromEvidence = (evidence, campaign) => {
     data.facebookUrl = sourceUrl;
   } else if (evidence.targetSource === 'GOOGLE_MAPS') {
     data.googleMapsUrl = sourceUrl;
-  } else if (evidence.targetSource === 'WEBSITE') {
-    data.websiteUrl = sourceUrl;
   } else {
     data.websiteUrl = sourceUrl;
   }
