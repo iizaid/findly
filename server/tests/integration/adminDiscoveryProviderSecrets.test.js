@@ -24,6 +24,8 @@ const adminEmail = `admin.discovery.${unique}@findly.local`;
 const userEmail = `user.discovery.${unique}@findly.local`;
 const password = 'Secure12345@#$';
 const plaintextKey = `discovery-dashboard-${unique}-secret`;
+const providerScope = ['serper', 'serpapi'];
+let originalDiscoveryProviderSecrets = [];
 
 const registerAndLogin = async (agent, email, role) => {
   await agent.post('/api/auth/register').send({ name: role, email, password }).expect(201);
@@ -34,6 +36,47 @@ const registerAndLogin = async (agent, email, role) => {
 const csrf = async (agent) => {
   const res = await agent.get('/api/csrf-token').expect(200);
   return res.body.data.csrfToken;
+};
+
+const restoreDiscoveryProviderSecrets = async () => {
+  await prisma.discoveryProviderSecret.deleteMany({ where: { provider: { in: providerScope } } }).catch(() => {});
+
+  for (const secret of originalDiscoveryProviderSecrets) {
+    await prisma.discoveryProviderSecret.upsert({
+      where: { provider: secret.provider },
+      update: {
+        encryptedKey: secret.encryptedKey,
+        keyFingerprint: secret.keyFingerprint,
+        baseUrl: secret.baseUrl,
+        status: secret.status,
+        role: secret.role,
+        priority: secret.priority,
+        isPrimaryCandidate: secret.isPrimaryCandidate,
+        isFallbackCandidate: secret.isFallbackCandidate,
+        lastTestedAt: secret.lastTestedAt,
+        lastStatus: secret.lastStatus,
+        lastErrorType: secret.lastErrorType,
+        createdById: secret.createdById,
+        updatedById: secret.updatedById,
+      },
+      create: {
+        provider: secret.provider,
+        encryptedKey: secret.encryptedKey,
+        keyFingerprint: secret.keyFingerprint,
+        baseUrl: secret.baseUrl,
+        status: secret.status,
+        role: secret.role,
+        priority: secret.priority,
+        isPrimaryCandidate: secret.isPrimaryCandidate,
+        isFallbackCandidate: secret.isFallbackCandidate,
+        lastTestedAt: secret.lastTestedAt,
+        lastStatus: secret.lastStatus,
+        lastErrorType: secret.lastErrorType,
+        createdById: secret.createdById,
+        updatedById: secret.updatedById,
+      },
+    });
+  }
 };
 
 beforeAll(async () => {
@@ -54,7 +97,10 @@ beforeAll(async () => {
   guestAgent = request.agent(app);
 
   await prisma.user.deleteMany({ where: { email: { in: [rootEmail, adminEmail, userEmail] } } }).catch(() => {});
-  await prisma.discoveryProviderSecret.deleteMany({ where: { provider: { in: ['serper', 'serpapi'] } } }).catch(() => {});
+  originalDiscoveryProviderSecrets = await prisma.discoveryProviderSecret.findMany({
+    where: { provider: { in: providerScope } },
+  });
+  await prisma.discoveryProviderSecret.deleteMany({ where: { provider: { in: providerScope } } }).catch(() => {});
 
   await registerAndLogin(rootAgent, rootEmail, 'ROOT');
   await registerAndLogin(adminAgent, adminEmail, 'ADMIN');
@@ -62,7 +108,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.discoveryProviderSecret.deleteMany({ where: { provider: { in: ['serper', 'serpapi'] } } }).catch(() => {});
+  await restoreDiscoveryProviderSecrets();
   await prisma.user.deleteMany({ where: { email: { in: [rootEmail, adminEmail, userEmail] } } }).catch(() => {});
   await prisma.$disconnect();
 });

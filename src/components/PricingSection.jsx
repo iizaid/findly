@@ -179,7 +179,7 @@ const PricingSection = ({ onAuthOpen, currentUser, onNavigate }) => {
                 <ShieldCheck size={20} strokeWidth={2.1} />
               </div>
               <div>
-                <p className="text-sm font-bold text-black">Built around public business signals, user-provided inputs, and compliant research workflows.</p>
+                <p className="text-sm font-bold text-black">Built around public business data, user-provided inputs, and compliant research workflows.</p>
                 <p className="mt-2 text-sm leading-7 text-secondary">
                   Credits help keep pricing flexible as Findly adds more analysis and discovery tools.
                 </p>

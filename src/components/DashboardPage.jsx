@@ -10,6 +10,7 @@ import DashboardAnalysisPage from './dashboard/pages/DashboardAnalysisPage';
 import DashboardCreditsPage from './dashboard/pages/DashboardCreditsPage';
 import DashboardSettingsPage from './dashboard/pages/DashboardSettingsPage';
 import DashboardAdminPage from './dashboard/pages/DashboardAdminPage';
+import ConfirmDialog from './dashboard/ConfirmDialog';
 
 const normalizeDashboardPath = (pathname) => {
   if (pathname === '/dashboard') return '/dashboard';
@@ -28,6 +29,8 @@ const normalizeDashboardPath = (pathname) => {
 const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSessionChange, onNotice }) => {
   const [state, setState] = useState({ status: 'loading' });
   const [isResending, setIsResending] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const activeRoute = useMemo(() => normalizeDashboardPath(routePath), [routePath]);
 
   const loadDashboard = useCallback(async () => {
@@ -73,16 +76,23 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
   }, [loadDashboard]);
 
   const logout = async () => {
+    setIsLoggingOut(true);
     try {
       await apiRequest('/api/auth/logout', {
         method: 'POST',
         body: JSON.stringify({}),
       });
     } finally {
+      setIsLoggingOut(false);
+      setLogoutDialogOpen(false);
       onSessionChange?.(null);
       onNavigate('/');
     }
   };
+
+  const requestLogout = useCallback(() => {
+    setLogoutDialogOpen(true);
+  }, []);
 
   const resendVerification = async () => {
     setIsResending(true);
@@ -143,7 +153,7 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
             </button>
             <button
               type="button"
-              onClick={logout}
+              onClick={requestLogout}
               className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] px-6 text-sm font-bold text-black transition-colors hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Log out
@@ -184,29 +194,46 @@ const DashboardPage = ({ routePath = '/dashboard', onNavigate, onAuthOpen, onSes
     '/dashboard/credits': <DashboardCreditsPage credits={credits} onUpdate={refreshDashboard} />,
     '/dashboard/admin': <DashboardAdminPage user={user} onNavigate={onNavigate} />,
     '/dashboard/settings': (
-      <DashboardSettingsPage
-        user={user}
-        workspace={workspace}
-        credits={credits}
-        onLogout={logout}
-        onUpdate={refreshDashboard}
-        onNavigate={onNavigate}
-        onNotice={onNotice}
+        <DashboardSettingsPage
+          user={user}
+          workspace={workspace}
+          credits={credits}
+          onLogout={requestLogout}
+          onUpdate={refreshDashboard}
+          onNavigate={onNavigate}
+          onNotice={onNotice}
       />
     ),
   };
 
   return (
-    <DashboardLayout
-      user={user}
-      workspace={workspace}
-      credits={credits}
-      routePath={activeRoute}
-      onNavigate={onNavigate}
-      onLogout={logout}
-    >
-      {pages[activeRoute]}
-    </DashboardLayout>
+    <>
+      <DashboardLayout
+        user={user}
+        workspace={workspace}
+        credits={credits}
+        routePath={activeRoute}
+        onNavigate={onNavigate}
+        onLogout={requestLogout}
+      >
+        {pages[activeRoute]}
+      </DashboardLayout>
+      <ConfirmDialog
+        isOpen={logoutDialogOpen}
+        onClose={() => {
+          if (!isLoggingOut) {
+            setLogoutDialogOpen(false);
+          }
+        }}
+        onConfirm={logout}
+        title="Log out of Findly?"
+        description="Your current session on this device will end now. You can sign back in at any time."
+        confirmLabel="Log out"
+        cancelLabel="Stay signed in"
+        variant="danger"
+        isLoading={isLoggingOut}
+      />
+    </>
   );
 };
 

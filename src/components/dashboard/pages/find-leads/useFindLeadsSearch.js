@@ -13,7 +13,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'Findly could not complete this signal target right now. Local data is used for platform signals today, so try another signal or broaden your search.';
+      return 'Findly could not complete this source right now. Local data is used for these platforms today, so try another source or broaden your search.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
@@ -37,7 +37,7 @@ const normalizeSourceOptions = (sources = []) => [...sources]
   .map((source) => ({
     ...source,
     id: source.key,
-    name: source.label,
+    name: PLATFORM_LABELS[source.key] || source.label || source.key,
     canRun: Boolean(source.searchable || source.available),
   }));
 
@@ -121,7 +121,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
       .catch(() => {
         if (!mounted) return;
         setSourceOptions([]);
-        setError('Signal target status could not be loaded. Refresh the page and try again.');
+        setError('Source status could not be loaded. Refresh the page and try again.');
       })
       .finally(() => {
         if (mounted) setSourcesLoading(false);
@@ -146,7 +146,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
 
   const toggleSource = (sourceObj) => {
     if (!sourceObj.canRun) {
-      setError('This signal target is not available for search yet. Choose a searchable signal to continue.');
+      setError('This source is not available for search yet. Choose an available source to continue.');
       return;
     }
 
@@ -173,7 +173,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     const leadsReturned = campaign.resultCount ?? campaign.leadsReturned ?? campaign.savedLeadsCount ?? 0;
 
     if (leadsReturned === 0) {
-      setError('No matching local leads found yet. Try broader filters, fewer platform signals, or import more local data.');
+      setError('No matching local leads found yet. Try broader filters, fewer sources, or import more local data.');
       setPendingSearch(null);
       return;
     }
@@ -244,18 +244,18 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     clearResultSummary();
 
     if (sourcesLoading) {
-      setError('Search signal targets are still loading. Please wait a moment and try again.');
+      setError('Search sources are still loading. Please wait a moment and try again.');
       return;
     }
 
     if (selectedSources.length < 1) {
-      setError('Please select at least one signal target to proceed.');
+      setError('Please select at least one source to proceed.');
       return;
     }
 
     const unreadySource = selectedSources.find((id) => !sourceOptions.find((source) => source.id === id)?.canRun);
     if (unreadySource) {
-      setError('One of the selected signal targets is not ready to run yet.');
+      setError('One of the selected sources is not ready to run yet.');
       return;
     }
 

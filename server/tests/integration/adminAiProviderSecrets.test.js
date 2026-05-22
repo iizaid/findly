@@ -27,6 +27,8 @@ const adminEmail = `admin.ai.${unique}@findly.local`;
 const userEmail = `user.ai.${unique}@findly.local`;
 const password = 'Secure12345@#$';
 const plaintextKey = `sk-dashboard-${unique}-secret-value`;
+const providerScope = ['openai', 'gemini'];
+let originalAiProviderSecrets = [];
 
 const registerAndLogin = async (agent, email, role) => {
   await agent.post('/api/auth/register').send({ name: role, email, password }).expect(201);
@@ -37,6 +39,41 @@ const registerAndLogin = async (agent, email, role) => {
 const csrf = async (agent) => {
   const res = await agent.get('/api/csrf-token').expect(200);
   return res.body.data.csrfToken;
+};
+
+const restoreAiProviderSecrets = async () => {
+  await prisma.aiProviderSecret.deleteMany({ where: { provider: { in: providerScope } } }).catch(() => {});
+
+  for (const secret of originalAiProviderSecrets) {
+    await prisma.aiProviderSecret.upsert({
+      where: { provider: secret.provider },
+      update: {
+        encryptedKey: secret.encryptedKey,
+        keyFingerprint: secret.keyFingerprint,
+        model: secret.model,
+        baseUrl: secret.baseUrl,
+        status: secret.status,
+        createdById: secret.createdById,
+        updatedById: secret.updatedById,
+        lastTestedAt: secret.lastTestedAt,
+        lastStatus: secret.lastStatus,
+        lastErrorType: secret.lastErrorType,
+      },
+      create: {
+        provider: secret.provider,
+        encryptedKey: secret.encryptedKey,
+        keyFingerprint: secret.keyFingerprint,
+        model: secret.model,
+        baseUrl: secret.baseUrl,
+        status: secret.status,
+        createdById: secret.createdById,
+        updatedById: secret.updatedById,
+        lastTestedAt: secret.lastTestedAt,
+        lastStatus: secret.lastStatus,
+        lastErrorType: secret.lastErrorType,
+      },
+    });
+  }
 };
 
 beforeAll(async () => {
@@ -54,7 +91,10 @@ beforeAll(async () => {
   guestAgent = request.agent(app);
 
   await prisma.user.deleteMany({ where: { email: { in: [rootEmail, adminEmail, userEmail] } } }).catch(() => {});
-  await prisma.aiProviderSecret.deleteMany({ where: { provider: { in: ['openai', 'gemini'] } } }).catch(() => {});
+  originalAiProviderSecrets = await prisma.aiProviderSecret.findMany({
+    where: { provider: { in: providerScope } },
+  });
+  await prisma.aiProviderSecret.deleteMany({ where: { provider: { in: providerScope } } }).catch(() => {});
 
   await registerAndLogin(rootAgent, rootEmail, 'ROOT');
   await registerAndLogin(adminAgent, adminEmail, 'ADMIN');
@@ -63,7 +103,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!prisma) return;
-  await prisma.aiProviderSecret.deleteMany({ where: { provider: { in: ['openai', 'gemini'] } } }).catch(() => {});
+  await restoreAiProviderSecrets();
   await prisma.user.deleteMany({ where: { email: { in: [rootEmail, adminEmail, userEmail] } } }).catch(() => {});
   await prisma.$disconnect();
 });

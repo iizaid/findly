@@ -409,31 +409,7 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
     <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)]">
       {/* Sidebar Navigation */}
       <DashboardCard className="sticky top-6 self-start p-5">
-        <div className="rounded-[24px] border border-black/[0.06] bg-[#F7F8F6] p-4">
-          <div className="flex items-center gap-3">
-            <UserAvatar user={user} size="lg" rounded="rounded-[20px]" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-black">{user?.name || 'Your account'}</p>
-              <p className="truncate text-xs font-semibold text-secondary">{user?.email || ''}</p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-2xl bg-white px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Plan</p>
-              <p className="mt-1 text-xs font-bold text-black">{accountPlanLabel}</p>
-            </div>
-            <div className="rounded-2xl bg-white px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Security</p>
-              <p className="mt-1 text-xs font-bold text-black">{securityHealthLabel}</p>
-            </div>
-          </div>
-          <div className="mt-2 rounded-2xl bg-white px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Workspace role</p>
-            <p className="mt-1 text-xs font-bold text-black">{workspaceRoleLabel}</p>
-          </div>
-        </div>
-
-        <p className="mb-3 mt-5 px-3 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Settings</p>
+        <p className="mb-3 px-3 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Settings</p>
         <nav className="flex flex-col space-y-1">
           {TABS.map((tab) => {
             const Icon = tab.icon;
@@ -480,16 +456,16 @@ const DashboardSettingsPage = ({ user, workspace, credits, onLogout, onUpdate, o
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-white px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Email</p>
+                  <div className="rounded-2xl border border-[#B6FF00] bg-[#B6FF00] px-4 py-3 shadow-[0_10px_24px_rgba(182,255,0,0.18)]">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#3E5700]">Email</p>
                     <p className="mt-1 text-xs font-bold text-black">{user?.emailVerified ? 'Verified' : 'Pending'}</p>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Role</p>
+                  <div className="rounded-2xl border border-[#B6FF00] bg-[#B6FF00] px-4 py-3 shadow-[0_10px_24px_rgba(182,255,0,0.18)]">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#3E5700]">Role</p>
                     <p className="mt-1 text-xs font-bold text-black">{workspaceRoleLabel}</p>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 col-span-2 sm:col-span-1">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">Security</p>
+                  <div className="col-span-2 rounded-2xl border border-[#B6FF00] bg-[#B6FF00] px-4 py-3 shadow-[0_10px_24px_rgba(182,255,0,0.18)] sm:col-span-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#3E5700]">Security</p>
                     <p className="mt-1 text-xs font-bold text-black">{securityHealthLabel}</p>
                   </div>
                 </div>

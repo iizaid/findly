@@ -78,7 +78,7 @@ const Footer = ({ onNotice, onAuthOpen }) => {
               Stop guessing who needs your service.
             </h2>
             <p className="mt-6 max-w-xl text-base leading-8 text-secondary">
-              Findly helps freelancers and small teams turn public business signals into clear opportunities, stronger offers, and better first messages.
+              Findly helps freelancers and small teams turn public business data into clear opportunities, stronger offers, and better first messages.
             </p>
 
             <button
@@ -114,7 +114,7 @@ const Footer = ({ onNotice, onAuthOpen }) => {
 
         <div className="mt-16 flex flex-col gap-4 border-t border-black/[0.08] pt-7 text-sm text-secondary md:flex-row md:items-center md:justify-between">
           <p>© 2026 Findly. All rights reserved.</p>
-          <p>Public signals in. Clear opportunities out.</p>
+          <p>Public data in. Clear opportunities out.</p>
         </div>
       </div>
     </footer>

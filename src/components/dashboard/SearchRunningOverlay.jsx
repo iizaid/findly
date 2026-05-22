@@ -1,25 +1,25 @@
 import { CheckCircle2, Loader2 } from 'lucide-react';
 
 const platformLabel = {
-  INSTAGRAM: 'Instagram signals',
+  INSTAGRAM: 'Instagram',
   GOOGLE_MAPS: 'Google Maps',
-  FACEBOOK: 'Facebook signals',
-  WEBSITE: 'Website signal',
-  TIKTOK: 'TikTok signals',
-  LINKEDIN: 'LinkedIn signals',
-  YOUTUBE: 'YouTube signals',
-  TRIPADVISOR: 'TripAdvisor signals',
-  YELP: 'Yelp signals',
-  REDDIT: 'Reddit signals',
+  FACEBOOK: 'Facebook',
+  WEBSITE: 'Website',
+  TIKTOK: 'TikTok',
+  LINKEDIN: 'LinkedIn',
+  YOUTUBE: 'YouTube',
+  TRIPADVISOR: 'TripAdvisor',
+  YELP: 'Yelp',
+  REDDIT: 'Reddit',
   SERPAPI: 'Search metadata',
-  X: 'X signals',
+  X: 'X',
 };
 
 const SearchRunningOverlay = ({ isVisible, currentStep = 0, steps = [], selectedPlatforms = [], criteria = {}, pendingSearch = null, onCancel, onCheckStatus, onViewLeadLists }) => {
   if (!isVisible) return null;
 
   const labels = selectedPlatforms.map((item) => platformLabel[item] || item).filter(Boolean);
-  const activeStep = steps[currentStep] || 'Searching available signal targets';
+  const activeStep = steps[currentStep] || 'Checking available sources';
   const context = [criteria.businessType, criteria.city].filter(Boolean).join(' in ');
 
   return (

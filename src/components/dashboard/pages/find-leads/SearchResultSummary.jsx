@@ -10,7 +10,7 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => (
           {resultSummary.count} matching lead{resultSummary.count === 1 ? '' : 's'} found
         </h3>
         <p className="mt-1.5 text-sm font-semibold leading-relaxed text-secondary">
-          Findly matched business records from the current local index for {resultSummary.platformsRequested?.map((platform) => PLATFORM_LABELS[platform] || platform).join(', ') || 'your selected signal targets'} and saved the result set in Lead Lists.
+        Findly matched business records from the current local index for {resultSummary.platformsRequested?.map((platform) => PLATFORM_LABELS[platform] || platform).join(', ') || 'your selected sources'} and saved the result set in Lead Lists.
         </p>
       </div>
     </div>

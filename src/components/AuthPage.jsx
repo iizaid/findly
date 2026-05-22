@@ -599,7 +599,7 @@ const AuthPage = ({ initialMode = 'signup', planContext, onClose, onNavigate, on
               Build a cleaner client pipeline.
             </h1>
             <p className="mt-8 max-w-2xl text-xl font-semibold leading-10 text-white/58">
-              Use Findly to review public signals, qualify business opportunities, and prepare better outreach before sending the first message.
+                  Use Findly to review public business data, qualify business opportunities, and prepare better outreach before sending the first message.
             </p>
           </div>
         </section>

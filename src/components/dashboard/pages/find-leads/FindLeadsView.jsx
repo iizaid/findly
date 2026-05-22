@@ -1,4 +1,4 @@
-import { ArrowRight, AlertCircle, Search } from 'lucide-react';
+import { ArrowRight, AlertCircle } from 'lucide-react';
 import DashboardCard from '../../DashboardCard';
 import SearchRunningOverlay from '../../SearchRunningOverlay';
 import { useFindLeadsSearch } from './useFindLeadsSearch';
@@ -44,13 +44,9 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Findly search console</p>
               <h2 className="mt-2 text-3xl font-bold tracking-tight text-black md:text-4xl">Find Leads</h2>
               <p className="mt-2 max-w-2xl text-[14px] font-semibold leading-6 text-black/50">
-                Choose your offer, audience, location, and the source signals Findly should use.
+                Choose your offer, audience, location, and the sources Findly should use.
               </p>
             </div>
-            <span className="inline-flex h-11 items-center gap-2 self-start rounded-2xl border border-black/[0.08] bg-black/[0.025] px-4 text-[12px] font-bold text-black">
-              <Search size={15} />
-              Search setup
-            </span>
           </div>
 
           {search.error && !search.pendingSearch && (
@@ -133,7 +129,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
 
             <fieldset className="md:col-span-2 mt-3 rounded-[24px] border border-black/[0.06] bg-black/[0.015] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <legend className="text-[13px] font-bold text-black">Signal targets</legend>
+                <legend className="text-[13px] font-bold text-black">Sources</legend>
                 <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-secondary">
                   {search.selectedSources.length} selected
                 </span>
@@ -157,7 +153,7 @@ const FindLeadsView = ({ workspace, onNavigate, onUpdate }) => {
                   disabled={submitDisabled}
                   className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-black px-6 text-[13px] font-medium text-white shadow-md outline-none transition-all hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
-                  {search.sourcesLoading ? 'Loading signals...' : 'Start Search'}
+                  {search.sourcesLoading ? 'Loading sources...' : 'Start Search'}
                   {!search.sourcesLoading && <ArrowRight size={16} />}
                 </button>
               )}

@@ -34,22 +34,22 @@ export const SEARCH_READY_SOURCES = new Set([
 ]);
 
 export const PLATFORM_LABELS = {
-  INSTAGRAM: 'Instagram signals',
+  INSTAGRAM: 'Instagram',
   GOOGLE_MAPS: 'Google Maps',
-  FACEBOOK: 'Facebook signals',
-  WEBSITE: 'Website signal',
-  TIKTOK: 'TikTok signals',
-  LINKEDIN: 'LinkedIn signals',
-  YOUTUBE: 'YouTube signals',
-  TRIPADVISOR: 'TripAdvisor signals',
-  YELP: 'Yelp signals',
-  REDDIT: 'Reddit signals',
-  X: 'X signals',
+  FACEBOOK: 'Facebook',
+  WEBSITE: 'Website',
+  TIKTOK: 'TikTok',
+  LINKEDIN: 'LinkedIn',
+  YOUTUBE: 'YouTube',
+  TRIPADVISOR: 'TripAdvisor',
+  YELP: 'Yelp',
+  REDDIT: 'Reddit',
+  X: 'X',
 };
 
 export const SEARCH_STEPS = [
   'Preparing search',
-  'Checking available signal targets',
+  'Checking available sources',
   'Matching business records',
   'Saving lead list',
   'Ready',

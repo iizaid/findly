@@ -1,11 +1,11 @@
 import {
   BarChart3,
+  Gauge,
   ListChecks,
   Map,
   ScanSearch,
   Settings,
   ShieldCheck,
-  Sparkles,
   WalletCards,
   X,
 } from 'lucide-react';
@@ -16,7 +16,7 @@ const navItems = [
   { label: 'Find Leads', path: '/dashboard/find-leads', icon: ScanSearch },
   { label: 'Lead Lists', path: '/dashboard/lead-lists', icon: ListChecks },
   { label: 'Lead Map', path: '/dashboard/map', icon: Map },
-  { label: 'Analysis', path: '/dashboard/analysis', icon: Sparkles },
+  { label: 'Analysis', path: '/dashboard/analysis', icon: Gauge },
   { label: 'Credits', path: '/dashboard/credits', icon: WalletCards },
   { label: 'Settings', path: '/dashboard/settings', icon: Settings },
 ];

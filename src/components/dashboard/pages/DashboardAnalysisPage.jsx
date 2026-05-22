@@ -36,17 +36,17 @@ const signalLabels = {
 };
 
 const scoreColor = (level) => {
-  if (level === 'GOLD') return 'from-yellow-400 to-amber-500';
-  if (level === 'HIGH') return 'from-green-400 to-emerald-500';
-  if (level === 'MEDIUM') return 'from-blue-400 to-indigo-500';
-  return 'from-gray-300 to-gray-400';
+  if (level === 'GOLD') return 'from-[#B6FF00] to-[#A3F000]';
+  if (level === 'HIGH') return 'from-[#B6FF00] to-[#A3F000]';
+  if (level === 'MEDIUM') return 'from-[#B6FF00] to-[#A3F000]';
+  return 'from-[#B6FF00] to-[#A3F000]';
 };
 
 const scoreBorder = (level) => {
-  if (level === 'GOLD') return 'border-yellow-300';
-  if (level === 'HIGH') return 'border-green-300';
-  if (level === 'MEDIUM') return 'border-blue-300';
-  return 'border-gray-200';
+  if (level === 'GOLD') return 'border-[#B6FF00]';
+  if (level === 'HIGH') return 'border-[#B6FF00]';
+  if (level === 'MEDIUM') return 'border-[#B6FF00]';
+  return 'border-[#B6FF00]';
 };
 
 const buildMessageDraft = (detail, analysis) => {
@@ -121,12 +121,12 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
       <div className="min-h-[calc(100vh-132px)]">
         <DashboardCard className="p-5 md:p-7">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-black">
-            <Sparkles size={26} />
+            <Gauge size={26} />
           </div>
           <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-secondary">Lead analysis</p>
           <h2 className="mt-3 text-4xl font-bold tracking-tighter md:text-5xl">Analysis Deep Dive</h2>
           <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-secondary">
-            Select any analyzed lead to view its full scoring breakdown, detected signals, suggested service, and outreach strategy.
+            Select any analyzed lead to view its full scoring breakdown, detected findings, suggested service, and outreach strategy.
           </p>
 
           {error && (
@@ -166,7 +166,7 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                         <p className="mt-1 truncate text-xs font-semibold text-secondary">{lead.category || lead.city || 'Business'}</p>
                       </div>
                       {a && (
-                        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-black text-white ${scoreColor(a.scoreLevel)}`}>
+                        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-black text-black ${scoreColor(a.scoreLevel)}`}>
                           {a.opportunityScore}
                         </span>
                       )}
@@ -261,15 +261,15 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
 
                 {/* Score circle */}
                 {analysis && (
-                  <div className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-3xl border-2 bg-gradient-to-br text-white ${scoreColor(analysis.scoreLevel)} ${scoreBorder(analysis.scoreLevel)}`}>
+                  <div className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-3xl border-2 bg-gradient-to-br text-black ${scoreColor(analysis.scoreLevel)} ${scoreBorder(analysis.scoreLevel)}`}>
                     <span className="text-3xl font-black leading-none">{analysis.opportunityScore}</span>
-                    <span className="mt-1 text-[9px] font-bold uppercase tracking-wider opacity-80">{analysis.scoreLevel}</span>
+                    <span className="mt-1 text-[9px] font-bold uppercase tracking-wider text-black/70">{analysis.scoreLevel}</span>
                   </div>
                 )}
               </div>
             </DashboardCard>
 
-            {/* Detected Signals */}
+            {/* Detected Findings */}
             {analysis && (
               <DashboardCard className="p-5 md:p-7">
                 <div className="flex items-center gap-3">
@@ -277,8 +277,8 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                     <Sparkles size={18} />
                   </span>
                   <div>
-                    <p className="text-sm font-bold">Detected Signals</p>
-                    <p className="text-xs font-semibold text-secondary">{analysis.detectedSignals?.length || 0} signals found from public data</p>
+                    <p className="text-sm font-bold">Detected Findings</p>
+                    <p className="text-xs font-semibold text-secondary">{analysis.detectedSignals?.length || 0} findings from public data</p>
                   </div>
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -330,9 +330,9 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                   <p className="text-sm font-bold">Suggested Service</p>
                 </div>
                 <p className="mt-4 text-2xl font-bold tracking-tight">{analysis.suggestedService}</p>
-                <p className="mt-2 text-xs font-semibold leading-5 text-secondary">
-                  Based on the detected signals, this is the most relevant service to offer this business.
-                </p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-secondary">
+                    Based on the detected findings, this is the most relevant service to offer this business.
+                  </p>
               </DashboardCard>
             )}
 

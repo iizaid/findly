@@ -89,7 +89,7 @@ const OpportunityEngineSection = ({ onNotice }) => {
               className="inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-secondary shadow-[0_12px_35px_rgba(0,0,0,0.045)]"
             >
               <Radar size={14} className="text-black" />
-              Signal intelligence
+              Opportunity intelligence
             </MotionDiv>
 
             <MotionDiv
@@ -99,7 +99,7 @@ const OpportunityEngineSection = ({ onNotice }) => {
               transition={{ duration: 0.8, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
             >
               <h2 className="mt-7 text-4xl font-bold leading-[1.04] tracking-tighter text-black sm:text-5xl md:mt-8 md:text-6xl lg:text-[5.4rem]">
-                A clear scoring model for real business signals.
+                A clear scoring model for real business indicators.
               </h2>
               <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-secondary sm:text-base md:mt-6 md:text-lg md:leading-8">
                 Findly turns public clues into a practical recommendation: what is missing, why it matters, and what service is worth pitching.

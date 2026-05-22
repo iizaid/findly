@@ -61,7 +61,7 @@ const ProductFilmSection = () => {
           className="mx-auto mb-4 max-w-4xl text-center text-3xl font-bold leading-[1.08] tracking-tight text-primary sm:text-4xl md:mb-5 md:text-6xl lg:text-[4rem]"
           style={{ textWrap: 'balance' }}
         >
-          See how Findly turns signals into opportunities.
+          See how Findly turns business data into opportunities.
         </motion.h2>
 
         {/* Subtitle */}

@@ -31,7 +31,7 @@ const formatSignalSource = (source) => {
   const map = {
     ONLINE_SOURCE: 'Online Source',
   };
-  return map[source] || source?.replace(/_/g, ' ') || 'Available Signals';
+  return map[source] || source?.replace(/_/g, ' ') || 'Available Sources';
 };
 
 const platformLabel = {
@@ -48,7 +48,7 @@ const platformLabel = {
 };
 
 const listPlatformLabel = (list) => list?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
-  || 'Available Signals';
+  || 'Available Sources';
 
 const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [leads, setLeads] = useState([]);
@@ -485,7 +485,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
               <span>Website</span>
               <span>Instagram</span>
               <span>Contact</span>
-              <span>Signals</span>
+              <span>Findings</span>
               <button type="button" onClick={() => toggleSort('reviewCount')} className="flex items-center gap-1 hover:text-black"><span>Score</span><ArrowUpDown size={10} /></button>
               <span>Status</span>
               <span>Actions</span>
@@ -748,7 +748,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
           <div className="border-t border-black/[0.06] p-5">
             <DashboardEmptyState
               title={savedLists.length > 0 ? 'No leads in this saved search' : 'No saved searches yet'}
-              description={savedLists.length > 0 ? 'No matching local leads found for these filters. Try broader filters, fewer platform signals, or import more local data.' : 'Create your first search campaign. Every completed search will be saved here.'}
+              description={savedLists.length > 0 ? 'No matching local leads found for these filters. Try broader filters, fewer sources, or import more local data.' : 'Create your first search campaign. Every completed search will be saved here.'}
               actionLabel={savedLists.length > 0 ? 'Clear filters' : 'Create Search Campaign'}
               onAction={() => savedLists.length > 0 ? (setSearchQuery(''), setFilterSource(''), setFilterCity(''), setFilterScore(''), setFilterStatus(''), setFilterMissingWeb(false)) : onNavigate('/dashboard/find-leads')}
             />

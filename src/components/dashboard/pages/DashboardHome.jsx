@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import {
   ArrowRight,
   BarChart3,
+  Gauge,
   Globe2,
   Loader2,
   ScanSearch,
-  Sparkles,
   Target,
   Trophy,
   WalletCards,
@@ -17,7 +17,7 @@ import { apiRequest } from '../../../lib/api';
 const workflowSteps = [
   { label: 'Search', icon: ScanSearch, desc: 'Define target' },
   { label: 'Collect', icon: Globe2, desc: 'Gather leads' },
-  { label: 'Analyze', icon: Sparkles, desc: 'Score & rank' },
+  { label: 'Analyze', icon: Gauge, desc: 'Score & rank' },
   { label: 'Export', icon: Target, desc: 'Take action' },
 ];
 

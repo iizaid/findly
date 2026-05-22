@@ -61,29 +61,29 @@ const DashboardCreditsPage = ({ credits, onUpdate }) => {
       {/* Left Column: Overview and Info */}
       <div className="space-y-5">
         {/* Balance Card */}
-        <DashboardCard className="relative overflow-hidden bg-black p-6 md:p-8 text-white">
+        <DashboardCard className="relative overflow-hidden bg-black p-6 text-white md:p-8">
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-start justify-between gap-6">
             <div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-white/10 text-accent">
+              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-white/10 text-[#B6FF00]">
                 <WalletCards size={24} />
               </div>
               <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-white/60">Current balance</p>
               <p className="mt-2 text-6xl font-bold tracking-tighter sm:text-7xl">{credits?.balance ?? 0}</p>
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white">
-                <Sparkles size={14} className="text-accent" />
+                <Sparkles size={14} className="text-[#B6FF00]" />
                 {planName}
               </div>
             </div>
             
             <div className="flex flex-col gap-4 sm:min-w-[160px]">
-              <div className="rounded-[18px] bg-white/5 p-4 border border-white/10">
+              <div className="rounded-[18px] border border-white/10 bg-[#111111] p-4">
                 <div className="flex items-center gap-2 text-white/60">
                   <TrendingDown size={14} />
                   <span className="text-xs font-bold uppercase tracking-wider">Recent used</span>
                 </div>
                 <p className="mt-1 text-xl font-bold text-white">{summary.used}</p>
               </div>
-              <div className="rounded-[18px] bg-white/5 p-4 border border-white/10">
+              <div className="rounded-[18px] border border-white/10 bg-[#111111] p-4">
                 <div className="flex items-center gap-2 text-white/60">
                   <TrendingUp size={14} />
                   <span className="text-xs font-bold uppercase tracking-wider">Recent received</span>
@@ -92,18 +92,17 @@ const DashboardCreditsPage = ({ credits, onUpdate }) => {
               </div>
             </div>
           </div>
-          <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-accent/20 blur-3xl pointer-events-none" />
         </DashboardCard>
 
         {/* Upgrade Card */}
-        <DashboardCard className="p-6 md:p-8 bg-gradient-to-br from-accent/5 to-accent/10 border-accent/20">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary">Findly Billing</p>
+        <DashboardCard className="border-[#B6FF00] bg-[#B6FF00] p-6 md:p-8">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#3E5700]">Findly Billing</p>
           <h3 className="mt-2 text-xl font-bold tracking-tight text-black">Upgrades coming soon</h3>
-          <p className="mt-3 text-sm font-semibold leading-relaxed text-black/70">
+          <p className="mt-3 text-sm font-semibold leading-relaxed text-black/75">
             Paid credit packs and premium subscriptions are intentionally disabled during this phase. 
             All search scans, deep lead analyses, and list exports run on Opportunity Credits. You will be notified when billing opens.
           </p>
-          <button type="button" disabled className="mt-5 inline-flex h-11 items-center justify-center rounded-xl bg-black/5 px-6 text-sm font-bold text-black/40 cursor-not-allowed">
+          <button type="button" disabled className="mt-5 inline-flex h-11 cursor-not-allowed items-center justify-center rounded-xl bg-black/10 px-6 text-sm font-bold text-black/45">
             Upgrade Plan
           </button>
         </DashboardCard>
