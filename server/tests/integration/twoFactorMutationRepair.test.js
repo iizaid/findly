@@ -20,9 +20,9 @@ process.env.SIGNUP_RATE_LIMIT_MAX = '1000';
 process.env.LOGIN_RATE_LIMIT_MAX = '1000';
 process.env.TWO_FACTOR_AUTH_ENABLED = 'true';
 process.env.TWO_FACTOR_SECRET_ENCRYPTION_KEY ??= 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
-process.env.TWO_FACTOR_SETUP_START_MAX = '100';
-process.env.TWO_FACTOR_SETUP_CONFIRM_MAX = '100';
-process.env.TWO_FACTOR_DISABLE_MAX = '100';
+process.env.TWO_FACTOR_SETUP_START_MAX = '50';
+process.env.TWO_FACTOR_SETUP_CONFIRM_MAX = '50';
+process.env.TWO_FACTOR_DISABLE_MAX = '50';
 
 let createApp;
 let prisma;
@@ -98,6 +98,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  if (!prisma) return;
   await prisma.twoFactorChallenge.deleteMany({}).catch(() => {});
   await prisma.userTwoFactorSetting.deleteMany({}).catch(() => {});
   await prisma.user.deleteMany({ where: { email: { in: [...createdEmails] } } }).catch(() => {});
