@@ -14,7 +14,10 @@ const isTestRuntime = () =>
   process.env.VITEST_POOL_ID !== undefined;
 
 // Deterministic query expansion for better coverage
-const expandQueries = (businessTypes, city, country) => {
+const expandQueries = (businessTypes, city, country, queryVariants = []) => {
+  if (Array.isArray(queryVariants) && queryVariants.length > 0) {
+    return [...new Set(queryVariants.map((item) => item?.toString().trim()).filter(Boolean))];
+  }
   const types = Array.isArray(businessTypes) ? businessTypes : [businessTypes].filter(Boolean);
   const location = [city, country].filter(Boolean).join(', ');
   if (!location) return [];
@@ -74,7 +77,7 @@ export class GooglePlacesAdapter extends BaseAdapter {
     }
 
     const { businessTypes, city, country, requestedLimit } = this.campaign;
-    const queries = expandQueries(businessTypes, city, country);
+    const queries = expandQueries(businessTypes, city, country, this.context.queryVariants);
 
     if (queries.length === 0) {
       throw new AppError(errorCodes.VALIDATION_ERROR, 'Campaign requires business type or location to build query.', 400);

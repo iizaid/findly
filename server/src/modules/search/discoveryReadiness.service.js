@@ -127,7 +127,7 @@ export const getDiscoveryReadinessSummary = async () => {
         configured: Boolean(serpApiConfig.apiKey || serpApi.configured),
         source: serpApiConfig.source,
         fingerprint: dashboardByProvider.get(DISCOVERY_PROVIDERS.SERPAPI)?.fingerprint || null,
-        runnable: serpApiReady,
+        runnable: Boolean(serpApiReady && serpApiConfig.source === 'dashboard'),
         liveEnabled: Boolean(env.LIVE_SERP_DISCOVERY_ENABLED),
         requiresApiKey: true,
         plannedForPhase: 'Phase 4',

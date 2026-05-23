@@ -21,6 +21,9 @@ import { runLeadAnalysisAiReview } from '../ai/leadAnalysisAi.service.js';
 import { markCampaignCancelled, markCampaignQueued, QUEUEABLE_CAMPAIGN_STATUSES } from './campaignJob.service.js';
 import { env } from '../../config/env.js';
 import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
+import { getDiscoveryReadinessSummary } from './discoveryReadiness.service.js';
+import { getAiRuntimeConfig } from '../ai/ai.config.js';
+import { getGeoRuntimeStatus } from '../geo/geoReadiness.service.js';
 import {
   getSupportedJordanGovernorates,
   leadMatchesGovernorate,
@@ -253,6 +256,63 @@ export const getSearchOptions = asyncHandler(async (req, res) => {
     presenceTargets: sourceSets.presenceTargets,
     maxResultsOptions: [10, 20, 50, 100],
   }, 'Search options loaded.');
+});
+
+export const getSearchReadiness = asyncHandler(async (_req, res) => {
+  const [discoveryReadiness, geoRuntime] = await Promise.all([
+    getDiscoveryReadinessSummary(),
+    getGeoRuntimeStatus().catch(() => null),
+  ]);
+  const aiConfig = getAiRuntimeConfig();
+  const leadAnalysisRoute = aiConfig.taskRoutes?.lead_analysis;
+  const aiProviders = Object.entries(aiConfig.providers || {});
+  const configuredProvider = aiProviders.find(([, config]) => Boolean(config.apiKey)) || null;
+
+  return successResponse(res, {
+    localDataset: {
+      available: Boolean(discoveryReadiness.localDataset?.available),
+      count: discoveryReadiness.localDataset?.catalogLeadCount || 0,
+      message: discoveryReadiness.localDataset?.message || null,
+    },
+    searchMetadata: {
+      configured: Boolean(discoveryReadiness.sources?.searchMetadata?.runnable),
+      provider: discoveryReadiness.sources?.searchMetadata?.primaryProvider || null,
+      available: Boolean(discoveryReadiness.sources?.searchMetadata?.runnable),
+      message: discoveryReadiness.sources?.searchMetadata?.status || 'Search Metadata is not configured.',
+    },
+    googlePlaces: {
+      configured: Boolean(discoveryReadiness.sources?.googlePlaces?.configured),
+      available: Boolean(discoveryReadiness.sources?.googlePlaces?.runnable),
+      message: discoveryReadiness.sources?.googlePlaces?.status || 'Google Places is not configured.',
+    },
+    openWeb: {
+      configured: Boolean(env.OPEN_WEB_EVIDENCE_ENABLED && env.COMMON_CRAWL_ENABLED),
+      available: Boolean(env.OPEN_WEB_EVIDENCE_ENABLED && env.COMMON_CRAWL_ENABLED),
+      message: env.OPEN_WEB_EVIDENCE_ENABLED && env.COMMON_CRAWL_ENABLED
+        ? 'Open web evidence is available.'
+        : 'Open web evidence is not configured.',
+    },
+    aiAnalysis: {
+      enabled: Boolean(aiConfig.enabled && leadAnalysisRoute?.enabled),
+      configured: Boolean(configuredProvider),
+      provider: configuredProvider?.[0] || null,
+      model: configuredProvider?.[1]?.defaultModel || null,
+      message: (aiConfig.enabled && leadAnalysisRoute?.enabled)
+        ? (configuredProvider ? 'AI lead analysis is available.' : 'AI lead analysis is enabled but no provider key is configured.')
+        : 'AI lead analysis is disabled. Rule-based review will be used.',
+    },
+    geocoding: {
+      configured: Boolean(geoRuntime?.postgisInstalled && env.GEO_PROVIDER_PRIMARY && env.GEO_PROVIDER_PRIMARY !== 'none'),
+      provider: env.GEO_PROVIDER_PRIMARY || null,
+      message: geoRuntime?.postgisInstalled
+        ? 'Geocoding runtime is available.'
+        : 'Geocoding runtime is not ready on this database.',
+    },
+    mapStyle: {
+      configured: false,
+      message: 'Map style is configured in the frontend environment with VITE_MAP_STYLE_URL.',
+    },
+  }, 'Search readiness loaded.');
 });
 
 // ═══════════════════════════════════════
@@ -591,6 +651,25 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
       job: campaign.jobs?.[0] || null,
       leadListId: latestLeadList?.id || null,
       resultCount: campaign.resultCount || latestLeadList?.resultCount || 0,
+      requestedLimit: leadListFilters?.discovery?.requestedLimit
+        || campaignFilters?.requestedLimit
+        || null,
+      foundCount: leadListFilters?.discovery?.foundCount
+        || campaignFilters?.foundCount
+        || campaign.resultCount
+        || latestLeadList?.resultCount
+        || 0,
+      acceptedCount: leadListFilters?.discovery?.acceptedCount
+        || campaignFilters?.acceptedCount
+        || campaign.resultCount
+        || latestLeadList?.resultCount
+        || 0,
+      shortfallCount: leadListFilters?.discovery?.shortfallCount
+        || campaignFilters?.shortfallCount
+        || 0,
+      providerBreakdown: leadListFilters?.discovery?.providerBreakdown
+        || campaignFilters?.discoveryProviderBreakdown
+        || [],
       layerSummary: leadListFilters?.discovery?.layerReport
         || campaignFilters?.discoveryLayerReport
         || [],

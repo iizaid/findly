@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ApiError, apiRequest } from '../../../../lib/api';
+import { ApiError, apiRequest, getSearchReadiness } from '../../../../lib/api';
 import {
   DEFAULT_GOALS,
   EMPTY_FORM_STATE,
@@ -94,6 +94,7 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   const [searchStep, setSearchStep] = useState(null);
   const [resultSummary, setResultSummary] = useState(null);
   const [pendingSearch, setPendingSearch] = useState(null);
+  const [readiness, setReadiness] = useState(null);
 
   const selectedDiscoveryNames = useMemo(
     () => selectedDiscoverySources.map((source) => PLATFORM_LABELS[source] || source).join(', '),
@@ -168,6 +169,12 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
         if (mounted) setSourcesLoading(false);
       });
 
+    getSearchReadiness()
+      .then((response) => {
+        if (mounted) setReadiness(response.data || null);
+      })
+      .catch(() => {});
+
     return () => {
       mounted = false;
     };
@@ -236,11 +243,17 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
     setResultSummary({
       leadListId: campaign.leadListId || runData.leadListId,
       count: leadsReturned,
+      requestedLimit: campaign.requestedLimit || Number(formState.maxResults) || 20,
+      foundCount: campaign.foundCount ?? leadsReturned,
+      acceptedCount: campaign.acceptedCount ?? leadsReturned,
+      shortfallCount: campaign.shortfallCount ?? Math.max(0, (campaign.requestedLimit || Number(formState.maxResults) || 20) - leadsReturned),
       discoverySourcesRequested: selectedDiscoverySources,
       presenceTargetsRequested: selectedPresenceTargets,
+      providerBreakdown: campaign.providerBreakdown || [],
       layerSummary: campaign.layerSummary || [],
       message: campaign.message || null,
       providerWarnings: selectedSourceWarnings,
+      readiness,
     });
     onUpdate?.();
   };

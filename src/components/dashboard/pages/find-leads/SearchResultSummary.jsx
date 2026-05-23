@@ -12,6 +12,10 @@ const layerLabel = (key) => ({
 
 const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => {
   const hasResults = resultSummary.count > 0;
+  const requestedLimit = resultSummary.requestedLimit ?? resultSummary.count ?? 0;
+  const foundCount = resultSummary.foundCount ?? resultSummary.count ?? 0;
+  const acceptedCount = resultSummary.acceptedCount ?? resultSummary.count ?? 0;
+  const shortfallCount = resultSummary.shortfallCount ?? Math.max(0, requestedLimit - acceptedCount);
 
   return (
     <div className={`rounded-2xl border p-5 ${hasResults ? 'border-accent/40 bg-accent/10' : 'border-black/10 bg-black/[0.03]'}`}>
@@ -36,6 +40,12 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => {
 
       {hasResults && resultSummary.layerSummary?.some((layer) => layer.status === 'COMPLETED') && (
         <div className="mt-4 pl-9">
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Requested: {requestedLimit}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Found: {foundCount}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Accepted: {acceptedCount}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Shortfall: {shortfallCount}</div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {resultSummary.layerSummary
               .filter((layer) => layer.status === 'COMPLETED')
@@ -45,6 +55,17 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => {
                 </span>
               ))}
           </div>
+          {resultSummary.providerBreakdown?.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {resultSummary.providerBreakdown
+                .filter((item) => item.count > 0)
+                .map((item) => (
+                  <span key={`${item.provider}-${item.count}`} className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-bold text-black/60">
+                    {item.provider.replaceAll('_', ' ')}: {item.count}
+                  </span>
+                ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -270,6 +270,7 @@ const DashboardMapPage = ({ onNavigate }) => {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const job = await getGeoEnrichmentJob(jobId);
         const status = job.data?.job?.status;
+        const summary = job.data?.job?.summary || null;
         if (status === 'COMPLETED') {
           const refreshed = await getLeadMap(selection);
           setState({
@@ -278,7 +279,11 @@ const DashboardMapPage = ({ onNavigate }) => {
             notMappable: refreshed.data?.notMappable || [],
             summary: refreshed.data?.summary || null,
           });
-          setJobState({ submitting: false, polling: false, message: 'Location enrichment completed.' });
+          setJobState({
+            submitting: false,
+            polling: false,
+            message: `Location enrichment completed: ${summary?.resolvedItems ?? 0} resolved, ${summary?.lowConfidenceItems ?? 0} low-confidence, ${summary?.failedItems ?? 0} unresolved.`,
+          });
           return;
         }
         if (status === 'FAILED' || status === 'CANCELLED') {
@@ -358,7 +363,7 @@ const DashboardMapPage = ({ onNavigate }) => {
             <div className="mt-6">
               <DashboardEmptyState
                 title="Map style is not configured."
-                description="Add a production-safe MapLibre style URL before using the Lead Map."
+                description="Set VITE_MAP_STYLE_URL to a production-safe MapLibre style URL before using the Lead Map."
                 actionLabel="Open settings"
                 onAction={() => onNavigate('/dashboard/settings')}
               />

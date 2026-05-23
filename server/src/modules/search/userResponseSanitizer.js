@@ -39,12 +39,33 @@ const sanitizeUserText = (value) => {
   return value.replace(/\blocal\b/gi, 'nearby');
 };
 
+const inferAnalysisSource = (analysis = {}) => {
+  const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
+  const sourceSignal = signals.find((signal) => typeof signal === 'string' && signal.startsWith('ANALYSIS_SOURCE_'));
+  return sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
+};
+
+const extractScoreDimensions = (reasons = []) => reasons
+  .filter((reason) => typeof reason === 'string' && reason.includes('/100 - '))
+  .map((reason) => {
+    const [left, detail] = reason.split('/100 - ');
+    const [label, rawValue] = left.split(':');
+    return {
+      label: label?.trim() || 'Dimension',
+      value: Number((rawValue || '').replace(/[^\d.-]/g, '')) || 0,
+      reason: detail?.trim() || '',
+    };
+  });
+
 const sanitizeAnalysisForUserResponse = (analysis) => {
   if (!analysis) return analysis;
+  const reasons = Array.isArray(analysis.reasons) ? analysis.reasons.map(sanitizeUserText) : analysis.reasons;
   return {
     ...analysis,
+    analysisSource: inferAnalysisSource(analysis),
     detectedSignals: sanitizeDetectedSignalsForUserResponse(analysis.detectedSignals),
-    reasons: Array.isArray(analysis.reasons) ? analysis.reasons.map(sanitizeUserText) : analysis.reasons,
+    reasons,
+    scoreDimensions: extractScoreDimensions(reasons),
     outreachAngle: sanitizeUserText(analysis.outreachAngle),
     messageDraft: sanitizeUserText(analysis.messageDraft),
   };

@@ -13,6 +13,7 @@ searchRouter.use(requireAuth, requireVerifiedEmail);
 // Sources
 searchRouter.get('/sources/status', ctrl.getSourceStatus);
 searchRouter.get('/options', ctrl.getSearchOptions);
+searchRouter.get('/readiness', ctrl.getSearchReadiness);
 
 // Dashboard intelligence
 searchRouter.get('/intelligence', ctrl.getDashboardIntelligence);

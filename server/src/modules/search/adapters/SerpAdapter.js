@@ -79,11 +79,13 @@ export class SerpAdapter extends BaseAdapter {
 
     const targetSources = this.context.targetSources || this.campaign.sources || [];
     const missingResultCount = this.context.missingResultCount || this.campaign.requestedLimit || 20;
-    const queries = buildSerpQueriesForCampaign({
-      campaign: this.campaign,
-      targetSources,
-      missingResultCount,
-    });
+    const queries = Array.isArray(this.context.queryVariants) && this.context.queryVariants.length > 0
+      ? this.context.queryVariants
+      : buildSerpQueriesForCampaign({
+        campaign: this.campaign,
+        targetSources,
+        missingResultCount,
+      });
 
     const result = await searchWithMetadataProviders({
       queries,

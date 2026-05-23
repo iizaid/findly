@@ -201,12 +201,19 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     fitScore = Math.min(digitalGapScore, 100);
   }
 
-  // Add slight variance to opportunity score based on fine-grained data so scores aren't identical
+  const scoreBreakdown = buildLeadScoreBreakdown({
+    lead: normalizedLead,
+    campaign: {
+      businessTypes: profile?.targetBusinessTypes || [],
+      city: Array.isArray(profile?.targetLocations) ? profile.targetLocations[0] || null : null,
+      country: Array.isArray(profile?.targetLocations) ? profile.targetLocations[1] || null : null,
+    },
+    sourceConfidence: businessQualityScore > 0 ? Math.min(90, businessQualityScore) : 50,
+  });
+
   opportunityScore += (businessQualityScore * 0.1);
   opportunityScore += (contactabilityScore * 0.05);
-
-  // Cap dimensions
-  opportunityScore = Math.max(0, Math.min(Math.round(opportunityScore), 100));
+  opportunityScore = Math.max(scoreBreakdown.finalScore, Math.min(Math.round(opportunityScore), 100));
   fitScore = Math.max(0, Math.min(Math.round(fitScore), 100));
   dataQualityScore = Math.max(0, Math.min(Math.round(dataQualityScore), 100));
   contactabilityScore = Math.max(0, Math.min(Math.round(contactabilityScore), 100));
@@ -214,10 +221,7 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   businessQualityScore = Math.max(0, Math.min(Math.round(businessQualityScore), 100));
   urgencyScore = Math.max(0, Math.min(Math.round(urgencyScore), 100));
 
-  let scoreLevel = 'LOW';
-  if (opportunityScore > 75) scoreLevel = 'GOLD';
-  else if (opportunityScore > 55) scoreLevel = 'HIGH';
-  else if (opportunityScore > 30) scoreLevel = 'MEDIUM';
+  const scoreLevel = scoreBreakdown.scoreLevel;
 
   // ═══════════════════════════════════════
   // SUGGESTED SERVICE & TEXTS
@@ -264,25 +268,31 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     nextBestAction = 'Research business further';
   }
 
+  const dimensionReasons = scoreBreakdown.dimensions.map((dimension) => (
+    `${dimension.label}: ${dimension.value}/100 - ${dimension.reason}`
+  ));
+
   return {
     fitScore,
     opportunityScore,
     scoreLevel,
     detectedSignals,
-    reasons,
+    reasons: [...reasons, ...dimensionReasons],
     suggestedService,
     outreachAngle,
     messageDraft,
     confidence,
     nextBestAction,
     dimensionScores: {
-      serviceFit: fitScore,
-      digitalGap: digitalGapScore,
-      businessQuality: businessQualityScore,
-      contactability: contactabilityScore,
-      urgency: urgencyScore,
+      serviceFit: scoreBreakdown.dimensions.find((item) => item.key === 'service_fit')?.value ?? fitScore,
+      digitalGap: scoreBreakdown.dimensions.find((item) => item.key === 'website_gap')?.value ?? digitalGapScore,
+      businessQuality: scoreBreakdown.dimensions.find((item) => item.key === 'review_count')?.value ?? businessQualityScore,
+      contactability: scoreBreakdown.dimensions.find((item) => item.key === 'contact_path')?.value ?? contactabilityScore,
+      urgency: scoreBreakdown.dimensions.find((item) => item.key === 'category_urgency')?.value ?? urgencyScore,
       dataQuality: dataQualityScore,
     },
+    scoreDimensions: scoreBreakdown.dimensions,
+    scoringSource: scoreBreakdown.scoringSource,
   };
 };
 
@@ -330,3 +340,4 @@ export const runRuleBasedAnalysis = async ({ tx, lead, profile, userId, workspac
     }),
   });
 };
+import { buildLeadScoreBreakdown } from './leadScoring.service.js';

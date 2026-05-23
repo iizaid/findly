@@ -154,6 +154,8 @@ export const getLeadMap = ({ leadIds = [], listId = null } = {}) => {
   return apiRequest(`/api/lead-map${suffix}`);
 };
 
+export const getSearchReadiness = () => apiRequest('/api/search/readiness');
+
 export const startLeadMapEnrichment = ({ leadIds = [], listId = null, forceRefresh = false } = {}) => apiRequest(
   '/api/lead-map/enrich',
   {

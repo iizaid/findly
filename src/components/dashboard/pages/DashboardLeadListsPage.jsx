@@ -638,8 +638,8 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                                       </span>
                                     )}
                                     {a?.aiFallbackUsed && (
-                                      <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based fallback">
-                                        Fallback Used
+                                      <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based review">
+                                        Rule Based Review
                                       </span>
                                     )}
                                   </h4>

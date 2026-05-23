@@ -29,14 +29,11 @@ import { buildDiscoveryPlan, normalizeCampaignTargeting } from './sourceTargetMa
 import { assertDiscoveryBudget } from './campaignBudget.service.js';
 import { createDiscoveryQuery, recordLeadEvidence } from './discoveryEvidence.service.js';
 import { promoteHighConfidenceEvidenceBatch } from './evidencePromotion.service.js';
-import { findReusableEvidenceCandidates, convertEvidenceToReusableLeadCandidates } from './evidenceCache.service.js';
-import { buildDiscoveryPlan as buildBrainDiscoveryPlan } from './discoveryDecisionEngine.service.js';
-import { collectOpenWebEvidenceCandidates } from './openWebEvidence.service.js';
 import {
-  buildLayeredDiscoveryReport,
   buildLayeredSearchMessage,
   shouldUseLayeredDiscovery,
 } from './layeredDiscovery.service.js';
+import { runDiscoveryOrchestrator } from './discoveryOrchestrator.service.js';
 
 const LOCAL_DATASET_SOURCES = ['LOCAL_DATASET', 'INSTAGRAM_DATASET', 'GOOGLE_MAPS_DATASET', 'DATASET_IMPORT', 'MANUAL_ADMIN'];
 const LOCAL_FALLBACK_SOURCE_KEYS = ['GOOGLE_MAPS', 'INSTAGRAM', 'FACEBOOK', 'WEBSITE', 'YELP', 'SERPAPI', 'TRIPADVISOR', 'YOUTUBE', 'X', 'LINKEDIN', 'TIKTOK', 'REDDIT'];
@@ -109,7 +106,7 @@ const summarizeDiscoveryPlan = (discoveryPlan) => ({
   })),
 });
 
-const runExternalDiscoveryIfNeeded = async ({ campaign, _localResults, _evidenceCandidates, discoveryDecision }) => {
+const _runExternalDiscoveryIfNeeded = async ({ campaign, _localResults, _evidenceCandidates, discoveryDecision }) => {
   const missingResultCount = discoveryDecision.missingCount;
   
   const metadata = {
@@ -664,47 +661,11 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
     });
     const matchedLeads = await adapter.run();
     await assertNotCancelled({ jobId, campaignId: campaign.id });
-    
-    // EVIDENCE CACHE BRAIN
-    const evidenceRecords = await findReusableEvidenceCandidates({
-       campaign,
-       targetSources: platformsRequested,
-       limit: Math.max(1, (campaign.requestedLimit || 20) - matchedLeads.length),
-    });
-    const evidenceCandidates = convertEvidenceToReusableLeadCandidates({ evidences: evidenceRecords, campaign });
-    const linkedEvidenceCandidates = evidenceCandidates.filter(e => e.catalogLeadId);
-    const unlinkedEvidenceCandidates = evidenceCandidates.filter(e => !e.catalogLeadId);
-    const directReusableCoverage = matchedLeads.length + linkedEvidenceCandidates.length;
-    const shouldSkipOpenWebEvidence = directReusableCoverage >= (campaign.requestedLimit || 20);
-    const openWebEvidence = shouldSkipOpenWebEvidence
-      ? {
-          openWebUsed: false,
-          cacheHits: 0,
-          linkedCandidates: [],
-          promotableCandidates: [],
-          results: [],
-        }
-      : await collectOpenWebEvidenceCandidates({
-          campaign,
-          localResults: matchedLeads,
-          evidenceCandidates,
-        });
-    const openWebLinkedCandidates = openWebEvidence.linkedCandidates.map((candidate) => ({
-      id: candidate.catalogLeadId,
-      businessName: candidate.extractedFields?.businessName || candidate.title,
-      category: candidate.extractedFields?.category || campaign.businessTypes?.[0] || null,
-      city: candidate.extractedFields?.city || campaign.city || null,
-      country: candidate.extractedFields?.country || campaign.country || null,
-      source: 'OPEN_WEB_EVIDENCE',
-      sourceId: candidate.externalId || null,
-      websiteUrl: candidate.sourceUrl,
-      localDatasetScore: candidate.confidenceScore,
-      isReusableEvidence: true,
-      originalEvidenceId: null,
-      catalogLeadId: candidate.catalogLeadId,
-      promotableToCatalog: false,
-    }));
-    const allEvidenceCandidates = [...evidenceCandidates, ...openWebLinkedCandidates, ...openWebEvidence.promotableCandidates];
+    const orchestration = await runDiscoveryOrchestrator({ campaign });
+    const evidenceCandidates = orchestration.evidenceCandidates;
+    const linkedEvidenceCandidates = orchestration.linkedEvidenceCandidatesRaw;
+    const unlinkedEvidenceCandidates = evidenceCandidates.filter((item) => !item.catalogLeadId);
+    const openWebEvidence = orchestration.openWebEvidence;
     const evidenceMetadata = {
       evidenceCacheUsed: evidenceCandidates.length > 0,
       evidenceCandidatesCount: evidenceCandidates.length,
@@ -718,27 +679,41 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       openWebEvidenceLinkedCount: openWebEvidence.linkedCandidates.length,
       openWebEvidencePromotableCount: openWebEvidence.promotableCandidates.length,
       openWebEvidenceConfidence: Math.max(0, ...openWebEvidence.results.map((item) => item.result?.confidenceScore || 0)),
-      paidCallsAvoidedEstimate: openWebEvidence.promotableCandidates.length,
-      openWebEvidenceSkippedReason: shouldSkipOpenWebEvidence ? 'DIRECT_COVERAGE_SUFFICIENT' : null,
+      paidCallsAvoidedEstimate: linkedEvidenceCandidates.length,
+      openWebEvidenceSkippedReason: openWebEvidence.skippedReason || null,
     };
-    
-    // DISCOVERY DECISION ENGINE
-    const discoveryDecision = buildBrainDiscoveryPlan({
-       campaign,
-       localResults: matchedLeads,
-       evidenceCandidates: allEvidenceCandidates,
-    });
-    
-    // PAID EXTERNAL DISCOVERY (if authorized by brain)
-    const externalDiscovery = await runExternalDiscoveryIfNeeded({
-      campaign,
-      localResults: matchedLeads,
-      evidenceCandidates: allEvidenceCandidates,
-      discoveryDecision,
-    });
+    const discoveryDecision = {
+      ...orchestration.discoveryDecision,
+      evidenceCoverage: {
+        ...(orchestration.discoveryDecision?.evidenceCoverage || {}),
+        savedExternalCallsEstimate: linkedEvidenceCandidates.length,
+      },
+    };
+    const externalDiscovery = {
+      candidates: orchestration.externalEvidenceCandidatesRaw,
+      metadata: {
+        externalDiscoveryUsed: orchestration.externalEvidenceCandidatesRaw.length > 0,
+        externalProvider: orchestration.executionSummary.searchMetadataProviderUsed
+          || (orchestration.executionSummary.googlePlacesUsed ? 'GOOGLE_PLACES' : null),
+        externalDiscoverySkippedReason: orchestration.externalEvidenceCandidatesRaw.length > 0
+          ? null
+          : ((discoveryDecision.localCoverage?.reason?.includes?.('LOCAL_COVERAGE')
+              ? discoveryDecision.localCoverage.reason
+              : null)
+            || discoveryDecision.searchMetadataPlan?.reason
+            || discoveryDecision.googlePlacesPlan?.reason
+            || discoveryDecision.primaryReason
+            || null),
+        searchMetadataProviderPrimary: 'SEARCH_METADATA',
+        searchMetadataProviderUsed: orchestration.executionSummary.searchMetadataProviderUsed,
+        searchMetadataFallbackUsed: orchestration.executionSummary.searchMetadataSecondaryProviderUsed,
+        searchMetadataQueriesUsed: discoveryDecision.searchMetadataPlan?.maxQueriesAllowed || orchestration.queryVariants.length,
+        externalCostEstimate: orchestration.layerSummary.reduce((sum, layer) => sum + (layer.costUnits || 0), 0),
+      },
+    };
     const estimatedTotalResults = Math.min(
       campaign.requestedLimit || 20,
-      matchedLeads.length + linkedEvidenceCandidates.length + openWebEvidence.promotableCandidates.length + externalDiscovery.candidates.length,
+      orchestration.foundCount,
     );
     await updateCampaignProgress({
       campaignId: campaign.id,
@@ -827,7 +802,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             leadListId: createdList.id,
             catalogLeadId: lead.isReusableEvidence ? lead.catalogLeadId : lead.id,
             rank: index + 1,
-            score: lead.localDatasetScore || null,
+            score: lead.opportunityScorePreview || lead.localDatasetScore || null,
             metadata: {
               platformsRequested,
               sourceUsed: lead.isReusableEvidence ? 'LEAD_EVIDENCE_CACHE' : 'LOCAL_DATASET',
@@ -860,7 +835,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             source: lead.source,
             detectedSignals: lead.detectedSignals,
           },
-          confidenceScore: lead.localDatasetScore || 60,
+          confidenceScore: lead.opportunityScorePreview || lead.localDatasetScore || 60,
         })));
       }
 
@@ -918,7 +893,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               leadListId: createdList.id,
               catalogLeadId: promotion.catalogLead.id,
               rank,
-              score: promotion.catalogLead.localDatasetScore || null,
+              score: promotion.catalogLead.localDatasetScore || promotion.catalogLead.confidenceScore || null,
               metadata: {
                 platformsRequested,
                 sourceUsed: 'OPEN_WEB_EVIDENCE',
@@ -978,7 +953,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               leadListId: createdList.id,
               catalogLeadId: promotion.catalogLead.id,
               rank,
-              score: promotion.catalogLead.localDatasetScore || null,
+              score: promotion.catalogLead.localDatasetScore || promotion.catalogLead.confidenceScore || null,
               metadata: {
                 platformsRequested,
                 sourceUsed: promotion.catalogLead.source || 'SERPAPI',
@@ -993,21 +968,14 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       }
 
       const finalResultCount = catalogIds.size;
-      const { layerSummary } = buildLayeredDiscoveryReport({
-        campaign,
-        matchedLeads,
-        evidenceCandidates,
-        openWebEvidence,
-        discoveryDecision,
-        externalDiscovery,
-        promotedExternalCount: promotedToCatalogCount + linkedDuplicateCount,
-        promotedOpenWebCount: openWebPromotedToCatalogCount + openWebLinkedDuplicateCount,
-      });
-      const message = buildLayeredSearchMessage({
-        resultCount: finalResultCount,
-        layerSummary,
-      });
+      const layerSummary = orchestration.layerSummary;
+      const message = orchestration.shortfallReason
+        || buildLayeredSearchMessage({
+          resultCount: finalResultCount,
+          layerSummary,
+        });
       const creditsUsed = calculateSearchCreditsUsed(finalResultCount);
+      const shortfallCount = Math.max(0, (campaign.requestedLimit || 20) - finalResultCount);
 
       await tx.leadList.update({
         where: { id: createdList.id },
@@ -1029,7 +997,14 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
               smartQueryBudget: discoveryDecision.smartQueryBudget,
               searchMetadataMaxQueriesAllowed: discoveryDecision.searchMetadataPlan.maxQueriesAllowed,
               googlePlacesMaxQueriesAllowed: discoveryDecision.googlePlacesPlan.maxQueriesAllowed,
+              requestedLimit: campaign.requestedLimit || 20,
               finalResultCount,
+              acceptedCount: finalResultCount,
+              foundCount: orchestration.foundCount,
+              shortfallCount,
+              shortfallReason: shortfallCount > 0 ? message : null,
+              providerBreakdown: orchestration.providerBreakdown,
+              queryVariants: orchestration.queryVariants,
               layerReport: layerSummary,
               message,
             },
@@ -1045,6 +1020,11 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             presenceTargets: campaign.filters?.presenceTargets || [],
             discoveryLayerReport: layerSummary,
             discoveryMessage: message,
+            discoveryProviderBreakdown: orchestration.providerBreakdown,
+            requestedLimit: campaign.requestedLimit || 20,
+            acceptedCount: finalResultCount,
+            foundCount: orchestration.foundCount,
+            shortfallCount,
           },
         },
       });
@@ -1092,6 +1072,8 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
             leadListId: createdList.id,
             leadsReturned: finalResultCount,
             creditsUsed,
+            providerBreakdown: orchestration.providerBreakdown,
+            requestedLimit: campaign.requestedLimit || 20,
             localResultsCount: matchedLeads.length,
             ...evidenceMetadata,
             evidenceSavedExternalCalls: discoveryDecision.evidenceCoverage.savedExternalCallsEstimate,
@@ -1156,6 +1138,10 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       resultCount: leadListResult.leadsReturned,
       creditsUsed: leadListResult.creditsUsed,
       sourceUsed: 'LOCAL_DATASET',
+      requestedLimit: campaign.requestedLimit || 20,
+      foundCount: orchestration.foundCount,
+      acceptedCount: leadListResult.leadsReturned,
+      shortfallCount: Math.max(0, (campaign.requestedLimit || 20) - leadListResult.leadsReturned),
       localResultsCount: matchedLeads.length,
       openWebEvidenceUsed: openWebEvidence.openWebUsed,
       openWebEvidenceCandidatesCount: openWebEvidence.results.length,
@@ -1170,6 +1156,8 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
       evidenceCreatedCount: leadListResult.evidenceCreatedCount,
       promotedToCatalogCount: leadListResult.promotedToCatalogCount,
       externalCostEstimate: externalDiscovery.metadata.externalCostEstimate,
+      providerBreakdown: orchestration.providerBreakdown,
+      queryVariants: orchestration.queryVariants,
       layerSummary: leadListResult.layerSummary,
       message: leadListResult.message,
       jobId,

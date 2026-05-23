@@ -66,6 +66,13 @@ const buildMessageDraft = (detail, analysis) => {
   ].join('\n');
 };
 
+const analysisSourceLabel = (analysis) => {
+  if (!analysis) return 'Rule Based Review';
+  if (analysis.analysisSource === 'AI_ASSISTED') return 'AI Assisted';
+  if (analysis.analysisSource === 'HYBRID') return 'Hybrid Review';
+  return 'Rule Based Review';
+};
+
 const DashboardAnalysisPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -165,10 +172,15 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                         <p className="truncate text-sm font-bold">{lead.businessName}</p>
                         <p className="mt-1 truncate text-xs font-semibold text-secondary">{lead.category || lead.city || 'Business'}</p>
                       </div>
-                      {a && (
-                        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-black text-black ${scoreColor(a.scoreLevel)}`}>
+                    {a && (
+                      <div className="shrink-0 space-y-2">
+                        <span className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-black text-black ${scoreColor(a.scoreLevel)}`}>
                           {a.opportunityScore}
                         </span>
+                        <span className="block rounded-full bg-black/[0.06] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-black/60">
+                          {analysisSourceLabel(a)}
+                        </span>
+                      </div>
                       )}
                     </div>
                     {a?.detectedSignals?.length > 0 && (
@@ -261,9 +273,14 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
 
                 {/* Score circle */}
                 {analysis && (
-                  <div className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-3xl border-2 bg-gradient-to-br text-black ${scoreColor(analysis.scoreLevel)} ${scoreBorder(analysis.scoreLevel)}`}>
-                    <span className="text-3xl font-black leading-none">{analysis.opportunityScore}</span>
-                    <span className="mt-1 text-[9px] font-bold uppercase tracking-wider text-black/70">{analysis.scoreLevel}</span>
+                  <div className="shrink-0 space-y-2">
+                    <div className={`flex h-24 w-24 flex-col items-center justify-center rounded-3xl border-2 bg-gradient-to-br text-black ${scoreColor(analysis.scoreLevel)} ${scoreBorder(analysis.scoreLevel)}`}>
+                      <span className="text-3xl font-black leading-none">{analysis.opportunityScore}</span>
+                      <span className="mt-1 text-[9px] font-bold uppercase tracking-wider text-black/70">{analysis.scoreLevel}</span>
+                    </div>
+                    <div className="rounded-full bg-black/[0.06] px-3 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-black/60">
+                      {analysisSourceLabel(analysis)}
+                    </div>
                   </div>
                 )}
               </div>
@@ -314,6 +331,31 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                     </li>
                   ))}
                 </ul>
+              </DashboardCard>
+            )}
+
+            {analysis?.scoreDimensions?.length > 0 && (
+              <DashboardCard className="p-5 md:p-7">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-black">
+                    <Gauge size={18} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold">Score dimensions</p>
+                    <p className="text-xs font-semibold text-secondary">Weighted review dimensions behind the final score.</p>
+                  </div>
+                </div>
+                <div className="mt-5 space-y-3">
+                  {analysis.scoreDimensions.map((dimension) => (
+                    <div key={`${dimension.label}-${dimension.value}`} className="rounded-2xl bg-[#F7F8F6] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-bold text-black">{dimension.label}</p>
+                        <span className="text-xs font-black text-black/60">{dimension.value}/100</span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold leading-5 text-secondary">{dimension.reason}</p>
+                    </div>
+                  ))}
+                </div>
               </DashboardCard>
             )}
           </div>

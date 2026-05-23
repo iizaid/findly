@@ -56,7 +56,7 @@ export const actionLabel = (raw) => {
     EMAIL_VERIFIED: 'Email Verified',
     DATASET_IMPORTED: 'Dataset Imported',
     SEARCH_CAMPAIGN_LOCAL_DATASET_RUN: 'Indexed Search Run',
-    SEARCH_CAMPAIGN_LOCAL_DATASET_FALLBACK: 'Search Fallback Used',
+    SEARCH_CAMPAIGN_LOCAL_DATASET_FALLBACK: 'Search Recovery Used',
     ADMIN_BULK_IMPORT_COMMITTED: 'Bulk Import Committed',
     ADMIN_CATALOG_LEAD_CREATED: 'Manual Lead Added',
   };
