@@ -1292,7 +1292,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
   });
 
   if (items.length === 0) {
-    return successResponse(res, { analyzedCount: 0, creditsUsed: 0, aiAssistedCount: 0, fallbackCount: 0, failedCount: 0, skippedExistingCount: 0 }, 'No items require analysis or list empty.');
+    return successResponse(res, { analyzedCount: 0, creditsUsed: 0, aiAssistedCount: 0, ruleBasedCount: 0, failedCount: 0, skippedExistingCount: 0 }, 'No items require analysis or list empty.');
   }
 
   const profile = leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
@@ -1300,7 +1300,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
   let analyzedCount = 0;
   let creditsUsed = 0;
   let aiAssistedCount = 0;
-  let fallbackCount = 0;
+  let ruleBasedCount = 0;
   let failedCount = 0;
   let skippedExistingCount = 0;
 
@@ -1410,7 +1410,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
       if (res.responseMetadata.analysisSource === 'AI_ASSISTED') {
         aiAssistedCount++;
       } else {
-        fallbackCount++;
+        ruleBasedCount++;
       }
       
       const level = res.analysis.scoreLevel;
@@ -1433,7 +1433,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
           analyzedCount,
           creditsUsed,
           aiAssistedCount,
-          fallbackCount,
+          ruleBasedCount,
         },
       },
     });
@@ -1446,7 +1446,7 @@ export const analyzeListItems = asyncHandler(async (req, res) => {
     analyzedCount,
     creditsUsed,
     aiAssistedCount,
-    fallbackCount,
+    ruleBasedCount,
     failedCount,
     skippedExistingCount,
     scoreDistribution,

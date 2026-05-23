@@ -170,10 +170,11 @@ export const normalizePresenceTargets = (targets = []) => normalizeSelectedSourc
   .filter((target) => PRESENCE_TARGET_KEYS.has(target));
 
 export const normalizeCampaignTargeting = (campaign = {}) => {
-  const rawSources = normalizeSelectedSources(campaign?.sources || []);
-  const filterTargets = campaign?.filters?.presenceTargets;
+  const normalizedCampaign = campaign && typeof campaign === 'object' ? campaign : {};
+  const rawSources = normalizeSelectedSources(normalizedCampaign.sources || []);
+  const filterTargets = normalizedCampaign?.filters?.presenceTargets;
   const rawPresenceTargets = normalizePresenceTargets([
-    ...(Array.isArray(campaign?.presenceTargets) ? campaign.presenceTargets : []),
+    ...(Array.isArray(normalizedCampaign.presenceTargets) ? normalizedCampaign.presenceTargets : []),
     ...(Array.isArray(filterTargets) ? filterTargets : []),
   ]);
   const legacyPresenceTargets = rawSources.filter((source) => PRESENCE_TARGET_KEYS.has(source));

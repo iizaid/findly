@@ -146,7 +146,7 @@ const summarizeSearchMetadataLayer = ({ context, discoveryDecision, externalDisc
       leadsFound: externalDiscovery.candidates.length,
       leadsAccepted: acceptedCount,
       costUnits: externalDiscovery.metadata.externalCostEstimate || 0,
-      warnings: externalDiscovery.metadata.searchMetadataFallbackUsed ? ['FALLBACK_PROVIDER_USED'] : [],
+      warnings: externalDiscovery.metadata.searchMetadataFallbackUsed ? ['SECONDARY_PROVIDER_USED'] : [],
     });
   }
 

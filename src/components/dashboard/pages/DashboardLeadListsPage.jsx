@@ -401,7 +401,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Rule Based / Fallback</div>
-              <div className="text-lg font-bold text-amber-600">{bulkAnalysisResult.fallbackCount}</div>
+              <div className="text-lg font-bold text-amber-600">{bulkAnalysisResult.ruleBasedCount ?? bulkAnalysisResult.fallbackCount ?? 0}</div>
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Failed</div>

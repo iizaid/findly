@@ -15,7 +15,7 @@ import {
 const friendlyErrorMessage = (error) => {
   if (error instanceof ApiError) {
     if (['SOURCE_NOT_CONFIGURED', 'SOURCE_UNAVAILABLE', 'PROVIDER_NOT_CONFIGURED'].includes(error.code)) {
-      return 'One discovery layer could not run, but Findly will continue with available layers when fallback is possible.';
+      return 'One discovery layer could not run, but Findly will continue with the available discovery layers.';
     }
     if (error.code === 'VALIDATION_ERROR') return 'Check the search setup fields and try again.';
     return error.message || 'Search could not be completed.';
