@@ -188,6 +188,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
+  const selectedLeadRecord = leads.find((lead) => getTargetId(lead) === selectedLead) || null;
 
   useGsapPageReveal(pageRef);
 
@@ -348,8 +349,6 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       (l.city || '').toLowerCase().includes(q)
     );
   }, [leads, searchQuery]);
-
-  const selectedLeadRecord = leads.find((lead) => getTargetId(lead) === selectedLead) || null;
 
   const activeAnalysisStatus = analysisStatusMeta(analysisJob || activeList);
   const analysisJobRunning = ['QUEUED', 'RUNNING', 'ANALYSIS_RUNNING'].includes(analysisJob?.status || analysisJob?.listStatus || activeList?.analysisStatus);
