@@ -39,22 +39,63 @@ const sanitizeUserText = (value) => {
   return value.replace(/\blocal\b/gi, 'nearby');
 };
 
+const scoreDimensionKeyFromLabel = (label = '') => {
+  const normalized = String(label).trim().toLowerCase();
+  const map = {
+    'business identity confidence': 'business_identity_confidence',
+    'location confidence': 'location_confidence',
+    'category fit': 'category_fit',
+    'service fit': 'service_fit',
+    'website gap': 'website_gap',
+    'website quality': 'website_quality',
+    'contactability': 'contact_path',
+    'contact path': 'contact_path',
+    'social presence': 'social_presence',
+    'booking/menu need': 'commerce_need',
+    'review count': 'review_count',
+    'rating': 'rating',
+    'source reliability': 'source_reliability',
+    'evidence richness': 'evidence_richness',
+    'data quality': 'data_quality',
+    'location match': 'location_match',
+    'geo readiness': 'geo_readiness',
+    'outreach readiness': 'outreach_readiness',
+    'category urgency': 'category_urgency',
+  };
+  return map[normalized] || normalized.replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '');
+};
+
 const inferAnalysisSource = (analysis = {}) => {
+  if (analysis.analysisSource) {
+    return analysis.analysisSource === 'AI_FALLBACK' ? 'RULE_BASED' : analysis.analysisSource;
+  }
   const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
   const sourceSignal = signals.find((signal) => typeof signal === 'string' && signal.startsWith('ANALYSIS_SOURCE_'));
-  return sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
+  const inferred = sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
+  return inferred === 'AI_FALLBACK' ? 'RULE_BASED' : inferred;
 };
 
 const inferDataQualityLevel = (analysis = {}, scoreDimensions = []) => {
+  if (analysis.dataQualityLevel) return analysis.dataQualityLevel;
   const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
   const signalLevel = signals.find((signal) => typeof signal === 'string' && signal.startsWith('DATA_QUALITY_'));
   if (signalLevel) return signalLevel.replace('DATA_QUALITY_', '');
-  const dimension = scoreDimensions.find((item) => item.label?.toLowerCase?.() === 'data quality');
+  const dimension = scoreDimensions.find((item) => item.key === 'data_quality' || item.label?.toLowerCase?.() === 'data quality');
   if (!dimension) return null;
   if (dimension.value >= 75) return 'HIGH';
   if (dimension.value >= 45) return 'MEDIUM';
   return 'LOW';
 };
+
+const normalizeScoreDimensions = (rawDimensions = []) => rawDimensions
+  .filter((dimension) => dimension && typeof dimension === 'object')
+  .map((dimension) => ({
+    key: typeof dimension.key === 'string' && dimension.key ? dimension.key : scoreDimensionKeyFromLabel(dimension.label),
+    label: sanitizeUserText(dimension.label || 'Dimension'),
+    value: Number(dimension.value) || 0,
+    weight: Number(dimension.weight) || 0,
+    reason: sanitizeUserText(dimension.reason || ''),
+  }));
 
 const extractScoreDimensions = (reasons = []) => reasons
   .filter((reason) => typeof reason === 'string' && reason.includes('/100 - '))
@@ -62,8 +103,10 @@ const extractScoreDimensions = (reasons = []) => reasons
     const [left, detail] = reason.split('/100 - ');
     const [label, rawValue] = left.split(':');
     return {
+      key: scoreDimensionKeyFromLabel(label),
       label: label?.trim() || 'Dimension',
       value: Number((rawValue || '').replace(/[^\d.-]/g, '')) || 0,
+      weight: 0,
       reason: detail?.trim() || '',
     };
   });
@@ -71,10 +114,15 @@ const extractScoreDimensions = (reasons = []) => reasons
 const sanitizeAnalysisForUserResponse = (analysis) => {
   if (!analysis) return analysis;
   const reasons = Array.isArray(analysis.reasons) ? analysis.reasons.map(sanitizeUserText) : analysis.reasons;
-  const scoreDimensions = extractScoreDimensions(reasons);
+  const scoreDimensions = Array.isArray(analysis.scoreDimensions) && analysis.scoreDimensions.length > 0
+    ? normalizeScoreDimensions(analysis.scoreDimensions)
+    : extractScoreDimensions(reasons);
   return {
     ...analysis,
     analysisSource: inferAnalysisSource(analysis),
+    scoringSource: analysis.scoringSource || (Array.isArray(analysis.scoreDimensions) && analysis.scoreDimensions.length > 0 ? 'RULE_BASED' : null),
+    aiProvider: analysis.aiProvider || null,
+    aiModel: analysis.aiModel || null,
     detectedSignals: sanitizeDetectedSignalsForUserResponse(analysis.detectedSignals),
     reasons,
     scoreDimensions,

@@ -1,26 +1,38 @@
-import { prisma } from '../src/db/prisma.js';
-
 const BLOCKED_ENVIRONMENTS = new Set(['production', 'test']);
 export const FIXTURE_PATTERNS = [
-  'filter-test',
-  'concurrent',
-  'reuse',
-  'invalidai',
-  'Admin Manual Lead',
-  'Lead A',
-  'AI Cafe',
-  'mpi',
-  'mpj',
+  '/^AI Cafe /i',
+  '/^Lead A filter-test/i',
+  '/\\bmpi[a-z0-9]{4,}\\b/i',
+  '/\\bmpj[a-z0-9]{4,}\\b/i',
+  'contains fixture markers: filter-test, concurrent, reuse, invalidai, admin manual lead',
 ];
 
-const containsAnyPattern = (field) => ({
-  OR: FIXTURE_PATTERNS.map((pattern) => ({
-    [field]: {
-      contains: pattern,
-      mode: 'insensitive',
-    },
-  })),
+const FIXTURE_TOKEN_REGEXES = [
+  /^AI Cafe /i,
+  /^Lead A filter-test/i,
+  /\bmpi[a-z0-9]{4,}\b/i,
+  /\bmpj[a-z0-9]{4,}\b/i,
+];
+const FIXTURE_CONTAINS_TERMS = ['filter-test', 'concurrent', 'reuse', 'invalidai', 'admin manual lead'];
+
+const getPrisma = async () => {
+  const { prisma } = await import('../src/db/prisma.js');
+  return prisma;
+};
+
+export const parseCleanupArgs = (argv = process.argv.slice(2)) => ({
+  dryRun: !argv.includes('--confirm'),
+  confirm: argv.includes('--confirm'),
 });
+
+export const isFixtureShapedName = (value) => {
+  const name = String(value || '').trim();
+  if (!name) return false;
+  if (FIXTURE_TOKEN_REGEXES.some((pattern) => pattern.test(name))) return true;
+
+  const lowered = name.toLowerCase();
+  return FIXTURE_CONTAINS_TERMS.some((term) => lowered.includes(term));
+};
 
 export const ensureDevelopmentOnly = () => {
   if (BLOCKED_ENVIRONMENTS.has(process.env.NODE_ENV)) {
@@ -28,25 +40,51 @@ export const ensureDevelopmentOnly = () => {
   }
 };
 
-export const runFixtureCleanup = async () => {
-  ensureDevelopmentOnly();
+const collectFixtureMatches = async () => {
+  const prisma = await getPrisma();
+  const [leads, catalogLeads, campaigns, lists] = await Promise.all([
+    prisma.lead.findMany({ select: { id: true, businessName: true, campaignId: true } }),
+    prisma.leadCatalog.findMany({ select: { id: true, businessName: true } }),
+    prisma.searchCampaign.findMany({ select: { id: true, name: true } }),
+    prisma.leadList.findMany({ select: { id: true, name: true, campaignId: true } }),
+  ]);
 
-  const leadMatches = await prisma.lead.findMany({
-    where: containsAnyPattern('businessName'),
-    select: { id: true, campaignId: true },
-  });
-  const catalogMatches = await prisma.leadCatalog.findMany({
-    where: containsAnyPattern('businessName'),
-    select: { id: true },
-  });
-  const campaignMatches = await prisma.searchCampaign.findMany({
-    where: containsAnyPattern('name'),
-    select: { id: true },
-  });
-  const listMatches = await prisma.leadList.findMany({
-    where: containsAnyPattern('name'),
-    select: { id: true, campaignId: true },
-  });
+  const leadMatches = leads.filter((item) => isFixtureShapedName(item.businessName));
+  const catalogMatches = catalogLeads.filter((item) => isFixtureShapedName(item.businessName));
+  const campaignMatches = campaigns.filter((item) => isFixtureShapedName(item.name));
+  const listMatches = lists.filter((item) => isFixtureShapedName(item.name));
+
+  return { leadMatches, catalogMatches, campaignMatches, listMatches };
+};
+
+const buildPreview = ({ leadMatches, catalogMatches, campaignMatches, listMatches }) => ({
+  dryRun: true,
+  matches: {
+    leads: leadMatches.length,
+    catalogLeads: catalogMatches.length,
+    campaigns: campaignMatches.length,
+    leadLists: listMatches.length,
+  },
+  sampleNames: {
+    leads: leadMatches.slice(0, 5).map((item) => item.businessName),
+    catalogLeads: catalogMatches.slice(0, 5).map((item) => item.businessName),
+    campaigns: campaignMatches.slice(0, 5).map((item) => item.name),
+    leadLists: listMatches.slice(0, 5).map((item) => item.name),
+  },
+});
+
+export const runFixtureCleanup = async ({ dryRun = true } = {}) => {
+  ensureDevelopmentOnly();
+  const prisma = await getPrisma();
+
+  const { leadMatches, catalogMatches, campaignMatches, listMatches } = await collectFixtureMatches();
+  const preview = buildPreview({ leadMatches, catalogMatches, campaignMatches, listMatches });
+
+  if (dryRun) {
+    console.log(JSON.stringify(preview, null, 2));
+    console.log('Dry run only. Re-run with --confirm to delete these fixture records.');
+    return preview;
+  }
 
   const campaignIds = [...new Set([
     ...leadMatches.map((item) => item.campaignId).filter(Boolean),
@@ -159,16 +197,29 @@ export const runFixtureCleanup = async () => {
     };
   });
 
-  console.log(JSON.stringify(report, null, 2));
+  const finalReport = {
+    dryRun: false,
+    matches: preview.matches,
+    sampleNames: preview.sampleNames,
+    deleted: report,
+  };
+  console.log(JSON.stringify(finalReport, null, 2));
+  return finalReport;
 };
 
 if ((process.argv[1] || '').replace(/\\/g, '/').endsWith('/cleanTestFixtures.js')) {
-  runFixtureCleanup()
+  const args = parseCleanupArgs();
+  if (!args.confirm) {
+    console.log('Refusing to delete fixture records without --confirm. Running in dry-run mode.');
+  }
+  let prisma;
+  runFixtureCleanup({ dryRun: args.dryRun })
     .catch((error) => {
       console.error(error.message || error);
       process.exitCode = 1;
     })
     .finally(async () => {
-      await prisma.$disconnect();
+      prisma = await getPrisma().catch(() => null);
+      await prisma?.$disconnect?.();
     });
 }

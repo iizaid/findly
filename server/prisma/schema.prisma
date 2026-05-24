@@ -914,6 +914,12 @@ model LeadAnalysis {
   messageDraft     String?
   confidence       String?
   nextBestAction   String?
+  scoreDimensions  Json?
+  dataQualityLevel String?
+  scoringSource    String?
+  analysisSource   String?
+  aiProvider       String?
+  aiModel          String?
   createdAt        DateTime   @default(now())
 
   user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)

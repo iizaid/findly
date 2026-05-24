@@ -56,8 +56,8 @@ const mergeLeadListAnalysisFilters = (filters = {}, patch = {}) => ({
 
 const inferAnalysisMetadata = (analysisData = {}, aiResult = null) => ({
   analysisSource: analysisData.analysisSource || 'RULE_BASED',
-  aiProvider: aiResult?.ok ? aiResult.provider : null,
-  aiModel: aiResult?.ok ? aiResult.model : null,
+  aiProvider: analysisData.aiProvider || (aiResult?.ok ? aiResult.provider : null),
+  aiModel: analysisData.aiModel || (aiResult?.ok ? aiResult.model : null),
   aiErrorType: aiResult && !aiResult.ok ? aiResult.errorType || null : null,
 });
 
@@ -84,6 +84,9 @@ const enrichAnalysisDataForPersistence = ({ analysisData, aiResult }) => {
 
   return {
     ...analysisData,
+    analysisSource: analysisData.analysisSource || persistedSource,
+    aiProvider: aiResult?.ok ? aiResult.provider : (analysisData.aiProvider || null),
+    aiModel: aiResult?.ok ? aiResult.model : (analysisData.aiModel || null),
     detectedSignals: [...new Set(detectedFindings)].slice(0, 24),
     reasons: reasons.slice(0, 18),
   };

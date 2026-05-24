@@ -303,6 +303,9 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     },
     scoreDimensions: scoreBreakdown.dimensions,
     scoringSource: scoreBreakdown.scoringSource,
+    analysisSource: 'RULE_BASED',
+    aiProvider: null,
+    aiModel: null,
   };
 };
 
@@ -334,6 +337,12 @@ export const toLeadAnalysisCreateData = ({
     messageDraft: analysisData.messageDraft,
     confidence: analysisData.confidence,
     nextBestAction: analysisData.nextBestAction,
+    scoreDimensions: analysisData.scoreDimensions || null,
+    dataQualityLevel: analysisData.dataQualityLevel || null,
+    scoringSource: analysisData.scoringSource || null,
+    analysisSource: analysisData.analysisSource || 'RULE_BASED',
+    aiProvider: analysisData.aiProvider || null,
+    aiModel: analysisData.aiModel || null,
   };
 };
 

@@ -179,6 +179,9 @@ const enrichAnalysisDataForPersistence = ({ analysisData, aiResult }) => {
 
   return {
     ...analysisData,
+    analysisSource,
+    aiProvider: aiResult?.ok ? aiResult.provider : (analysisData.aiProvider || null),
+    aiModel: aiResult?.ok ? aiResult.model : (analysisData.aiModel || null),
     detectedSignals: [...new Set(detectedSignals)].slice(0, 24),
     reasons: reasons.slice(0, 16),
   };
@@ -186,8 +189,8 @@ const enrichAnalysisDataForPersistence = ({ analysisData, aiResult }) => {
 
 const buildAnalysisResponseMetadata = ({ analysisData, aiResult }) => ({
   analysisSource: analysisData.analysisSource || 'RULE_BASED',
-  aiProvider: aiResult?.ok ? aiResult.provider : null,
-  aiModel: aiResult?.ok ? aiResult.model : null,
+  aiProvider: analysisData.aiProvider || (aiResult?.ok ? aiResult.provider : null),
+  aiModel: analysisData.aiModel || (aiResult?.ok ? aiResult.model : null),
   aiFallbackUsed: Boolean(aiResult && !aiResult.ok && analysisData.analysisSource === 'AI_FALLBACK'),
   aiErrorType: aiResult && !aiResult.ok ? aiResult.errorType || null : null,
 });
@@ -196,12 +199,12 @@ const inferAnalysisMetadata = (analysis = {}) => {
   const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
   const sourceSignal = signals.find((signal) => signal.startsWith('ANALYSIS_SOURCE_'));
   const providerSignal = signals.find((signal) => signal.startsWith('AI_PROVIDER_'));
-  const analysisSource = sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
-  const aiProvider = providerSignal ? providerSignal.replace('AI_PROVIDER_', '').toLowerCase() : null;
+  const analysisSource = analysis.analysisSource || sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
+  const aiProvider = analysis.aiProvider || (providerSignal ? providerSignal.replace('AI_PROVIDER_', '').toLowerCase() : null);
   return {
     analysisSource,
     aiProvider,
-    aiModel: null,
+    aiModel: analysis.aiModel || null,
     aiFallbackUsed: analysisSource === 'AI_FALLBACK',
     aiErrorType: null,
   };

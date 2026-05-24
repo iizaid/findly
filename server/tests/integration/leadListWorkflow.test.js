@@ -383,7 +383,23 @@ describe('LeadList Workflow Architecture', () => {
       expect(response.body.data.aiProvider).toBe('mock');
       expect(response.body.data.aiFallbackUsed).toBe(false);
       expect(response.body.data.analysis.analysisSource).toBe('AI_ASSISTED');
+      expect(response.body.data.analysis.scoreDimensions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'outreach_readiness' }),
+          expect.objectContaining({ key: 'service_fit' }),
+        ]),
+      );
       expect(JSON.stringify(response.body)).not.toContain('test-key');
+
+      const reloadedList = await agent1.get(`/api/search/leads?listId=${leadList.id}`).expect(200);
+      const reloadedLead = reloadedList.body.data.leads.find((lead) => lead.leadListItemId === item.id);
+      expect(reloadedLead.analyses?.[0]?.scoreDimensions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'outreach_readiness' }),
+          expect.objectContaining({ key: 'service_fit' }),
+        ]),
+      );
+      expect(reloadedLead.analyses?.[0]?.dataQualityLevel).toBeTruthy();
 
       const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
       expect(afterCredits).toBe(beforeCredits - 1);

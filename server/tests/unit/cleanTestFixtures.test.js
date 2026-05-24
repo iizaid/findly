@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ensureDevelopmentOnly, FIXTURE_PATTERNS } from '../../scripts/cleanTestFixtures.js';
+import { ensureDevelopmentOnly, FIXTURE_PATTERNS, isFixtureShapedName, parseCleanupArgs } from '../../scripts/cleanTestFixtures.js';
 
 describe('clean test fixtures guard', () => {
   it('refuses cleanup outside development', () => {
@@ -13,13 +13,22 @@ describe('clean test fixtures guard', () => {
 
   it('tracks expected generated fixture patterns', () => {
     expect(FIXTURE_PATTERNS).toEqual(expect.arrayContaining([
-      'filter-test',
-      'concurrent',
-      'reuse',
-      'invalidai',
-      'AI Cafe',
-      'mpi',
-      'mpj',
+      '/^AI Cafe /i',
+      '/^Lead A filter-test/i',
     ]));
+  });
+
+  it('defaults to dry run unless --confirm is passed', () => {
+    expect(parseCleanupArgs([])).toEqual({ dryRun: true, confirm: false });
+    expect(parseCleanupArgs(['--confirm'])).toEqual({ dryRun: false, confirm: true });
+  });
+
+  it('matches only precise generated fixture names', () => {
+    expect(isFixtureShapedName('AI Cafe concurrent abc123')).toBe(true);
+    expect(isFixtureShapedName('Lead A filter-test abc123')).toBe(true);
+    expect(isFixtureShapedName('Specialty Roastery mpiabcd')).toBe(true);
+    expect(isFixtureShapedName('Specialty Roastery mpjabcd')).toBe(true);
+    expect(isFixtureShapedName('Olympia Cafe')).toBe(false);
+    expect(isFixtureShapedName('Empire Bakery')).toBe(false);
   });
 });

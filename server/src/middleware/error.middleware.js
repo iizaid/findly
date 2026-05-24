@@ -74,6 +74,22 @@ export const errorHandler = (err, req, res, _next) => {
     return errorResponse(res, errorCodes.INTERNAL_ERROR, 'Database request failed.', 500);
   }
 
+  if (
+    err instanceof Prisma.PrismaClientInitializationError
+    || err instanceof Prisma.PrismaClientRustPanicError
+    || err instanceof Prisma.PrismaClientUnknownRequestError
+  ) {
+    logger.error('request.failed', {
+      requestId,
+      method: req?.method,
+      path: req?.originalUrl,
+      errorName,
+      errorMessage,
+    });
+    logBackendError(req, 503, errorCodes.INTERNAL_ERROR, 'Database is temporarily unavailable.');
+    return errorResponse(res, errorCodes.INTERNAL_ERROR, 'Database is temporarily unavailable.', 503);
+  }
+
   if (err.message === 'Origin is not allowed by CORS') {
     logBackendError(req, 403, errorCodes.FORBIDDEN, 'Origin is not allowed.');
     return errorResponse(res, errorCodes.FORBIDDEN, 'Origin is not allowed.', 403);
