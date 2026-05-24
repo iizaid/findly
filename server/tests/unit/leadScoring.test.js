@@ -78,4 +78,27 @@ describe('lead scoring', () => {
       withWebsite.dimensions.find((item) => item.key === 'website_gap')?.value,
     );
   });
+
+  it('does not let low-quality evidence score as a strong opportunity', () => {
+    const campaign = {
+      businessTypes: ['Cafes'],
+      city: 'Amman',
+      country: 'Jordan',
+    };
+
+    const weakLead = buildLeadScoreBreakdown({
+      lead: {
+        businessName: 'Basic Cafe Listing',
+        category: 'Coffee Shop',
+        city: 'Amman',
+        country: 'Jordan',
+        instagramUsername: 'basiccafe',
+      },
+      campaign,
+      sourceConfidence: 58,
+    });
+
+    expect(weakLead.dataQualityLevel).toBe('LOW');
+    expect(weakLead.finalScore).toBeLessThan(55);
+  });
 });

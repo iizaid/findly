@@ -343,7 +343,22 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   }
 
   const weightedTotal = dimensions.reduce((sum, item) => sum + (item.value * item.weight), 0);
-  const finalScore = clamp(weightedTotal);
+  let finalScore = weightedTotal;
+
+  if (generatedName) {
+    finalScore = Math.min(finalScore, 22);
+  } else if (!credibleEvidence) {
+    finalScore = Math.min(finalScore, 34);
+  } else {
+    if (dataQuality < 45) finalScore -= 16;
+    else if (dataQuality < 60) finalScore -= 8;
+
+    if (businessIdentityConfidence < 50) finalScore -= 12;
+    if (locationConfidence < 35) finalScore -= 6;
+    if (contactPath < 40 && !websiteDomain) finalScore -= 6;
+  }
+
+  finalScore = clamp(finalScore);
   const dataQualityLevel = dataQualityLevelFromScore(dataQuality);
 
   return {

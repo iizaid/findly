@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2 } from 'lucide-react';
+import { Plus, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2, X, Globe, MapPin, Phone, Mail } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
 import { apiRequest, getLeadListAnalysisJob, startLeadListAnalysis } from '../../../lib/api';
@@ -31,8 +31,12 @@ const scoreBadge = (analysis) => {
 const formatSignalSource = (source) => {
   const map = {
     ONLINE_SOURCE: 'Online Source',
+    WEBSITE: 'Website',
+    GOOGLE_MAPS: 'Google Maps',
+    INSTAGRAM: 'Instagram',
+    FACEBOOK: 'Facebook',
   };
-  return map[source] || source?.replace(/_/g, ' ') || 'Available Sources';
+  return map[source] || source?.replace(/_/g, ' ') || 'Search';
 };
 
 const platformLabel = {
@@ -49,7 +53,37 @@ const platformLabel = {
 };
 
 const listPlatformLabel = (list) => list?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
-  || 'Available Sources';
+  || 'Not recorded';
+
+const formatFindingLabel = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return normalized
+    .replace(/^AI_GAP:/i, '')
+    .replace(/^DATA_QUALITY_/i, 'Quality ')
+    .replace(/^HAS_/i, '')
+    .replace(/^NO_/i, 'No ')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const dataQualityTone = (level) => {
+  if (level === 'HIGH') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+  if (level === 'MEDIUM') return 'bg-amber-50 text-amber-700 border-amber-100';
+  return 'bg-red-50 text-red-700 border-red-100';
+};
+
+const outreachState = (analysis) => {
+  const readiness = analysis?.scoreDimensions?.find((item) => item.key === 'outreach_readiness')?.value ?? 0;
+  if ((analysis?.dataQualityLevel === 'HIGH') || readiness >= 65) {
+    return { label: 'Outreach ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-100' };
+  }
+  if (analysis?.dataQualityLevel === 'MEDIUM') {
+    return { label: 'Needs review', className: 'bg-amber-50 text-amber-700 border-amber-100' };
+  }
+  return { label: 'Needs evidence', className: 'bg-red-50 text-red-700 border-red-100' };
+};
 
 const analysisStatusMeta = (job) => {
   const status = job?.listStatus || job?.status || 'NOT_ANALYZED';
@@ -83,7 +117,48 @@ const analysisStatusMeta = (job) => {
   };
 };
 
-const summaryValue = (job, key) => job?.summary?.[key] ?? 0;
+const formatDetailValue = (value, fallback = '-') => {
+  if (value === null || value === undefined) return fallback;
+  const normalized = String(value).trim();
+  return normalized || fallback;
+};
+
+const compactCategoryLocation = (lead) => [lead.category, lead.city].filter(Boolean).join(' • ') || 'Category and city not recorded';
+
+const getContactCoverage = (lead) => {
+  let count = 0;
+  if (lead.phone) count += 1;
+  if (lead.email) count += 1;
+  if (lead.websiteUrl) count += 1;
+  if (lead.instagramUrl || lead.instagramUsername) count += 1;
+  if (lead.facebookUrl) count += 1;
+  return count;
+};
+
+const getEvidenceItems = (analysis) => {
+  const findings = Array.isArray(analysis?.detectedSignals) ? analysis.detectedSignals : [];
+  return findings.slice(0, 4).map(formatFindingLabel).filter(Boolean);
+};
+
+const getTargetId = (lead) => lead?.leadListItemId || lead?.id;
+
+const getDisplayHost = (url) => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '');
+  } catch {
+    return url;
+  }
+};
+
+const buildInstagramUrl = (lead) => {
+  const safeUrl = safeExternalUrl(lead?.instagramUrl);
+  if (safeUrl) return safeUrl;
+  if (lead?.instagramUsername) {
+    return `https://instagram.com/${String(lead.instagramUsername).replace(/^@/, '')}`;
+  }
+  return null;
+};
 
 const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const pageRef = useRef(null);
@@ -205,6 +280,15 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   }, [selectedListId]);
 
   useEffect(() => {
+    if (!selectedLeadRecord) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setSelectedLead(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLeadRecord]);
+
+  useEffect(() => {
     if (!selectedListId) {
       setActiveList(null);
       return;
@@ -265,8 +349,19 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
     );
   }, [leads, searchQuery]);
 
+  const selectedLeadRecord = leads.find((lead) => getTargetId(lead) === selectedLead) || null;
+
   const activeAnalysisStatus = analysisStatusMeta(analysisJob || activeList);
   const analysisJobRunning = ['QUEUED', 'RUNNING', 'ANALYSIS_RUNNING'].includes(analysisJob?.status || analysisJob?.listStatus || activeList?.analysisStatus);
+  const activeSummary = analysisJob?.summary || activeList?.analysisSummary || null;
+  const progressPercent = Math.min(100, Math.round(((analysisJob?.progressCurrent || 0) / Math.max(analysisJob?.progressTotal || 1, 1)) * 100));
+  const summaryCards = [
+    { label: 'Lead count', value: totalLeads || activeList?.leadCount || 0 },
+    { label: 'Analyzed', value: activeSummary?.totalAnalyzed ?? 0 },
+    { label: 'Outreach ready', value: activeSummary?.outreachReadyCount ?? 0 },
+    { label: 'Needs evidence', value: activeSummary?.needsMoreEvidenceCount ?? 0 },
+    { label: 'Credits used', value: activeSummary?.creditsUsed ?? 0 },
+  ];
 
   const toggleSort = (field) => {
     if (sortBy === field) {
@@ -277,7 +372,6 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
     }
   };
 
-  const getTargetId = (lead) => lead.leadListItemId || lead.id;
   const toggleLeadSelection = (leadId) => {
     setSelectedLeadIds((current) => (
       current.includes(leadId)
@@ -369,6 +463,21 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
     }
   };
 
+  const modalLead = selectedLeadRecord;
+  const modalAnalysis = modalLead?.analyses?.[0] || null;
+  const modalTargetId = modalLead ? getTargetId(modalLead) : null;
+  const modalWebsiteUrl = safeExternalUrl(modalLead?.websiteUrl);
+  const modalInstagramUrl = buildInstagramUrl(modalLead);
+  const modalFacebookUrl = safeExternalUrl(modalLead?.facebookUrl);
+  const modalGoogleMapsUrl = safeExternalUrl(modalLead?.googleMapsUrl);
+  const modalReadiness = outreachState(modalAnalysis);
+  const modalDataQuality = modalAnalysis?.dataQualityLevel || modalAnalysis?.scoreBreakdown?.dataQualityLevel || '-';
+  const modalContactabilityDimension = modalAnalysis?.scoreDimensions?.find?.((item) => item.key === 'contact_path') || modalAnalysis?.scoreBreakdown?.dimensions?.find?.((item) => item.key === 'contact_path');
+  const modalServiceFitDimension = modalAnalysis?.scoreDimensions?.find?.((item) => item.key === 'service_fit');
+  const modalEvidenceItems = getEvidenceItems(modalAnalysis);
+  const modalIsListItem = !!modalLead?.leadListItemId;
+  const modalIsCatalogLeadWithoutList = modalLead?.catalogOnly && !modalIsListItem;
+
   return (
     <div ref={pageRef}>
     <DashboardCard className="min-h-[calc(100vh-132px)] overflow-hidden p-5 md:p-7">
@@ -428,68 +537,51 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         </div>
       )}
 
-      {analysisJob && (
+      {(analysisJob || activeSummary) && (
         <div className="mt-6 rounded-2xl border border-black/[0.08] bg-white p-5 shadow-sm" data-gsap-reveal>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[15px] font-bold text-black flex items-center gap-2">
-              <CheckCircle2 size={18} className={analysisJob.status === 'COMPLETED' ? 'text-emerald-500' : 'text-blue-500'} />
-              {analysisJob.status === 'COMPLETED' ? 'Analysis complete' : 'Analysis progress'}
-            </h3>
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${activeAnalysisStatus.className}`}>
-              {activeAnalysisStatus.label}
-            </span>
-          </div>
-          {analysisJob.progressTotal > 0 && (
-            <div className="mb-4">
-              <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-black/55">
-                <span>Analyzed {analysisJob.progressCurrent} of {analysisJob.progressTotal}</span>
-                <span>{Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100)}%</span>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[15px] font-bold text-black flex items-center gap-2">
+                  <CheckCircle2 size={18} className={analysisJob?.status === 'COMPLETED' ? 'text-emerald-500' : 'text-blue-500'} />
+                  {analysisJob?.status === 'COMPLETED' ? 'Analysis complete' : 'Analysis progress'}
+                </h3>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${activeAnalysisStatus.className}`}>
+                  {activeAnalysisStatus.label}
+                </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-black/[0.06]">
-              <div
-                className="h-full rounded-full bg-[#B6FF00]"
-                style={{ width: `${Math.min(100, Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100))}%` }}
-                data-gsap-bar
-                data-gsap-bar-width={`${Math.min(100, Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100))}%`}
-              />
+              {analysisJob?.progressTotal > 0 && (
+                <p className="mt-2 text-[13px] font-semibold text-black/55">
+                  Analyzed {analysisJob.progressCurrent} of {analysisJob.progressTotal} leads
+                </p>
+              )}
             </div>
-          </div>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
-              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Total Analyzed</div>
-              <div className="text-lg font-bold text-black">{summaryValue(analysisJob, 'totalAnalyzed')}</div>
-            </div>
-            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
-              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">AI Assisted</div>
-              <div className="text-lg font-bold text-blue-600">{summaryValue(analysisJob, 'aiAssistedCount')}</div>
-            </div>
-            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
-              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Rule Based Review</div>
-              <div className="text-lg font-bold text-amber-600">{summaryValue(analysisJob, 'ruleBasedCount')}</div>
-            </div>
-            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
-              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Failed</div>
-              <div className="text-lg font-bold text-red-600">{summaryValue(analysisJob, 'failedCount')}</div>
-            </div>
-            <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
-              <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Credits Used</div>
-              <div className="text-lg font-bold text-black">{summaryValue(analysisJob, 'creditsUsed')}</div>
-            </div>
-          </div>
-          {analysisJob.summary?.topOpportunities?.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-black/[0.04]">
-              <div className="text-[12px] font-semibold text-black/60 mb-2">Top Opportunities Found</div>
-              <div className="flex flex-wrap gap-2">
-                {analysisJob.summary.topOpportunities.map((opp, idx) => (
-                  <span key={idx} className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 border border-emerald-100">
-                    Score: {opp.score} ({opp.service})
-                  </span>
-                ))}
+            {analysisJob?.progressTotal > 0 && (
+              <div className="min-w-[220px] flex-1 lg:max-w-md">
+                <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-black/55">
+                  <span>Progress</span>
+                  <span>{progressPercent}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-black/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-[#B6FF00]"
+                    style={{ width: `${progressPercent}%` }}
+                    data-gsap-bar
+                    data-gsap-bar-width={`${progressPercent}%`}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-          {analysisJob.errorMessage && (
+            )}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+            {summaryCards.map((card) => (
+              <div key={card.label} className="rounded-xl border border-black/[0.05] bg-[#F7F8F6] p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/40">{card.label}</div>
+                <div className="mt-2 text-xl font-bold text-black">{card.value}</div>
+              </div>
+            ))}
+          </div>
+          {analysisJob?.errorMessage && (
             <p className="mt-4 text-[12px] font-semibold text-red-600">{analysisJob.errorMessage}</p>
           )}
         </div>
@@ -503,29 +595,40 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       )}
 
       {selectedListId && activeList && (
-        <div className="mt-8 rounded-2xl border border-black/5 bg-black/[0.01] p-5" data-gsap-reveal>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
+        <div className="mt-8 rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-5" data-gsap-reveal>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-semibold tracking-tight text-black">{activeList.name}</h3>
+                <h3 className="text-xl font-semibold tracking-tight text-black">{activeList.name}</h3>
                 <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${activeAnalysisStatus.className}`}>
                   {activeAnalysisStatus.label}
                 </span>
               </div>
-              <p className="mt-1 text-[13px] text-black/50">
-                Sources: {listPlatformLabel(activeList)}
+              <p className="text-[13px] font-medium text-black/50">
+                Search focus: {listPlatformLabel(activeList)}
               </p>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black/70">
+                  {totalLeads || activeList.leadCount || 0} saved leads
+                </span>
+                <span className="inline-flex items-center rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black/70">
+                  {activeSummary?.totalAnalyzed ?? 0} reviewed
+                </span>
+                <span className="inline-flex items-center rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black/70">
+                  {activeSummary?.outreachReadyCount ?? 0} outreach ready
+                </span>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex h-8 items-center rounded-lg bg-black/[0.04] px-3 text-[12px] font-medium text-black/70">
-                Showing {leads.length} of {totalLeads || activeList.leadCount || 0} leads
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <span className="inline-flex h-9 items-center rounded-xl border border-black/[0.06] bg-white px-3 text-[12px] font-semibold text-black/70">
+                Showing {leads.length} of {totalLeads || activeList.leadCount || 0}
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate?.(`/dashboard/map?listId=${activeList.id}`)}
-                className="inline-flex h-8 items-center rounded-lg bg-[#B6FF00] px-3 text-[12px] font-bold text-black transition-colors hover:bg-[#C8FF3D]"
+                className="inline-flex h-9 items-center rounded-xl bg-[#B6FF00] px-4 text-[12px] font-bold text-black transition-colors hover:bg-[#C8FF3D]"
               >
-                View list on map
+                Open on map
               </button>
             </div>
           </div>
@@ -554,8 +657,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         </div>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="mt-6 rounded-2xl border border-black/[0.06] bg-white p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/30" />
           <input
             type="text"
@@ -588,6 +692,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
           <input type="checkbox" checked={filterMissingWeb} onChange={(e) => setFilterMissingWeb(e.target.checked)} className="accent-black" />
           No website
         </label>
+        </div>
       </div>
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-sm ring-1 ring-black/5">
@@ -602,7 +707,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
               <span>Website</span>
               <span>Instagram</span>
               <span>Contact</span>
-              <span>Findings</span>
+              <span>Evidence</span>
               <button type="button" onClick={() => toggleSort('reviewCount')} className="flex items-center gap-1 hover:text-black"><span>Score</span><ArrowUpDown size={10} /></button>
               <span>Status</span>
               <span>Actions</span>
@@ -622,11 +727,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                     const isCatalogLeadWithoutList = lead.catalogOnly && !isListItem;
                     const a = lead.analyses?.[0];
                     const websiteUrl = safeExternalUrl(lead.websiteUrl);
-                    const instagramUrl = safeExternalUrl(lead.instagramUrl);
-                    const facebookUrl = safeExternalUrl(lead.facebookUrl);
                     const googleMapsUrl = safeExternalUrl(lead.googleMapsUrl);
-                    const contactabilityDimension = a?.scoreBreakdown?.dimensions?.find?.((item) => item.key === 'contact_path');
-                    const dataQualityLevel = a?.dataQualityLevel || a?.scoreBreakdown?.dataQualityLevel || '-';
                     
                     return (
                         <div key={targetId} className="flex flex-col">
@@ -634,43 +735,47 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                           <div className="flex items-center">
                             <input
                               type="checkbox"
-                              checked={selectedLeadIds.includes(lead.id)}
-                              onChange={() => toggleLeadSelection(lead.id)}
+                              checked={selectedLeadIds.includes(targetId)}
+                              onChange={() => toggleLeadSelection(targetId)}
                               className="h-4 w-4 rounded border-black/20 accent-black"
                               aria-label={`Select ${lead.businessName}`}
                             />
                           </div>
                           <div className="min-w-0 cursor-pointer" onClick={() => setSelectedLead(isExpanded ? null : targetId)}>
                             <p className="truncate font-semibold text-black">{lead.businessName}</p>
-                            {lead.rating && <p className="text-[11px] text-black/50 mt-0.5">{lead.rating}★ ({lead.reviewCount || 0})</p>}
+                            <p className="mt-0.5 truncate text-[11px] text-black/45">{compactCategoryLocation(lead)}</p>
                           </div>
                           <div className="truncate text-black/60">{lead.category || '-'}</div>
                           <div className="truncate">{lead.city || '-'}</div>
                           <div className="truncate text-[11px] text-black/60" title={formatSignalSource(lead.source)}>{formatSignalSource(lead.source)}</div>
                           <div>
                             {websiteUrl ? (
-                              <a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
-                                <Link2 size={13} /> Visit
+                              <a href={websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline" title={websiteUrl}>
+                                <Link2 size={13} /> {getDisplayHost(websiteUrl)}
                               </a>
                             ) : <span className="text-red-500 text-[11px]">{lead.websiteUrl ? 'Invalid' : 'Missing'}</span>}
                           </div>
                           <div>
-                            {instagramUrl ? (
-                              <a href={instagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline">
-                                <ExternalLink size={13} /> Open
+                            {buildInstagramUrl(lead) ? (
+                              <a href={buildInstagramUrl(lead)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-black hover:underline" title={buildInstagramUrl(lead)}>
+                                <ExternalLink size={13} /> @{String(lead.instagramUsername || '').replace(/^@/, '') || getDisplayHost(buildInstagramUrl(lead))}
                               </a>
-                            ) : (lead.instagramUsername ? <span className="text-[11px]">@{lead.instagramUsername}</span> : <span className="text-black/30">{lead.instagramUrl ? 'Invalid' : '-'}</span>)}
+                            ) : <span className="text-black/30">{lead.instagramUrl ? 'Invalid' : '-'}</span>}
                           </div>
                           <div className="truncate text-black/60">{lead.phone || '-'}</div>
                           <div className="min-w-0">
-                            {a?.detectedSignals?.length ? (
+                            {getEvidenceItems(a).length ? (
                               <div className="flex flex-wrap gap-1">
-                                {a.detectedSignals.slice(0, 2).map((sig) => (
-                                  <span key={sig} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-black/60">{sig.replace(/_/g, ' ')}</span>
+                                {getEvidenceItems(a).slice(0, 2).map((item) => (
+                                  <span key={item} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] font-semibold text-black/60">{item}</span>
                                 ))}
-                                {a.detectedSignals.length > 2 && <span className="text-[10px] text-black/50">+{a.detectedSignals.length - 2}</span>}
+                                {getEvidenceItems(a).length > 2 && <span className="text-[10px] text-black/50">+{getEvidenceItems(a).length - 2}</span>}
                               </div>
-                            ) : <span className="text-black/30">-</span>}
+                            ) : (
+                              <span className="text-[11px] text-black/35">
+                                {a?.dataQualityLevel ? `${a.dataQualityLevel.toLowerCase()} evidence` : '-'}
+                              </span>
+                            )}
                           </div>
                           <div>{scoreBadge(a) || <span className="text-black/30">-</span>}</div>
                           <div className="relative">
@@ -700,179 +805,6 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                             )}
                           </div>
                         </div>
-                        {isExpanded && (
-                          <div className="bg-black/[0.01] px-5 pb-5 pt-3 border-t border-black/[0.02]">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
-                                  <h4 className="text-[13px] font-semibold text-black flex items-center gap-2">
-                                    AI Analysis
-                                    {a && (
-                                      <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.analysisSource === 'AI_ASSISTED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                        {a.analysisSource === 'AI_ASSISTED' ? 'AI Assisted' : 'Rule Based'}
-                                        {a.aiProvider && ` • ${a.aiProvider}`}
-                                      </span>
-                                    )}
-                                    {a?.aiFallbackUsed && (
-                                      <span className="inline-flex items-center rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 border border-red-100" title="AI provider failed, used rule-based review">
-                                        Rule Based Review
-                                      </span>
-                                    )}
-                                  </h4>
-                                  {!a && !isCatalogLeadWithoutList ? (
-                                    <button 
-                                      onClick={() => analyzeLead(lead)}
-                                      disabled={analyzingLead === targetId}
-                                      className="flex items-center gap-1.5 rounded-lg bg-black/[0.04] px-3 py-1.5 text-[12px] font-medium text-black hover:bg-black/[0.08] disabled:opacity-50 transition-colors shrink-0 w-fit"
-                                    >
-                                      {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                                      Analyze
-                                    </button>
-                                  ) : (a && (a.analysisSource === 'RULE_BASED' || !a.analysisSource) && !isCatalogLeadWithoutList) ? (
-                                    <button 
-                                      onClick={() => analyzeLead(lead, true)}
-                                      disabled={analyzingLead === targetId}
-                                      className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shrink-0 w-fit border border-blue-200"
-                                      title="Re-analyze using AI (consumes 1 credit)"
-                                    >
-                                      {analyzingLead === targetId ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                                      Re-analyze with AI
-                                    </button>
-                                  ) : null}
-                                </div>
-                                
-                                {a ? (
-                                  <div className="space-y-4 mt-2">
-                                    <div className="flex flex-wrap gap-3">
-                                      {a.confidence && (
-                                        <div className="flex flex-col gap-0.5">
-                                          <span className="text-[10px] font-semibold uppercase text-black/40">Confidence</span>
-                                          <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${a.confidence === 'high' ? 'bg-green-100 text-green-700' : a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                            {a.confidence}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {a.contactPriority && (
-                                        <div className="flex flex-col gap-0.5">
-                                          <span className="text-[10px] font-semibold uppercase text-black/40">Priority</span>
-                                          <span className="inline-flex items-center rounded-md bg-black/[0.04] px-2 py-0.5 text-[11px] font-bold text-black/70">{a.contactPriority}</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                    {a.reasons?.some(r => r?.startsWith('AI explanation:')) && (
-                                      <div className="flex flex-col gap-1">
-                                        <span className="text-[12px] font-medium text-black/40">AI Score Explanation</span>
-                                        <p className="text-[13px] text-black/80 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI explanation:'))?.replace('AI explanation: ', '')}</p>
-                                      </div>
-                                    )}
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-black/40">Suggested Service</span>
-                                      <span className="text-[13px] font-medium text-black">{a.suggestedService || 'Not determined'}</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-black/40">Outreach Angle</span>
-                                      <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle || 'Not available'}</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-black/40">Outreach Draft</span>
-                                      <div className={`rounded-xl border p-4 text-[13px] leading-relaxed whitespace-pre-wrap ${
-                                        a.dataQualityLevel === 'LOW'
-                                          ? 'border-red-100 bg-red-50 text-red-700'
-                                          : a.dataQualityLevel === 'MEDIUM'
-                                            ? 'border-amber-100 bg-amber-50 text-amber-700'
-                                            : 'border-black/[0.04] bg-black/[0.02] text-black/80'
-                                      }`}>
-                                        {a.dataQualityLevel === 'LOW'
-                                          ? 'Draft paused - this lead needs stronger evidence before outreach.'
-                                          : a.dataQualityLevel === 'MEDIUM'
-                                            ? (a.messageDraft || 'Needs manual review before outreach.')
-                                            : (a.messageDraft || 'No outreach draft available.')}
-                                      </div>
-                                    </div>
-                                    {a.reasons?.some(r => r?.startsWith('AI missing data:')) && (
-                                      <div className="flex flex-col gap-1">
-                                        <span className="text-[12px] font-medium text-amber-600">Missing Data</span>
-                                        <p className="text-[12px] text-black/60 leading-relaxed">{a.reasons.find(r => r?.startsWith('AI missing data:'))?.replace('AI missing data: ', '')}</p>
-                                      </div>
-                                    )}
-                                    {a.analysisSource === 'AI_ASSISTED' && (
-                                      <p className="text-[11px] text-black/40 italic">Note: Scores may be similar across leads because the available data is similar.</p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="py-8 text-center">
-                                    <p className="text-[13px] text-black/40">No analysis available for this lead yet.</p>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="space-y-4">
-                                {isListItem && (
-                                  <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                                    <div className="flex items-center justify-between mb-3">
-                                      <h4 className="text-[13px] font-semibold text-black flex items-center gap-1.5"><FileText size={14} className="text-black/40" /> Notes</h4>
-                                      {editingNotes !== targetId ? (
-                                        <button 
-                                          onClick={() => {
-                                            setNotesValue(lead.notes || '');
-                                            setEditingNotes(targetId);
-                                          }}
-                                          className="text-[12px] font-medium text-blue-600 hover:underline"
-                                        >
-                                          Edit
-                                        </button>
-                                      ) : (
-                                        <button 
-                                          onClick={() => saveNotes(lead)}
-                                          className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:underline"
-                                        >
-                                          <CheckCircle2 size={14} /> Save
-                                        </button>
-                                      )}
-                                    </div>
-                                    
-                                    {editingNotes === targetId ? (
-                                      <textarea
-                                        value={notesValue}
-                                        onChange={(e) => setNotesValue(e.target.value)}
-                                        className="w-full rounded-xl border border-black/10 bg-black/[0.01] p-3 text-[13px] outline-none focus:border-accent focus:ring-1 focus:ring-accent min-h-[80px]"
-                                        placeholder="Add your notes here..."
-                                      />
-                                    ) : (
-                                      <p className="text-[13px] text-black/80 leading-relaxed min-h-[40px] whitespace-pre-wrap">
-                                        {lead.notes || <span className="text-black/30 italic">No notes added.</span>}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
-                                  <h4 className="text-[13px] font-semibold text-black mb-4">Lead Details</h4>
-                                  <div className="grid grid-cols-2 gap-y-3 text-[13px]">
-                                    <div className="text-black/50 font-medium">Website</div>
-                                    <div className="truncate text-black/90">{websiteUrl ? <a href={websiteUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : '-'}</div>
-                                    <div className="text-black/50 font-medium">Instagram</div>
-                                    <div className="truncate text-black/90">{instagramUrl ? <a href={instagramUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : (lead.instagramUsername ? `@${lead.instagramUsername}` : '-')}</div>
-                                    <div className="text-black/50 font-medium">Facebook</div>
-                                    <div className="truncate text-black/90">{facebookUrl ? <a href={facebookUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : '-'}</div>
-                                    <div className="text-black/50 font-medium">Phone</div>
-                                    <div className="truncate text-black/90" title={lead.phone}>{lead.phone || '-'}</div>
-                                    <div className="text-black/50 font-medium">Email</div>
-                                    <div className="truncate text-black/90" title={lead.email}>{lead.email || '-'}</div>
-                                    <div className="text-black/50 font-medium">Address</div>
-                                    <div className="truncate text-black/90" title={lead.address}>{lead.address || '-'}</div>
-                                    <div className="text-black/50 font-medium">Contactability</div>
-                                    <div className="text-black/90">{contactabilityDimension ? `${contactabilityDimension.value}/100` : (lead.phone || lead.email ? 'Basic' : '-')}</div>
-                                    <div className="text-black/50 font-medium">Data Quality</div>
-                                    <div className="text-black/90">{dataQualityLevel}</div>
-                                    <div className="text-black/50 font-medium">Record Type</div>
-                                    <div className="text-black/90">{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -913,6 +845,275 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         </p>
       )}
     </DashboardCard>
+    {modalLead && (
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/45 px-4 py-6 backdrop-blur-sm" onClick={() => setSelectedLead(null)}>
+        <div
+          className="max-h-[calc(100vh-48px)] w-full max-w-6xl overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl md:p-6"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex flex-col gap-4 border-b border-black/[0.06] pb-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-2xl font-semibold tracking-tight text-black">{modalLead.businessName}</h3>
+                {modalAnalysis ? (
+                  <>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${modalReadiness.className}`}>
+                      {modalReadiness.label}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${dataQualityTone(modalDataQuality)}`}>
+                      {modalDataQuality} data quality
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-black/[0.06] bg-[#F7F8F6] px-3 py-1 text-[11px] font-bold text-black/65">
+                      {modalAnalysis.analysisSource === 'AI_ASSISTED' ? 'AI Assisted' : 'Rule Based Review'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="inline-flex items-center rounded-full border border-black/[0.06] bg-[#F7F8F6] px-3 py-1 text-[11px] font-bold text-black/65">
+                    Review not started
+                  </span>
+                )}
+              </div>
+              <p className="text-[14px] font-medium text-black/55">{compactCategoryLocation(modalLead)}{modalLead.country ? ` • ${modalLead.country}` : ''}</p>
+              <div className="flex flex-wrap gap-2">
+                {modalWebsiteUrl && (
+                  <a href={modalWebsiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black hover:bg-black/[0.03]">
+                    <Globe size={14} />
+                    {getDisplayHost(modalWebsiteUrl)}
+                  </a>
+                )}
+                {modalInstagramUrl && (
+                  <a href={modalInstagramUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black hover:bg-black/[0.03]">
+                    <ExternalLink size={14} />
+                    @{String(modalLead.instagramUsername || '').replace(/^@/, '') || getDisplayHost(modalInstagramUrl)}
+                  </a>
+                )}
+                {modalFacebookUrl && (
+                  <a href={modalFacebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black hover:bg-black/[0.03]">
+                    <ExternalLink size={14} />
+                    Facebook
+                  </a>
+                )}
+                {modalGoogleMapsUrl && (
+                  <a href={modalGoogleMapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-black hover:bg-black/[0.03]">
+                    <MapPin size={14} />
+                    Open map
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              {!modalAnalysis && !modalIsCatalogLeadWithoutList ? (
+                <button
+                  type="button"
+                  onClick={() => analyzeLead(modalLead)}
+                  disabled={analyzingLead === modalTargetId}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-black px-4 text-[13px] font-semibold text-white hover:bg-black/85 disabled:opacity-50"
+                >
+                  {analyzingLead === modalTargetId ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                  Analyze
+                </button>
+              ) : (modalAnalysis && (modalAnalysis.analysisSource === 'RULE_BASED' || !modalAnalysis.analysisSource) && !modalIsCatalogLeadWithoutList) ? (
+                <button
+                  type="button"
+                  onClick={() => analyzeLead(modalLead, true)}
+                  disabled={analyzingLead === modalTargetId}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-[13px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                >
+                  {analyzingLead === modalTargetId ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                  Re-analyze with AI
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setSelectedLead(null)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-black/[0.06] bg-white text-black hover:bg-black/[0.03]"
+                aria-label="Close lead details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-black/[0.05] bg-[#F7F8F6] p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black/35">Score</div>
+                  <div className="mt-2 text-2xl font-bold text-black">{modalAnalysis?.opportunityScore ?? '-'}</div>
+                </div>
+                <div className="rounded-2xl border border-black/[0.05] bg-[#F7F8F6] p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black/35">Contactability</div>
+                  <div className="mt-2 text-2xl font-bold text-black">{modalContactabilityDimension ? `${modalContactabilityDimension.value}/100` : (modalLead.phone || modalLead.email ? 'Basic' : '-')}</div>
+                </div>
+                <div className="rounded-2xl border border-black/[0.05] bg-[#F7F8F6] p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black/35">Service fit</div>
+                  <div className="mt-2 text-2xl font-bold text-black">{modalServiceFitDimension ? `${modalServiceFitDimension.value}/100` : '-'}</div>
+                </div>
+                <div className="rounded-2xl border border-black/[0.05] bg-[#F7F8F6] p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black/35">Evidence</div>
+                  <div className="mt-2 text-2xl font-bold text-black">{modalEvidenceItems.length || getContactCoverage(modalLead) || '-'}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-black/[0.05] bg-white p-5">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Suggested service</div>
+                      <p className="mt-1 text-[16px] font-semibold text-black">{formatDetailValue(modalAnalysis?.suggestedService, 'Not determined yet')}</p>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Why this lead</div>
+                      <p className="mt-2 text-[14px] leading-relaxed text-black/72">{formatDetailValue(modalAnalysis?.outreachAngle, 'Add more verified business evidence before trusting this lead for outreach.')}</p>
+                    </div>
+                    {modalEvidenceItems.length > 0 && (
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Evidence found</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {modalEvidenceItems.map((item) => (
+                            <span key={item} className="rounded-lg border border-black/[0.06] bg-[#F7F8F6] px-2.5 py-1 text-[11px] font-semibold text-black/65">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-black/[0.05] bg-[#FAFAF9] p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Outreach draft</div>
+                    <div className={`mt-3 rounded-xl border p-4 text-[13px] leading-relaxed whitespace-pre-wrap ${
+                      modalAnalysis?.dataQualityLevel === 'LOW'
+                        ? 'border-red-100 bg-red-50 text-red-700'
+                        : modalAnalysis?.dataQualityLevel === 'MEDIUM'
+                          ? 'border-amber-100 bg-amber-50 text-amber-700'
+                          : 'border-black/[0.05] bg-white text-black/80'
+                    }`}>
+                      {!modalAnalysis
+                        ? 'Run a review first to generate a draft.'
+                        : modalAnalysis.dataQualityLevel === 'LOW'
+                          ? 'Draft paused - this lead needs stronger evidence before outreach.'
+                          : modalAnalysis.dataQualityLevel === 'MEDIUM'
+                            ? (modalAnalysis.messageDraft || 'Needs manual review before outreach.')
+                            : (modalAnalysis.messageDraft || 'No outreach draft available.')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {modalIsListItem && (
+                <div className="rounded-2xl border border-black/[0.05] bg-white p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-[13px] font-semibold text-black flex items-center gap-1.5"><FileText size={14} className="text-black/40" /> Notes</h4>
+                    {editingNotes !== modalTargetId ? (
+                      <button
+                        onClick={() => {
+                          setNotesValue(modalLead.notes || '');
+                          setEditingNotes(modalTargetId);
+                        }}
+                        className="text-[12px] font-medium text-blue-600 hover:underline"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => saveNotes(modalLead)}
+                        className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:underline"
+                      >
+                        <CheckCircle2 size={14} /> Save
+                      </button>
+                    )}
+                  </div>
+                  {editingNotes === modalTargetId ? (
+                    <textarea
+                      value={notesValue}
+                      onChange={(e) => setNotesValue(e.target.value)}
+                      className="min-h-[96px] w-full rounded-xl border border-black/10 bg-black/[0.01] p-3 text-[13px] outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                      placeholder="Add your notes here..."
+                    />
+                  ) : (
+                    <p className="text-[13px] leading-relaxed text-black/75 whitespace-pre-wrap">
+                      {modalLead.notes || <span className="text-black/30 italic">No notes added.</span>}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-black/[0.05] bg-white p-5">
+                <h4 className="mb-4 text-[13px] font-semibold text-black">Links and contacts</h4>
+                <div className="space-y-3 text-[13px]">
+                  <div className="flex items-start gap-3">
+                    <Globe size={16} className="mt-0.5 text-black/45" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Website</div>
+                      {modalWebsiteUrl ? <a href={modalWebsiteUrl} target="_blank" rel="noreferrer" className="break-all text-blue-600 hover:underline">{modalWebsiteUrl}</a> : <span className="text-black/45">No website found</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <ExternalLink size={16} className="mt-0.5 text-black/45" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Instagram</div>
+                      {modalInstagramUrl ? <a href={modalInstagramUrl} target="_blank" rel="noreferrer" className="break-all text-blue-600 hover:underline">{modalInstagramUrl}</a> : <span className="text-black/45">No Instagram link found</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <ExternalLink size={16} className="mt-0.5 text-black/45" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Facebook</div>
+                      {modalFacebookUrl ? <a href={modalFacebookUrl} target="_blank" rel="noreferrer" className="break-all text-blue-600 hover:underline">{modalFacebookUrl}</a> : <span className="text-black/45">No Facebook link found</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Phone size={16} className="mt-0.5 text-black/45" />
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Phone</div>
+                      <div className="text-black/80">{formatDetailValue(modalLead.phone, 'No phone found')}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Mail size={16} className="mt-0.5 text-black/45" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Email</div>
+                      <div className="break-all text-black/80">{formatDetailValue(modalLead.email, 'No email found')}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <MapPin size={16} className="mt-0.5 text-black/45" />
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/35">Address</div>
+                      <div className="text-black/80">{formatDetailValue(modalLead.address, 'No address found')}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-black/[0.05] bg-white p-5">
+                <h4 className="mb-4 text-[13px] font-semibold text-black">Score dimensions</h4>
+                {modalAnalysis?.scoreDimensions?.length ? (
+                  <div className="space-y-3">
+                    {modalAnalysis.scoreDimensions.slice(0, 7).map((dimension) => (
+                      <div key={dimension.key || dimension.label}>
+                        <div className="mb-1 flex items-center justify-between gap-3 text-[12px]">
+                          <span className="font-semibold text-black/70">{dimension.label}</span>
+                          <span className="font-bold text-black">{dimension.value}/100</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-black/[0.06]">
+                          <div className="h-full rounded-full bg-[#B6FF00]" style={{ width: `${Math.max(4, Math.min(100, dimension.value || 0))}%` }} />
+                        </div>
+                        {dimension.reason && <p className="mt-1 text-[11px] leading-relaxed text-black/45">{dimension.reason}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-black/45">Run a review to populate score dimensions.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 };
