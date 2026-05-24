@@ -159,7 +159,7 @@ export const buildQueryVariants = (campaign = {}) => {
   const service = campaign.serviceProfile?.serviceType || goal || '';
   const presenceTargets = unique([
     ...(normalizeCampaignTargeting(campaign).presenceTargets || []),
-    ...((Array.isArray(campaign.presenceTargets) ? campaign.presenceTargets : [])),
+    ...(Array.isArray(campaign.presenceTargets) ? campaign.presenceTargets : []),
   ]);
   const maxVariants = Math.max(3, Math.min(Number(env.DISCOVERY_MAX_QUERY_VARIANTS) || 8, 8));
   const baseLocation = [city, country].filter(Boolean).join(' ');
@@ -604,7 +604,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
     },
   });
   const localResults = await localAdapter.run();
-  const acceptedLocal = [];
+  let acceptedLocalCount = 0;
   const localRejections = createRejectionCounts();
   for (const lead of localResults) {
     const normalized = normalizeCatalogCandidate(lead, campaign);
@@ -621,7 +621,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
     lead.scoreBreakdownPreview = normalized.score;
     if (!accepted.has(normalized.dedupeKey)) {
       accepted.set(normalized.dedupeKey, normalized);
-      acceptedLocal.push(normalized);
+      acceptedLocalCount += 1;
       if (accepted.size >= requestedLimit) break;
     } else {
       registerRejection(localRejections, 'REJECTED_DUPLICATE');
@@ -630,18 +630,18 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
   layerSummary.push(makeLayerResult({
     layerKey: DISCOVERY_LAYER_KEYS.LOCAL_DATASET,
     provider: 'LOCAL_DATASET',
-    status: acceptedLocal.length ? DISCOVERY_LAYER_STATUS.COMPLETED : DISCOVERY_LAYER_STATUS.NO_RESULTS,
+    status: acceptedLocalCount ? DISCOVERY_LAYER_STATUS.COMPLETED : DISCOVERY_LAYER_STATUS.NO_RESULTS,
     configured: true,
     attempted: true,
     queryVariantsUsed: queryVariants,
     rawCount: localResults.length,
-    acceptedCount: acceptedLocal.length,
-    dedupedCount: Math.max(0, localResults.length - acceptedLocal.length),
+    acceptedCount: acceptedLocalCount,
+    dedupedCount: Math.max(0, localResults.length - acceptedLocalCount),
     durationMs: Date.now() - localStartedAt,
-    reason: acceptedLocal.length ? null : 'No local business index matches were found.',
+    reason: acceptedLocalCount ? null : 'No local business index matches were found.',
     ...localRejections,
   }));
-  providerBreakdown.push({ provider: 'LOCAL_DATASET', count: acceptedLocal.length });
+  providerBreakdown.push({ provider: 'LOCAL_DATASET', count: acceptedLocalCount });
 
   const discoveryDecision = buildCacheFirstDecision({
     campaign,
