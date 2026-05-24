@@ -222,6 +222,9 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
   urgencyScore = Math.max(0, Math.min(Math.round(urgencyScore), 100));
 
   const scoreLevel = scoreBreakdown.scoreLevel;
+  const dataQualityValue = scoreBreakdown.dimensions.find((item) => item.key === 'data_quality')?.value ?? dataQualityScore;
+  const dataQualityLevel = dataQualityValue >= 75 ? 'HIGH' : dataQualityValue >= 45 ? 'MEDIUM' : 'LOW';
+  detectedSignals.push(`DATA_QUALITY_${dataQualityLevel}`);
 
   // ═══════════════════════════════════════
   // SUGGESTED SERVICE & TEXTS
@@ -253,7 +256,7 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     body = `I came across your business${normalizedLead.rating ? ` and noticed your impressive ${normalizedLead.rating}-star rating` : ''}. I think there's an opportunity to strengthen your online presence and attract more customers.`;
   }
   const cta = `I specialize in ${suggestedService.toLowerCase()} for businesses like yours. Would you be open to a quick chat this week?`;
-  const messageDraft = `${greeting},\n\n${body}\n\n${cta}\n\nBest regards`;
+  let messageDraft = `${greeting},\n\n${body}\n\n${cta}\n\nBest regards`;
 
   let confidence = 'low';
   if (dataQualityScore >= 80 && detectedSignals.length >= 4) confidence = 'high';
@@ -266,6 +269,12 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     nextBestAction = 'Prepare personalized pitch';
   } else if (scoreLevel === 'MEDIUM') {
     nextBestAction = 'Research business further';
+  }
+
+  if (dataQualityLevel === 'LOW') {
+    nextBestAction = 'Needs more evidence before outreach';
+    messageDraft = `Hi ${normalizedLead.businessName},\n\nI am still reviewing your public business details before suggesting an outreach message. More verified contact or location evidence is needed first.\n\nBest regards`;
+    reasons.push('Data quality is low. Needs more evidence before outreach.');
   }
 
   const dimensionReasons = scoreBreakdown.dimensions.map((dimension) => (
@@ -283,6 +292,7 @@ export const buildRuleBasedAnalysisData = ({ lead, profile }) => {
     messageDraft,
     confidence,
     nextBestAction,
+    dataQualityLevel,
     dimensionScores: {
       serviceFit: scoreBreakdown.dimensions.find((item) => item.key === 'service_fit')?.value ?? fitScore,
       digitalGap: scoreBreakdown.dimensions.find((item) => item.key === 'website_gap')?.value ?? digitalGapScore,

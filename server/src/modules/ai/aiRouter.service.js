@@ -167,10 +167,16 @@ export const runAiTask = async ({
   providers = null,
   configOverrides = {},
 } = {}) => {
+  const testSafeOverrides = process.env.NODE_ENV === 'test' && !testProviderOverrides && !providers
+    ? {
+      AI_ENABLED: false,
+      AI_ANALYSIS_ENABLED: false,
+    }
+    : {};
   const dashboardOverrides = isAiSecretManagementConfigured()
     ? await getDashboardProviderConfigOverrides()
     : {};
-  const config = getAiRuntimeConfig({ ...configOverrides, ...dashboardOverrides });
+  const config = getAiRuntimeConfig({ ...testSafeOverrides, ...configOverrides, ...dashboardOverrides });
   const route = config.taskRoutes[task];
   const attempts = [];
 

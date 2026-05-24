@@ -134,6 +134,7 @@ export const geocodeBusinessLocation = async (input, options = {}) => {
       reason: normalizedInput.reason,
       retryable: false,
       cacheHit: false,
+      geoStatus: GEO_STATUS.NOT_RESOLVED,
     };
   }
 
@@ -191,11 +192,30 @@ export const geocodeBusinessLocation = async (input, options = {}) => {
         });
         return bestResult;
       }
+      if (bestResult?.geoStatus === GEO_STATUS.LOW_CONFIDENCE && bestResult.confidence >= env.GEO_MIN_CONFIDENCE_TO_SAVE) {
+        await saveGeoCacheResult({
+          sourceHash: normalizedInput.sourceHash,
+          normalizedQuery: normalizedInput.cacheKey,
+          normalizedCountry: normalizedInput.country || null,
+          normalizedCity: normalizedInput.city || null,
+          provider: bestResult.provider,
+          providerPlaceId: bestResult.providerPlaceId,
+          latitude: bestResult.latitude,
+          longitude: bestResult.longitude,
+          confidence: bestResult.confidence,
+          accuracy: bestResult.accuracy,
+          resultType: bestResult.resultType,
+          normalizedAddress: bestResult.normalizedAddress,
+        });
+        return bestResult;
+      }
     } catch (error) {
       lastError = error;
       logger.warn('geo.provider.failed', {
         provider: providerKey,
         errorCode: error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR,
+        providerStatusCode: error instanceof AppError ? error.details?.providerStatusCode || null : null,
+        providerBody: error instanceof AppError ? error.details?.providerBody || null : null,
       });
     }
   }
@@ -225,8 +245,9 @@ export const geocodeBusinessLocation = async (input, options = {}) => {
   return {
     ok: false,
     provider: providerOrder[0] || null,
-    reason: lastError instanceof AppError ? lastError.code : 'GEO_PROVIDER_FAILED',
+    reason: lastError instanceof AppError ? lastError.code : 'PROVIDER_NO_RESULT',
     retryable: Boolean(lastError && [errorCodes.PROVIDER_TIMEOUT, errorCodes.PROVIDER_RATE_LIMITED, errorCodes.PROVIDER_UNAVAILABLE].includes(lastError.code)),
     cacheHit: false,
+    geoStatus: lastError ? GEO_STATUS.FAILED : GEO_STATUS.NOT_RESOLVED,
   };
 };

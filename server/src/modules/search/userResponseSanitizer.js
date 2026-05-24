@@ -45,6 +45,17 @@ const inferAnalysisSource = (analysis = {}) => {
   return sourceSignal?.replace('ANALYSIS_SOURCE_', '') || 'RULE_BASED';
 };
 
+const inferDataQualityLevel = (analysis = {}, scoreDimensions = []) => {
+  const signals = Array.isArray(analysis.detectedSignals) ? analysis.detectedSignals : [];
+  const signalLevel = signals.find((signal) => typeof signal === 'string' && signal.startsWith('DATA_QUALITY_'));
+  if (signalLevel) return signalLevel.replace('DATA_QUALITY_', '');
+  const dimension = scoreDimensions.find((item) => item.label?.toLowerCase?.() === 'data quality');
+  if (!dimension) return null;
+  if (dimension.value >= 75) return 'HIGH';
+  if (dimension.value >= 45) return 'MEDIUM';
+  return 'LOW';
+};
+
 const extractScoreDimensions = (reasons = []) => reasons
   .filter((reason) => typeof reason === 'string' && reason.includes('/100 - '))
   .map((reason) => {
@@ -60,12 +71,15 @@ const extractScoreDimensions = (reasons = []) => reasons
 const sanitizeAnalysisForUserResponse = (analysis) => {
   if (!analysis) return analysis;
   const reasons = Array.isArray(analysis.reasons) ? analysis.reasons.map(sanitizeUserText) : analysis.reasons;
+  const scoreDimensions = extractScoreDimensions(reasons);
   return {
     ...analysis,
     analysisSource: inferAnalysisSource(analysis),
     detectedSignals: sanitizeDetectedSignalsForUserResponse(analysis.detectedSignals),
     reasons,
-    scoreDimensions: extractScoreDimensions(reasons),
+    scoreDimensions,
+    dataQualityLevel: inferDataQualityLevel(analysis, scoreDimensions),
+    aiFailureReason: sanitizeUserText(analysis.aiFailureReason),
     outreachAngle: sanitizeUserText(analysis.outreachAngle),
     messageDraft: sanitizeUserText(analysis.messageDraft),
   };

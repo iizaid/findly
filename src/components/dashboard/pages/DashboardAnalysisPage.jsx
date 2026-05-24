@@ -73,6 +73,13 @@ const analysisSourceLabel = (analysis) => {
   return 'Rule Based Review';
 };
 
+const dataQualityLabel = (analysis) => {
+  if (!analysis?.dataQualityLevel) return null;
+  if (analysis.dataQualityLevel === 'HIGH') return 'High evidence quality';
+  if (analysis.dataQualityLevel === 'MEDIUM') return 'Medium evidence quality';
+  return 'Needs more evidence before outreach';
+};
+
 const DashboardAnalysisPage = ({ onNavigate }) => {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -180,6 +187,11 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                         <span className="block rounded-full bg-black/[0.06] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-black/60">
                           {analysisSourceLabel(a)}
                         </span>
+                        {dataQualityLabel(a) && (
+                          <span className="block rounded-full bg-black/[0.04] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-black/55">
+                            {dataQualityLabel(a)}
+                          </span>
+                        )}
                       </div>
                       )}
                     </div>
@@ -281,6 +293,11 @@ const DashboardAnalysisPage = ({ onNavigate }) => {
                     <div className="rounded-full bg-black/[0.06] px-3 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-black/60">
                       {analysisSourceLabel(analysis)}
                     </div>
+                    {dataQualityLabel(analysis) && (
+                      <div className="rounded-full bg-black/[0.04] px-3 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-black/55">
+                        {dataQualityLabel(analysis)}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

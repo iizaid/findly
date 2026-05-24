@@ -14,8 +14,17 @@ const fetchJson = async (url, timeoutMs) => {
       signal: controller.signal,
     });
     if (!response.ok) {
-      if (response.status === 429) throw new AppError(errorCodes.PROVIDER_RATE_LIMITED, 'Geo provider rate limited.', 429);
-      throw new AppError(errorCodes.PROVIDER_BAD_RESPONSE, 'Geo provider returned a bad response.', 502);
+      const body = await response.text().catch(() => '');
+      if (response.status === 429) {
+        throw new AppError(errorCodes.PROVIDER_RATE_LIMITED, 'Geo provider rate limited.', 429, {
+          providerStatusCode: response.status,
+          providerBody: body.slice(0, 240),
+        });
+      }
+      throw new AppError(errorCodes.PROVIDER_BAD_RESPONSE, 'Geo provider returned a bad response.', 502, {
+        providerStatusCode: response.status,
+        providerBody: body.slice(0, 240),
+      });
     }
     return response.json();
   } catch (error) {
@@ -28,7 +37,7 @@ const fetchJson = async (url, timeoutMs) => {
   }
 };
 
-export const geoapifyGeocode = async ({ normalizedQuery, country }) => {
+export const geoapifyGeocode = async ({ normalizedQuery, country: _country, providerCountryCode }) => {
   if (!env.GEOAPIFY_API_KEY) {
     throw new AppError(errorCodes.PROVIDER_NOT_CONFIGURED, 'Geoapify is not configured.', 500);
   }
@@ -40,8 +49,8 @@ export const geoapifyGeocode = async ({ normalizedQuery, country }) => {
     apiKey: env.GEOAPIFY_API_KEY,
   });
 
-  if (country) {
-    params.set('filter', `country:${country}`);
+  if (providerCountryCode) {
+    params.set('filter', `countrycode:${providerCountryCode}`);
   }
 
   const url = `${env.GEOAPIFY_BASE_URL}?${params.toString()}`;

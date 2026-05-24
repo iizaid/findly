@@ -58,6 +58,11 @@ export const mergeRuleBasedAndAiAnalysis = ({ ruleBasedAnalysis, aiAnalysis }) =
   ];
   if (dimensionSummary) mergedSignals.push(dimensionSummary);
 
+  const dataQualityScore = aiAnalysis.dimensionScores?.dataQuality ?? null;
+  const dataQualityLevel = dataQualityScore === null
+    ? (ruleBasedAnalysis.dataQualityLevel || 'MEDIUM')
+    : (dataQualityScore >= 75 ? 'HIGH' : dataQualityScore >= 45 ? 'MEDIUM' : 'LOW');
+
   return {
     ...ruleBasedAnalysis,
     fitScore,
@@ -67,12 +72,15 @@ export const mergeRuleBasedAndAiAnalysis = ({ ruleBasedAnalysis, aiAnalysis }) =
     outreachAngle: aiAnalysis.personalizedOutreachAngle || ruleBasedAnalysis.outreachAngle,
     messageDraft: aiAnalysis.messageDraft || ruleBasedAnalysis.messageDraft,
     confidence: aiAnalysis.confidence || ruleBasedAnalysis.confidence,
-    nextBestAction: aiAnalysis.nextBestAction || ruleBasedAnalysis.nextBestAction,
+    nextBestAction: dataQualityLevel === 'LOW'
+      ? 'Needs more evidence before outreach'
+      : (aiAnalysis.nextBestAction || ruleBasedAnalysis.nextBestAction),
     reasons: [
       ...(ruleBasedAnalysis.reasons || []),
       ...aiReasons,
     ].slice(0, 16),
     detectedSignals: mergedSignals.slice(0, 20),
+    dataQualityLevel,
     shouldContact: aiAnalysis.shouldContact,
     contactPriority: aiAnalysis.contactPriority,
     analysisSource: ANALYSIS_SOURCE.AI_ASSISTED,
@@ -112,6 +120,7 @@ export const runLeadAnalysisAiReview = async ({
       analysis: {
         ...ruleBasedAnalysis,
         analysisSource,
+        aiFailureReason: result.safeMessage || null,
       },
       aiResult: result,
     };

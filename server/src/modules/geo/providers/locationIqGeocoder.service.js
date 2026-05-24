@@ -14,8 +14,20 @@ const fetchJson = async (url, timeoutMs) => {
       signal: controller.signal,
     });
     if (!response.ok) {
-      if (response.status === 429) throw new AppError(errorCodes.PROVIDER_RATE_LIMITED, 'Geo provider rate limited.', 429);
-      throw new AppError(errorCodes.PROVIDER_BAD_RESPONSE, 'Geo provider returned a bad response.', 502);
+      const body = await response.text().catch(() => '');
+      if (response.status === 404 && /unable to geocode/i.test(body)) {
+        return [];
+      }
+      if (response.status === 429) {
+        throw new AppError(errorCodes.PROVIDER_RATE_LIMITED, 'Geo provider rate limited.', 429, {
+          providerStatusCode: response.status,
+          providerBody: body.slice(0, 240),
+        });
+      }
+      throw new AppError(errorCodes.PROVIDER_BAD_RESPONSE, 'Geo provider returned a bad response.', 502, {
+        providerStatusCode: response.status,
+        providerBody: body.slice(0, 240),
+      });
     }
     return response.json();
   } catch (error) {
@@ -28,7 +40,7 @@ const fetchJson = async (url, timeoutMs) => {
   }
 };
 
-export const locationIqGeocode = async ({ normalizedQuery, country }) => {
+export const locationIqGeocode = async ({ normalizedQuery, providerCountryCode }) => {
   if (!env.LOCATIONIQ_API_KEY) {
     throw new AppError(errorCodes.PROVIDER_NOT_CONFIGURED, 'LocationIQ is not configured.', 500);
   }
@@ -42,8 +54,8 @@ export const locationIqGeocode = async ({ normalizedQuery, country }) => {
     normalizeaddress: '1',
   });
 
-  if (country) {
-    params.set('countrycodes', country.slice(0, 2).toLowerCase());
+  if (providerCountryCode) {
+    params.set('countrycodes', providerCountryCode);
   }
 
   const url = `${env.LOCATIONIQ_BASE_URL}?${params.toString()}`;

@@ -107,10 +107,22 @@ export const useFindLeadsSearch = ({ workspace, onUpdate }) => {
   );
 
   const selectedSourceWarnings = useMemo(
-    () => discoverySourceOptions
-      .filter((source) => selectedDiscoverySources.includes(source.id) && source.warning)
-      .map((source) => source.warning),
-    [discoverySourceOptions, selectedDiscoverySources],
+    () => {
+      const warnings = discoverySourceOptions
+        .filter((source) => selectedDiscoverySources.includes(source.id) && source.warning)
+        .map((source) => source.warning);
+
+      if (selectedDiscoverySources.includes('GOOGLE_MAPS') && readiness?.googlePlaces?.configured === false) {
+        warnings.push('Google Places is not configured. Map-ready discovery will be limited.');
+      }
+
+      if (selectedDiscoverySources.includes('SERPAPI') && readiness?.searchMetadata?.configured === false) {
+        warnings.push('Search Metadata is not configured yet.');
+      }
+
+      return [...new Set(warnings)];
+    },
+    [discoverySourceOptions, selectedDiscoverySources, readiness],
   );
 
   useEffect(() => {

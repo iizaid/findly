@@ -1,3 +1,5 @@
+import { hasCredibleBusinessEvidence, isGeneratedLookingBusinessName } from './leadQuality.service.js';
+
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, Math.round(Number(value) || 0)));
 const compact = (value) => (value || '').toString().trim().toLowerCase();
 
@@ -82,6 +84,7 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   const rating = Number(lead.rating) || 0;
   const reviewCount = Number(lead.reviewCount) || 0;
   const confidenceFromSource = sourceConfidence ?? lead.confidenceScore ?? lead.localDatasetScore ?? 50;
+  const generatedName = isGeneratedLookingBusinessName(lead.businessName, { ignoreGeneratedNameCheck: false });
 
   let serviceFit = 40;
   if (!requestedTypes.length) serviceFit = 55;
@@ -202,6 +205,25 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
     reason: 'Higher when contact, profile, and review evidence is present.',
   });
 
+  const dataQuality = clamp(
+    (generatedName ? 8 : 36)
+    + (hasCredibleBusinessEvidence(lead) ? 34 : 0)
+    + (hasValue(lead.address) ? 10 : 0)
+    + (hasValue(lead.phone) ? 10 : 0)
+    + (hasValue(lead.websiteUrl) || hasValue(lead.instagramUrl) || hasValue(lead.facebookUrl) ? 10 : 0),
+  );
+  pushDimension(dimensions, {
+    key: 'data_quality',
+    label: 'Data quality',
+    value: dataQuality,
+    weight: 0.08,
+    reason: generatedName
+      ? 'Generated-looking naming pattern detected.'
+      : (hasCredibleBusinessEvidence(lead)
+        ? 'Business evidence is present and reviewable.'
+        : 'Critical business evidence is still missing.'),
+  });
+
   let locationMatch = 42;
   if (requestedCity && locationCity && requestedCity === locationCity) locationMatch = 92;
   else if (requestedCountry && locationCountry && requestedCountry === locationCountry) locationMatch = 68;
@@ -215,6 +237,19 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
       : locationMatch >= 60
         ? 'Country match only.'
         : 'Weak location match.',
+  });
+
+  const geoReadiness = clamp(
+    (Number.isFinite(lead.latitude) && Number.isFinite(lead.longitude) ? 50 : 0)
+    + (Number.isFinite(lead.geoConfidence) ? Math.min(40, Number(lead.geoConfidence) * 0.4) : 0)
+    + (lead.geoStatus === 'RESOLVED' ? 10 : 0),
+  );
+  pushDimension(dimensions, {
+    key: 'geo_readiness',
+    label: 'Geo readiness',
+    value: geoReadiness,
+    weight: 0.04,
+    reason: geoReadiness >= 60 ? 'Coordinates are likely usable on the map.' : 'Map-ready coordinates are weak or missing.',
   });
 
   if (aiConfidence !== null) {

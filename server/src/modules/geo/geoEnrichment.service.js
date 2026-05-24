@@ -178,6 +178,12 @@ export const enqueueGeoEnrichmentJob = async ({ userId, workspaceId, leadIds = [
         resolvedItems: 0,
         lowConfidenceItems: 0,
         failedItems: 0,
+        skippedInsufficientInputItems: 0,
+        skippedAlreadyResolvedItems: 0,
+        providerBadResponseItems: 0,
+        providerRateLimitedItems: 0,
+        providerNoResultItems: 0,
+        providerNotConfiguredItems: 0,
         cacheHitCount: 0,
         providerCallCount: 0,
         durationMs: 0,
@@ -205,6 +211,12 @@ export const processGeoEnrichmentJob = async ({ jobId }) => {
     resolvedItems: 0,
     lowConfidenceItems: 0,
     failedItems: 0,
+    skippedInsufficientInputItems: 0,
+    skippedAlreadyResolvedItems: 0,
+    providerBadResponseItems: 0,
+    providerRateLimitedItems: 0,
+    providerNoResultItems: 0,
+    providerNotConfiguredItems: 0,
     cacheHitCount: 0,
     providerCallCount: 0,
     durationMs: 0,
@@ -219,6 +231,7 @@ export const processGeoEnrichmentJob = async ({ jobId }) => {
 
       if (shouldSkipGeoEnrichment(lead, Boolean(job.payload?.forceRefresh))) {
         summary.processedItems += 1;
+        summary.skippedAlreadyResolvedItems += 1;
         continue;
       }
 
@@ -229,7 +242,20 @@ export const processGeoEnrichmentJob = async ({ jobId }) => {
 
       if (result.geoStatus === GEO_STATUS.RESOLVED) summary.resolvedItems += 1;
       else if (result.geoStatus === GEO_STATUS.LOW_CONFIDENCE) summary.lowConfidenceItems += 1;
-      else summary.failedItems += 1;
+      else {
+        summary.failedItems += 1;
+        if (['INSUFFICIENT_LOCATION_DETAIL', 'CITY_ONLY_QUERY', 'COUNTRY_ONLY_QUERY', 'QUERY_TOO_SHORT'].includes(result.reason)) {
+          summary.skippedInsufficientInputItems += 1;
+        } else if (result.reason === errorCodes.PROVIDER_BAD_RESPONSE) {
+          summary.providerBadResponseItems += 1;
+        } else if (result.reason === errorCodes.PROVIDER_RATE_LIMITED) {
+          summary.providerRateLimitedItems += 1;
+        } else if (result.reason === 'PROVIDER_NO_RESULT') {
+          summary.providerNoResultItems += 1;
+        } else if (result.reason === errorCodes.PROVIDER_NOT_CONFIGURED) {
+          summary.providerNotConfiguredItems += 1;
+        }
+      }
 
       await prisma.$transaction(async (tx) => {
         if (target.type === 'direct') await updateDirectLeadGeo(tx, lead, result);
@@ -251,6 +277,12 @@ export const processGeoEnrichmentJob = async ({ jobId }) => {
     resolvedItems: summary.resolvedItems,
     lowConfidenceItems: summary.lowConfidenceItems,
     failedItems: summary.failedItems,
+    skippedInsufficientInputItems: summary.skippedInsufficientInputItems,
+    skippedAlreadyResolvedItems: summary.skippedAlreadyResolvedItems,
+    providerBadResponseItems: summary.providerBadResponseItems,
+    providerRateLimitedItems: summary.providerRateLimitedItems,
+    providerNoResultItems: summary.providerNoResultItems,
+    providerNotConfiguredItems: summary.providerNotConfiguredItems,
     cacheHitCount: summary.cacheHitCount,
     providerCallCount: summary.providerCallCount,
     durationMs: summary.durationMs,

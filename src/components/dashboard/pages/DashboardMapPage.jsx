@@ -248,6 +248,7 @@ const DashboardMapPage = ({ onNavigate }) => {
 
   const activeLead = visibleLeads.find((lead) => lead.id === activeLeadId) || visibleLeads[0] || null;
   const activeWebsiteUrl = safeExternalUrl(activeLead?.websiteUrl);
+  const diagnostics = state.summary?.diagnostics || {};
   const cities = [...new Set(state.mappable.map((lead) => lead.city).filter(Boolean))];
   const categories = [...new Set(state.mappable.map((lead) => lead.category).filter(Boolean))];
   const accuracies = [...new Set(state.mappable.map((lead) => lead.geoAccuracy).filter(Boolean))];
@@ -282,7 +283,7 @@ const DashboardMapPage = ({ onNavigate }) => {
           setJobState({
             submitting: false,
             polling: false,
-            message: `Location enrichment completed: ${summary?.resolvedItems ?? 0} resolved, ${summary?.lowConfidenceItems ?? 0} low-confidence, ${summary?.failedItems ?? 0} unresolved.`,
+            message: `Location enrichment completed: ${summary?.resolvedItems ?? 0} resolved, ${summary?.lowConfidenceItems ?? 0} low-confidence, ${summary?.failedItems ?? 0} not mappable, ${summary?.providerNoResultItems ?? 0} no-result, ${summary?.providerRateLimitedItems ?? 0} rate-limited.`,
           });
           return;
         }
@@ -387,6 +388,15 @@ const DashboardMapPage = ({ onNavigate }) => {
                   <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Map threshold</p>
                   <p className="mt-2 text-2xl font-bold text-black">{state.summary?.minConfidenceToMap ?? 0}</p>
                 </div>
+              </div>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Resolved: {diagnostics.resolvedCount ?? 0}</div>
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Low confidence: {diagnostics.lowConfidenceCount ?? 0}</div>
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">No result: {diagnostics.providerNoResultCount ?? 0}</div>
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Bad response: {diagnostics.providerBadResponseCount ?? 0}</div>
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Rate-limited: {diagnostics.providerRateLimitedCount ?? 0}</div>
+                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Insufficient input: {diagnostics.skippedInsufficientInputCount ?? 0}</div>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
@@ -513,6 +523,9 @@ const DashboardMapPage = ({ onNavigate }) => {
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-bold text-black">{lead.businessName}</p>
                     <p className="mt-1 text-[12px] font-semibold text-black/55">{lead.reason}</p>
+                    <p className="mt-2 text-[11px] font-semibold text-black/40">
+                      {[lead.city, lead.country, lead.geoProvider, lead.geoAccuracy, lead.geoFailureReason].filter(Boolean).join(' · ')}
+                    </p>
                   </div>
                 </div>
               </div>

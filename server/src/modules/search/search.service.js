@@ -969,6 +969,13 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
 
       const finalResultCount = catalogIds.size;
       const layerSummary = orchestration.layerSummary;
+      const rejectedCount = layerSummary.reduce((sum, layer) => sum
+        + (layer.rejectedLowQuality || 0)
+        + (layer.rejectedGeneratedName || 0)
+        + (layer.rejectedMissingBusinessEvidence || 0)
+        + (layer.rejectedWrongLocation || 0)
+        + (layer.rejectedDuplicate || 0), 0);
+      const providersUsed = orchestration.providerBreakdown.filter((item) => item.count > 0).map((item) => item.provider);
       const message = orchestration.shortfallReason
         || buildLayeredSearchMessage({
           resultCount: finalResultCount,
@@ -1036,7 +1043,7 @@ const runLocalDatasetCampaign = async ({ campaign, userId, jobId, fallbackUsed, 
           workspaceId: campaign.workspaceId,
           campaignId: campaign.id,
           amountUsed: creditsUsed,
-          reason: `Ran search campaign: ${campaign.name}`,
+          reason: `Search campaign: ${campaign.name} | requested=${campaign.requestedLimit || 20} accepted=${finalResultCount} rejected=${rejectedCount} providers=${providersUsed.join(',') || 'none'}`,
           referenceType: 'SearchCampaign',
           referenceId: campaign.id,
           requireActiveReservation: Boolean(jobId),

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { buildLeadFingerprint, normalizeBusinessName, normalizeInstagramUsername, normalizePhone, normalizeUrl } from './leadDeduplication.js';
 import { recordValidationEvent } from './discoveryEvidence.service.js';
+import { assessLeadCandidateQuality } from './leadQuality.service.js';
 
 const PROMOTION_MIN_CONFIDENCE = 65;
 const STRICT_PROMOTION_MIN_CONFIDENCE = 75;
@@ -189,6 +190,26 @@ export const promoteEvidenceToCatalogLead = async ({ tx, evidence, campaign }) =
   }
 
   const catalogData = catalogDataFromEvidence(evidence, campaign);
+  const quality = assessLeadCandidateQuality({
+    candidate: {
+      ...catalogData,
+      sourceUrl,
+      providerPlaceId: evidence.externalId || null,
+    },
+    campaign,
+    sourceKind: 'external',
+  });
+  if (!quality.accepted) {
+    await recordPromotionEvent({
+      tx,
+      evidence,
+      campaign,
+      result: quality.code,
+      rationale: quality.reason,
+    });
+    return { status: quality.code, catalogLead: null };
+  }
+
   if (isGenericBusinessName(catalogData.businessName)) {
     await recordPromotionEvent({
       tx,

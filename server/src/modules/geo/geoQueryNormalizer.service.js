@@ -21,11 +21,40 @@ const cleanWebsiteUrl = (value) => {
 export const normalizeCountryForGeo = (value) => compact(value);
 export const normalizeCityForGeo = (value) => compact(value);
 
+const COUNTRY_CODE_MAP = new Map([
+  ['jordan', 'jo'],
+  ['saudi arabia', 'sa'],
+  ['saudi', 'sa'],
+  ['united arab emirates', 'ae'],
+  ['uae', 'ae'],
+  ['united states', 'us'],
+  ['usa', 'us'],
+  ['united kingdom', 'gb'],
+  ['uk', 'gb'],
+  ['qatar', 'qa'],
+  ['kuwait', 'kw'],
+  ['bahrain', 'bh'],
+  ['oman', 'om'],
+  ['egypt', 'eg'],
+  ['lebanon', 'lb'],
+  ['iraq', 'iq'],
+  ['palestine', 'ps'],
+  ['turkey', 'tr'],
+]);
+
+export const normalizeCountryCodeForGeo = (value) => {
+  const normalized = compactLower(value);
+  if (!normalized) return null;
+  if (/^[a-z]{2}$/i.test(normalized)) return normalized.toLowerCase();
+  return COUNTRY_CODE_MAP.get(normalized) || null;
+};
+
 export const buildGeoNormalization = (input = {}) => {
   const businessName = compact(input.businessName);
   const address = compact(input.address);
   const city = normalizeCityForGeo(input.city);
   const country = normalizeCountryForGeo(input.country);
+  const providerCountryCode = normalizeCountryCodeForGeo(input.country);
   const category = compact(input.category);
   const websiteUrl = cleanWebsiteUrl(input.websiteUrl);
 
@@ -56,6 +85,7 @@ export const buildGeoNormalization = (input = {}) => {
     address,
     city,
     country,
+    providerCountryCode,
     category,
     websiteUrl,
     normalizedQuery,

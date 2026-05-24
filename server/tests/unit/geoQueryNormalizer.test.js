@@ -25,6 +25,32 @@ describe('buildGeoNormalization', () => {
     expect(result.ok).toBe(true);
     expect(result.normalizedQuery).toBe('Specialty Roastery, 12 Rainbow Street, Amman, Jordan');
     expect(result.cacheKey).toBe('specialty roastery, 12 rainbow street, amman, jordan');
+    expect(result.providerCountryCode).toBe('jo');
     expect(result.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it.each([
+    ['Jordan', 'jo'],
+    ['Saudi Arabia', 'sa'],
+    ['United Arab Emirates', 'ae'],
+    ['United States', 'us'],
+    ['United Kingdom', 'gb'],
+    ['Qatar', 'qa'],
+    ['Kuwait', 'kw'],
+    ['Bahrain', 'bh'],
+    ['Oman', 'om'],
+    ['Egypt', 'eg'],
+    ['Lebanon', 'lb'],
+    ['Iraq', 'iq'],
+    ['Palestine', 'ps'],
+    ['Turkey', 'tr'],
+  ])('normalizes provider country code for %s', (country, expected) => {
+    const result = buildGeoNormalization({
+      businessName: 'Specialty Roastery',
+      city: 'Amman',
+      country,
+    });
+
+    expect(result.providerCountryCode).toBe(expected);
   });
 });

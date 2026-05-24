@@ -80,6 +80,37 @@ describe('geocodeBusinessLocation', () => {
 
     const result = await geocodeBusinessLocation({
       businessName: 'Specialty Roastery',
+      city: 'Amman',
+      country: 'Jordan',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('locationiq');
+    expect(saveGeoCacheResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call the fallback provider when the primary returns a usable result', async () => {
+    getCachedGeoResult.mockResolvedValue(null);
+    geoapifyGeocode.mockResolvedValue([
+      {
+        provider: 'geoapify',
+        providerPlaceId: 'geo-1',
+        latitude: 31.955,
+        longitude: 35.945,
+        normalizedAddress: 'Rainbow Street, Amman, Jordan',
+        resultType: 'address',
+        accuracy: 'postal_code',
+        city: 'Amman',
+        country: 'Jordan',
+        businessName: 'Rainbow Street Directory Listing',
+        providerConfidence: 0.9,
+        category: 'coffee shop',
+        rawQualitySummary: { confidence: 0.45 },
+      },
+    ]);
+
+    const result = await geocodeBusinessLocation({
+      businessName: 'Specialty Roastery',
       address: 'Rainbow Street',
       city: 'Amman',
       country: 'Jordan',
@@ -87,7 +118,9 @@ describe('geocodeBusinessLocation', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.provider).toBe('locationiq');
+    expect(['LOW_CONFIDENCE', 'RESOLVED']).toContain(result.geoStatus);
+    expect(result.provider).toBe('geoapify');
+    expect(locationIqGeocode).not.toHaveBeenCalled();
     expect(saveGeoCacheResult).toHaveBeenCalledTimes(1);
   });
 
@@ -105,7 +138,7 @@ describe('geocodeBusinessLocation', () => {
 
     expect(result.ok).toBe(false);
     expect(result.cacheHit).toBe(false);
-    expect(result.reason).toBeTruthy();
+    expect(result.reason).toBe('PROVIDER_NO_RESULT');
   });
 });
 

@@ -5,6 +5,7 @@ import { SerpAdapter } from './adapters/SerpAdapter.js';
 import { buildDiscoveryPlan as buildCacheFirstDecision } from './discoveryDecisionEngine.service.js';
 import { convertEvidenceToReusableLeadCandidates, findReusableEvidenceCandidates } from './evidenceCache.service.js';
 import { collectOpenWebEvidenceCandidates } from './openWebEvidence.service.js';
+import { assessLeadCandidateQuality } from './leadQuality.service.js';
 import { getSearchMetadataProviderStatus } from './metadataProviders/searchMetadataProviderRegistry.js';
 import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 import { getSourceStatusByKey } from './source.registry.js';
@@ -79,6 +80,11 @@ const makeLayerResult = ({
   costUnits = 0,
   reason = null,
   warnings = [],
+  rejectedLowQuality = 0,
+  rejectedGeneratedName = 0,
+  rejectedMissingBusinessEvidence = 0,
+  rejectedWrongLocation = 0,
+  rejectedDuplicate = 0,
 } = {}) => ({
   layerKey,
   provider,
@@ -94,8 +100,29 @@ const makeLayerResult = ({
   costUnits,
   reason,
   warnings,
+  rejectedLowQuality,
+  rejectedGeneratedName,
+  rejectedMissingBusinessEvidence,
+  rejectedWrongLocation,
+  rejectedDuplicate,
   label: queryLabel(layerKey),
 });
+
+const createRejectionCounts = () => ({
+  rejectedLowQuality: 0,
+  rejectedGeneratedName: 0,
+  rejectedMissingBusinessEvidence: 0,
+  rejectedWrongLocation: 0,
+  rejectedDuplicate: 0,
+});
+
+const registerRejection = (counts, code) => {
+  if (code === 'REJECTED_GENERATED_NAME') counts.rejectedGeneratedName += 1;
+  else if (code === 'REJECTED_MISSING_BUSINESS_EVIDENCE') counts.rejectedMissingBusinessEvidence += 1;
+  else if (code === 'REJECTED_WRONG_LOCATION') counts.rejectedWrongLocation += 1;
+  else if (code === 'REJECTED_DUPLICATE') counts.rejectedDuplicate += 1;
+  else counts.rejectedLowQuality += 1;
+};
 
 export const buildQueryVariants = (campaign = {}) => {
   const businessType = Array.isArray(campaign.businessTypes) ? campaign.businessTypes[0] : null;
@@ -294,17 +321,29 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
   });
   const evidenceCandidates = convertEvidenceToReusableLeadCandidates({ evidences: evidenceRecords, campaign });
   const linkedEvidence = evidenceCandidates.filter((item) => item.catalogLeadId);
+  const cacheRejections = createRejectionCounts();
   for (const item of linkedEvidence) {
     const normalized = normalizeCatalogCandidate({
       ...item,
       id: item.catalogLeadId,
       source: 'LEAD_EVIDENCE_CACHE',
     }, campaign);
+    const quality = assessLeadCandidateQuality({
+      candidate: normalized,
+      campaign,
+      sourceKind: 'catalog',
+    });
+    if (!quality.accepted) {
+      registerRejection(cacheRejections, quality.code);
+      continue;
+    }
     item.opportunityScorePreview = normalized.score.finalScore;
     item.scoreBreakdownPreview = normalized.score;
     if (!accepted.has(normalized.dedupeKey)) {
       accepted.set(normalized.dedupeKey, normalized);
       linkedEvidenceResults.push(normalized);
+    } else {
+      registerRejection(cacheRejections, 'REJECTED_DUPLICATE');
     }
   }
   layerSummary.push(makeLayerResult({
@@ -318,6 +357,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
     dedupedCount: linkedEvidence.length - linkedEvidenceResults.length,
     durationMs: Date.now() - cacheStartedAt,
     reason: linkedEvidenceResults.length ? null : 'No reusable evidence matched this search.',
+    ...cacheRejections,
   }));
   providerBreakdown.push({ provider: 'LEAD_EVIDENCE_CACHE', count: linkedEvidenceResults.length });
 
@@ -332,14 +372,26 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
   });
   const localResults = await localAdapter.run();
   const acceptedLocal = [];
+  const localRejections = createRejectionCounts();
   for (const lead of localResults) {
     const normalized = normalizeCatalogCandidate(lead, campaign);
+    const quality = assessLeadCandidateQuality({
+      candidate: normalized,
+      campaign,
+      sourceKind: 'catalog',
+    });
+    if (!quality.accepted) {
+      registerRejection(localRejections, quality.code);
+      continue;
+    }
     lead.opportunityScorePreview = normalized.score.finalScore;
     lead.scoreBreakdownPreview = normalized.score;
     if (!accepted.has(normalized.dedupeKey)) {
       accepted.set(normalized.dedupeKey, normalized);
       acceptedLocal.push(normalized);
       if (accepted.size >= requestedLimit) break;
+    } else {
+      registerRejection(localRejections, 'REJECTED_DUPLICATE');
     }
   }
   layerSummary.push(makeLayerResult({
@@ -354,6 +406,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
     dedupedCount: Math.max(0, localResults.length - acceptedLocal.length),
     durationMs: Date.now() - localStartedAt,
     reason: acceptedLocal.length ? null : 'No local business index matches were found.',
+    ...localRejections,
   }));
   providerBreakdown.push({ provider: 'LOCAL_DATASET', count: acceptedLocal.length });
 
@@ -408,12 +461,28 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
         });
         const results = await adapter.run();
         const acceptedExternal = [];
+        const searchMetadataRejections = createRejectionCounts();
         for (const candidate of results) {
           const normalized = normalizeEvidenceCandidate(candidate, campaign, adapter.metadata?.providerUsed || 'SEARCH_METADATA');
+          const quality = assessLeadCandidateQuality({
+            candidate: {
+              ...normalized,
+              sourceUrl: candidate.sourceUrl,
+              providerPlaceId: candidate.providerPlaceId,
+            },
+            campaign,
+            sourceKind: 'external',
+          });
+          if (!quality.accepted) {
+            registerRejection(searchMetadataRejections, quality.code);
+            continue;
+          }
           if (!accepted.has(normalized.dedupeKey)) {
             acceptedExternal.push(normalized);
             accepted.set(normalized.dedupeKey, normalized);
             externalEvidenceResults.push(normalized);
+          } else {
+            registerRejection(searchMetadataRejections, 'REJECTED_DUPLICATE');
           }
         }
         searchMetadataCandidates = acceptedExternal;
@@ -431,6 +500,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
           costUnits: results.length ? (adapter.metadata?.queriesUsed || 0) : 0,
           reason: acceptedExternal.length ? null : 'Search Metadata did not return usable business candidates.',
           warnings: adapter.metadata?.fallbackUsed ? ['SECONDARY_PROVIDER_USED'] : [],
+          ...searchMetadataRejections,
         }));
         providerBreakdown.push({ provider: adapter.metadata?.providerUsed || 'SEARCH_METADATA', count: acceptedExternal.length });
       } catch (error) {
@@ -484,13 +554,29 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
         });
         const results = await adapter.run();
         const acceptedExternal = [];
+        const googleRejections = createRejectionCounts();
         for (const lead of results) {
           const evidence = normalizeGoogleLeadToEvidence(lead);
           const normalized = normalizeEvidenceCandidate(evidence, campaign, 'GOOGLE_PLACES');
+          const quality = assessLeadCandidateQuality({
+            candidate: {
+              ...normalized,
+              sourceUrl: evidence.sourceUrl,
+              providerPlaceId: evidence.externalId,
+            },
+            campaign,
+            sourceKind: 'external',
+          });
+          if (!quality.accepted) {
+            registerRejection(googleRejections, quality.code);
+            continue;
+          }
           if (!accepted.has(normalized.dedupeKey)) {
             acceptedExternal.push(normalized);
             accepted.set(normalized.dedupeKey, normalized);
             externalEvidenceResults.push(normalized);
+          } else {
+            registerRejection(googleRejections, 'REJECTED_DUPLICATE');
           }
         }
         googleCandidates = acceptedExternal;
@@ -507,6 +593,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
           durationMs: Date.now() - startedAt,
           costUnits: queryVariants.length,
           reason: acceptedExternal.length ? null : 'Google Places did not return usable business candidates.',
+          ...googleRejections,
         }));
         providerBreakdown.push({ provider: 'GOOGLE_PLACES', count: acceptedExternal.length });
       } catch (error) {
