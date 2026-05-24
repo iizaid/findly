@@ -22,6 +22,43 @@ const normalizeUrl = (value) => {
   }
 };
 
+const officialEvidenceUrl = (value) => {
+  const normalized = normalizeUrl(value);
+  if (!normalized) return null;
+
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./i, '').toLowerCase();
+    if (
+      host.includes('instagram.com')
+      || host.includes('facebook.com')
+      || host.includes('linkedin.com')
+      || host.includes('youtube.com')
+      || host.includes('youtu.be')
+      || host.includes('x.com')
+      || host.includes('twitter.com')
+      || (host.includes('google.') && normalized.includes('/maps'))
+    ) {
+      return normalized;
+    }
+
+    if (
+      host.includes('serpapi.com')
+      || host.includes('google.com')
+      || host.includes('bing.com')
+      || host.includes('duckduckgo.com')
+      || host.includes('reddit.com')
+      || host.includes('tripadvisor.com')
+      || host.includes('yelp.com')
+    ) {
+      return null;
+    }
+
+    return normalized;
+  } catch {
+    return null;
+  }
+};
+
 export const isGeneratedLookingBusinessName = (value, options = {}) => {
   if (options.ignoreGeneratedNameCheck || process.env.NODE_ENV === 'test') return false;
   const normalized = compact(value);
@@ -32,11 +69,12 @@ export const isGeneratedLookingBusinessName = (value, options = {}) => {
 export const hasCredibleBusinessEvidence = (candidate = {}) => Boolean(
   candidate.address
   || candidate.phone
+  || candidate.email
   || normalizeUrl(candidate.websiteUrl)
   || normalizeUrl(candidate.instagramUrl)
   || normalizeUrl(candidate.facebookUrl)
   || normalizeUrl(candidate.googleMapsUrl)
-  || normalizeUrl(candidate.sourceUrl)
+  || officialEvidenceUrl(candidate.sourceUrl)
   || candidate.providerPlaceId
   || candidate.sourceId
 );

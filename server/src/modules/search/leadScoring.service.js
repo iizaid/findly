@@ -15,6 +15,7 @@ const normalizeUrl = (value) => {
 };
 
 const hasValue = (value) => value !== null && value !== undefined && value !== '';
+const listCount = (value) => Array.isArray(value) ? value.filter(Boolean).length : 0;
 
 const hasSocialPresence = (lead = {}) => Boolean(
   lead.instagramUrl
@@ -59,6 +60,12 @@ const scoreLevelFromScore = (score) => {
   return 'LOW';
 };
 
+const dataQualityLevelFromScore = (score) => {
+  if (score >= 78) return 'HIGH';
+  if (score >= 48) return 'MEDIUM';
+  return 'LOW';
+};
+
 const pushDimension = (dimensions, { key, label, value, weight, reason }) => {
   dimensions.push({
     key,
@@ -85,6 +92,52 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   const reviewCount = Number(lead.reviewCount) || 0;
   const confidenceFromSource = sourceConfidence ?? lead.confidenceScore ?? lead.localDatasetScore ?? 50;
   const generatedName = isGeneratedLookingBusinessName(lead.businessName, { ignoreGeneratedNameCheck: false });
+  const phoneCount = Math.max(hasValue(lead.phone) ? 1 : 0, listCount(lead.phoneNumbers));
+  const emailCount = Math.max(hasValue(lead.email) ? 1 : 0, listCount(lead.emails));
+  const contactCount = phoneCount + emailCount + (hasValue(lead.whatsappNumber) ? 1 : 0) + listCount(lead.whatsappLinks);
+  const socialCount = [
+    lead.instagramUrl,
+    lead.facebookUrl,
+    lead.linkedInUrl,
+    lead.youTubeUrl,
+    lead.xUrl,
+  ].filter(Boolean).length;
+  const sourceUrlCount = listCount(lead.sourceUrls);
+  const evidenceItemCount = listCount(lead.evidenceItems);
+  const credibleEvidence = hasCredibleBusinessEvidence(lead);
+  const officialWebsite = normalizeUrl(lead.websiteUrl);
+
+  const businessIdentityConfidence = clamp(
+    (generatedName ? 8 : 38)
+    + (lead.businessName ? 20 : 0)
+    + (credibleEvidence ? 18 : 0)
+    + (lead.providerPlaceId || lead.sourceId ? 12 : 0)
+    + (evidenceItemCount > 0 ? 12 : 0),
+  );
+  pushDimension(dimensions, {
+    key: 'business_identity_confidence',
+    label: 'Business identity confidence',
+    value: businessIdentityConfidence,
+    weight: 0.11,
+    reason: generatedName
+      ? 'Generated-looking naming pattern lowered identity confidence.'
+      : 'Identity confidence reflects naming, identifiers, and supporting evidence.',
+  });
+
+  const locationConfidence = clamp(
+    (hasValue(lead.address) ? 34 : 0)
+    + (locationCity ? 18 : 0)
+    + (locationCountry ? 12 : 0)
+    + (Number.isFinite(lead.latitude) && Number.isFinite(lead.longitude) ? 24 : 0)
+    + (lead.googleMapsUrl ? 12 : 0),
+  );
+  pushDimension(dimensions, {
+    key: 'location_confidence',
+    label: 'Location confidence',
+    value: locationConfidence,
+    weight: 0.08,
+    reason: locationConfidence >= 70 ? 'Address and map evidence support location.' : 'Location evidence is still partial.',
+  });
 
   let serviceFit = 40;
   if (!requestedTypes.length) serviceFit = 55;
@@ -92,10 +145,20 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   else if (requestedBucket && categoryBucket && requestedBucket === categoryBucket) serviceFit = 78;
   else if (categoryBucket) serviceFit = 52;
   pushDimension(dimensions, {
+    key: 'category_fit',
+    label: 'Category fit',
+    value: requestedBucket && categoryBucket && requestedBucket === categoryBucket ? 88 : (categoryBucket ? 54 : 34),
+    weight: 0.06,
+    reason: requestedBucket && categoryBucket && requestedBucket === categoryBucket
+      ? 'Business category aligns with the requested market.'
+      : 'Category alignment is partial or inferred.',
+  });
+
+  pushDimension(dimensions, {
     key: 'service_fit',
     label: 'Service fit',
     value: serviceFit,
-    weight: 0.18,
+    weight: 0.12,
     reason: requestedTypes.length
       ? `Matched against ${requestedTypes.join(', ')}.`
       : 'No business type filter reduced the match window.',
@@ -108,7 +171,7 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
     key: 'category_urgency',
     label: 'Category urgency',
     value: categoryUrgency,
-    weight: 0.08,
+    weight: 0.05,
     reason: categoryBucket ? `${categoryBucket} tends to convert well for digital services.` : 'Generic business category.',
   });
 
@@ -116,9 +179,9 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   pushDimension(dimensions, {
     key: 'website_gap',
     label: 'Website gap',
-    value: websiteGap,
+    value: credibleEvidence ? websiteGap : Math.max(18, websiteGap - 45),
     weight: 0.15,
-    reason: websiteDomain ? `Website exists on ${websiteDomain}.` : 'No website found.',
+    reason: websiteDomain ? `Website exists on ${websiteDomain}.` : (credibleEvidence ? 'No website found.' : 'Missing website is less meaningful while identity evidence is weak.'),
   });
 
   const websiteQuality = !websiteDomain ? 22 : (hasBookingHint(lead) ? 64 : 42);
@@ -132,9 +195,7 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
       : (hasBookingHint(lead) ? 'Website shows clear conversion paths.' : 'Website exists but conversion paths look limited.'),
   });
 
-  const contactPath = hasValue(lead.phone) || hasValue(lead.email) || hasValue(lead.whatsappNumber)
-    ? 68
-    : 28;
+  const contactPath = contactCount >= 3 ? 86 : contactCount === 2 ? 72 : contactCount === 1 ? 58 : 22;
   pushDimension(dimensions, {
     key: 'contact_path',
     label: 'Contact path',
@@ -143,7 +204,7 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
     reason: contactPath >= 60 ? 'Direct contact route exists.' : 'Direct contact route is weak or missing.',
   });
 
-  const socialPresence = hasSocialPresence(lead) ? 74 : 26;
+  const socialPresence = socialCount >= 3 ? 82 : socialCount >= 1 || hasSocialPresence(lead) ? 66 : 22;
   pushDimension(dimensions, {
     key: 'social_presence',
     label: 'Social presence',
@@ -182,8 +243,8 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
   });
 
   pushDimension(dimensions, {
-    key: 'source_confidence',
-    label: 'Source confidence',
+    key: 'source_reliability',
+    label: 'Source reliability',
     value: clamp(confidenceFromSource),
     weight: 0.06,
     reason: 'Confidence derived from the available source evidence.',
@@ -191,11 +252,14 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
 
   const evidenceRichness = clamp(
     (hasValue(lead.address) ? 18 : 0)
-    + (hasValue(lead.phone) ? 18 : 0)
+    + (phoneCount > 0 ? 18 : 0)
+    + (emailCount > 0 ? 12 : 0)
     + (hasValue(lead.websiteUrl) ? 18 : 0)
-    + (hasValue(lead.instagramUrl) || hasValue(lead.facebookUrl) ? 18 : 0)
+    + ((hasValue(lead.instagramUrl) || hasValue(lead.facebookUrl)) ? 18 : 0)
     + (hasValue(lead.googleMapsUrl) ? 14 : 0)
-    + (reviewCount > 0 ? 14 : 0),
+    + (reviewCount > 0 ? 10 : 0)
+    + Math.min(10, sourceUrlCount * 2)
+    + Math.min(10, evidenceItemCount * 2),
   );
   pushDimension(dimensions, {
     key: 'evidence_richness',
@@ -207,9 +271,10 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
 
   const dataQuality = clamp(
     (generatedName ? 8 : 36)
-    + (hasCredibleBusinessEvidence(lead) ? 34 : 0)
+    + (credibleEvidence ? 34 : 0)
     + (hasValue(lead.address) ? 10 : 0)
-    + (hasValue(lead.phone) ? 10 : 0)
+    + (phoneCount > 0 ? 10 : 0)
+    + (emailCount > 0 ? 8 : 0)
     + (hasValue(lead.websiteUrl) || hasValue(lead.instagramUrl) || hasValue(lead.facebookUrl) ? 10 : 0),
   );
   pushDimension(dimensions, {
@@ -252,6 +317,21 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
     reason: geoReadiness >= 60 ? 'Coordinates are likely usable on the map.' : 'Map-ready coordinates are weak or missing.',
   });
 
+  const outreachReadiness = clamp(
+    (businessIdentityConfidence >= 65 ? 26 : 0)
+    + (dataQuality >= 60 ? 24 : 0)
+    + (contactCount > 0 ? 20 : 0)
+    + (officialWebsite ? 16 : 0)
+    + (socialCount > 0 ? 14 : 0),
+  );
+  pushDimension(dimensions, {
+    key: 'outreach_readiness',
+    label: 'Outreach readiness',
+    value: outreachReadiness,
+    weight: 0.06,
+    reason: outreachReadiness >= 65 ? 'Enough public evidence exists for a more confident outreach review.' : 'More evidence is needed before confident outreach.',
+  });
+
   if (aiConfidence !== null) {
     pushDimension(dimensions, {
       key: 'ai_confidence',
@@ -264,12 +344,15 @@ export const buildLeadScoreBreakdown = ({ lead = {}, campaign = {}, sourceConfid
 
   const weightedTotal = dimensions.reduce((sum, item) => sum + (item.value * item.weight), 0);
   const finalScore = clamp(weightedTotal);
+  const dataQualityLevel = dataQualityLevelFromScore(dataQuality);
 
   return {
     finalScore,
     scoreLevel: scoreLevelFromScore(finalScore),
+    dataQualityLevel,
     dimensions,
     scoringSource: aiConfidence !== null ? 'HYBRID' : 'RULE_BASED',
+    aiOptional: true,
   };
 };
 

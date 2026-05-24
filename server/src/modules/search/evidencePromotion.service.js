@@ -31,11 +31,16 @@ const catalogDataFromEvidence = (evidence, campaign) => {
   const sourceUrl = validHttpUrl(evidence.sourceUrl);
   const sourceId = sourceIdFor(sourceUrl);
   const provider = (evidence.rawMetadata?.provider || evidence.extractedFields?.provider || 'SEARCH_METADATA').toString().toUpperCase();
+  const phoneNumbers = Array.isArray(fields.phoneNumbers) ? fields.phoneNumbers.filter(Boolean) : [fields.phone].filter(Boolean);
+  const emails = Array.isArray(fields.emails) ? fields.emails.filter(Boolean) : [fields.email].filter(Boolean);
   const data = {
     businessName: fields.businessName || evidence.title || 'Unknown Business',
     category: fields.category || (Array.isArray(campaign.businessTypes) ? campaign.businessTypes[0] || null : null),
     country: fields.country || campaign.country || null,
     city: fields.city || campaign.city || null,
+    address: fields.address || null,
+    phone: phoneNumbers[0] || null,
+    email: emails[0] || null,
     source: provider,
     sourceId,
     normalizedFingerprint: `${provider.toLowerCase()}:${sourceId}`,
@@ -45,6 +50,14 @@ const catalogDataFromEvidence = (evidence, campaign) => {
       provider,
       displayedLink: fields.displayedLink || null,
       resultPosition: fields.resultPosition || null,
+      contactPageUrl: fields.contactPageUrl || null,
+      bookingLink: fields.bookingLink || null,
+      menuLink: fields.menuLink || null,
+      emails,
+      phoneNumbers,
+      sourceUrls: fields.sourceUrls || [],
+      evidenceItems: fields.evidenceItems || [],
+      evidenceConfidence: fields.evidenceConfidence || evidence.confidenceScore || null,
     },
     detectedSignals: detectedSignalsFor(evidence),
     importedAt: new Date(),
@@ -58,8 +71,13 @@ const catalogDataFromEvidence = (evidence, campaign) => {
   } else if (evidence.targetSource === 'GOOGLE_MAPS') {
     data.googleMapsUrl = sourceUrl;
   } else {
-    data.websiteUrl = sourceUrl;
+    data.websiteUrl = validHttpUrl(fields.websiteUrl) || sourceUrl;
   }
+
+  if (fields.instagramUrl) data.instagramUrl = validHttpUrl(fields.instagramUrl);
+  if (fields.facebookUrl) data.facebookUrl = validHttpUrl(fields.facebookUrl);
+  if (fields.googleMapsUrl) data.googleMapsUrl = validHttpUrl(fields.googleMapsUrl);
+  if (!data.websiteUrl && fields.websiteUrl) data.websiteUrl = validHttpUrl(fields.websiteUrl);
 
   return data;
 };

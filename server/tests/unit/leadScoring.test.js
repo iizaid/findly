@@ -39,6 +39,9 @@ describe('lead scoring', () => {
     expect(strongLead.dimensions.length).toBeGreaterThanOrEqual(12);
     expect(strongLead.dimensions.some((item) => item.key === 'data_quality')).toBe(true);
     expect(strongLead.dimensions.some((item) => item.key === 'geo_readiness')).toBe(true);
+    expect(strongLead.scoringSource).toBe('RULE_BASED');
+    expect(strongLead.dataQualityLevel).toBe('HIGH');
+    expect(weakLead.dataQualityLevel).toBe('LOW');
   });
 
   it('rewards missing website for web opportunity searches', () => {

@@ -16,6 +16,8 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => {
   const foundCount = resultSummary.foundCount ?? resultSummary.count ?? 0;
   const acceptedCount = resultSummary.acceptedCount ?? resultSummary.count ?? 0;
   const shortfallCount = resultSummary.shortfallCount ?? Math.max(0, requestedLimit - acceptedCount);
+  const rejectedCount = resultSummary.rejectedCount ?? 0;
+  const evidenceSummary = resultSummary.evidenceSummary || {};
 
   return (
     <div className={`rounded-2xl border p-5 ${hasResults ? 'border-accent/40 bg-accent/10' : 'border-black/10 bg-black/[0.03]'}`}>
@@ -45,6 +47,22 @@ const SearchResultSummary = ({ resultSummary, onNavigate, onStartNew }) => {
             <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Found: {foundCount}</div>
             <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Accepted: {acceptedCount}</div>
             <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Shortfall: {shortfallCount}</div>
+          </div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Rejected: {rejectedCount}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Queries: {resultSummary.queryCount ?? resultSummary.queryVariants?.length ?? 0}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Contacts found: {(evidenceSummary.phoneFound || 0) + (evidenceSummary.emailFound || 0)}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Official links: {evidenceSummary.officialLinksFound || 0}</div>
+          </div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Phone found: {evidenceSummary.phoneFound || 0}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Email found: {evidenceSummary.emailFound || 0}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Map-ready: {evidenceSummary.mapReadyCount || 0}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">AI Assisted: {evidenceSummary.aiAssistedCount || 0}</div>
+          </div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Rule Based Review: {evidenceSummary.ruleBasedReviewCount || acceptedCount}</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold text-black/70">Contact extraction: {evidenceSummary.contactExtractionCount || 0}</div>
           </div>
           <div className="flex flex-wrap gap-2">
             {resultSummary.layerSummary

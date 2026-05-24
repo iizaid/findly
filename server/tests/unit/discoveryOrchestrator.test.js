@@ -17,6 +17,7 @@ describe('discovery orchestrator helpers', () => {
     expect(variants.length).toBeGreaterThan(3);
     expect(variants.some((item) => /instagram/i.test(item))).toBe(true);
     expect(variants.some((item) => /contact/i.test(item))).toBe(true);
+    expect(variants.some((item) => /no website/i.test(item))).toBe(true);
   });
 
   it('reports provider readiness without exposing secrets', () => {

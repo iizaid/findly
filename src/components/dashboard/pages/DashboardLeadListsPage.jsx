@@ -550,7 +550,10 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                     const a = lead.analyses?.[0];
                     const websiteUrl = safeExternalUrl(lead.websiteUrl);
                     const instagramUrl = safeExternalUrl(lead.instagramUrl);
+                    const facebookUrl = safeExternalUrl(lead.facebookUrl);
                     const googleMapsUrl = safeExternalUrl(lead.googleMapsUrl);
+                    const contactabilityDimension = a?.scoreBreakdown?.dimensions?.find?.((item) => item.key === 'contact_path');
+                    const dataQualityLevel = a?.dataQualityLevel || a?.scoreBreakdown?.dataQualityLevel || '-';
                     
                     return (
                         <div key={targetId} className="flex flex-col">
@@ -763,10 +766,22 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                                 <div className="rounded-2xl border border-black/[0.04] bg-white p-5 shadow-sm">
                                   <h4 className="text-[13px] font-semibold text-black mb-4">Lead Details</h4>
                                   <div className="grid grid-cols-2 gap-y-3 text-[13px]">
+                                    <div className="text-black/50 font-medium">Website</div>
+                                    <div className="truncate text-black/90">{websiteUrl ? <a href={websiteUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : '-'}</div>
+                                    <div className="text-black/50 font-medium">Instagram</div>
+                                    <div className="truncate text-black/90">{instagramUrl ? <a href={instagramUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : (lead.instagramUsername ? `@${lead.instagramUsername}` : '-')}</div>
+                                    <div className="text-black/50 font-medium">Facebook</div>
+                                    <div className="truncate text-black/90">{facebookUrl ? <a href={facebookUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Open</a> : '-'}</div>
+                                    <div className="text-black/50 font-medium">Phone</div>
+                                    <div className="truncate text-black/90" title={lead.phone}>{lead.phone || '-'}</div>
                                     <div className="text-black/50 font-medium">Email</div>
                                     <div className="truncate text-black/90" title={lead.email}>{lead.email || '-'}</div>
                                     <div className="text-black/50 font-medium">Address</div>
                                     <div className="truncate text-black/90" title={lead.address}>{lead.address || '-'}</div>
+                                    <div className="text-black/50 font-medium">Contactability</div>
+                                    <div className="text-black/90">{contactabilityDimension ? `${contactabilityDimension.value}/100` : (lead.phone || lead.email ? 'Basic' : '-')}</div>
+                                    <div className="text-black/50 font-medium">Data Quality</div>
+                                    <div className="text-black/90">{dataQualityLevel}</div>
                                     <div className="text-black/50 font-medium">Record Type</div>
                                     <div className="text-black/90">{isListItem ? 'Saved Result' : (lead.catalogOnly ? 'Lead Intelligence' : 'Workspace Lead')}</div>
                                   </div>

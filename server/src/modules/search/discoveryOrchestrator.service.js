@@ -2,11 +2,13 @@ import { env } from '../../config/env.js';
 import { GooglePlacesAdapter } from './adapters/GooglePlacesAdapter.js';
 import { LocalDatasetAdapter } from './adapters/LocalDatasetAdapter.js';
 import { SerpAdapter } from './adapters/SerpAdapter.js';
+import { extractPublicContactData, summarizeContactExtraction } from './contactExtraction.service.js';
 import { buildDiscoveryPlan as buildCacheFirstDecision } from './discoveryDecisionEngine.service.js';
 import { convertEvidenceToReusableLeadCandidates, findReusableEvidenceCandidates } from './evidenceCache.service.js';
 import { collectOpenWebEvidenceCandidates } from './openWebEvidence.service.js';
 import { assessLeadCandidateQuality } from './leadQuality.service.js';
 import { getSearchMetadataProviderStatus } from './metadataProviders/searchMetadataProviderRegistry.js';
+import { resolveOfficialLinks } from './officialLinkResolver.service.js';
 import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 import { getSourceStatusByKey } from './source.registry.js';
 import { scoreLeadCandidate } from './leadScoring.service.js';
@@ -29,6 +31,7 @@ export const DISCOVERY_LAYER_KEYS = Object.freeze({
 
 const unique = (values = []) => [...new Set(values.filter(Boolean))];
 const compact = (value) => (value || '').toString().trim().toLowerCase();
+const MAX_WEBSITE_CRAWLS_PER_CAMPAIGN = Math.max(0, Number(env.DISCOVERY_MAX_WEBSITE_CRAWLS) || 10);
 
 const normalizeUrl = (value) => {
   if (!value) return null;
@@ -47,6 +50,30 @@ const normalizePhone = (value) => {
 };
 
 const normalizeName = (value) => compact(value).replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+const socialOrDirectoryUrl = (value) => {
+  const normalized = normalizeUrl(value);
+  return Boolean(
+    normalized && (
+      normalized.includes('instagram.com')
+      || normalized.includes('facebook.com')
+      || normalized.includes('linkedin.com')
+      || normalized.includes('youtube.com')
+      || normalized.includes('youtu.be')
+      || normalized.includes('x.com')
+      || normalized.includes('twitter.com')
+      || normalized.includes('google.com/maps')
+      || normalized.includes('reddit.com')
+      || normalized.includes('tripadvisor.com')
+      || normalized.includes('yelp.com')
+    )
+  );
+};
+
+const candidateWebsiteSeed = (fields = {}, candidate = {}) => {
+  if (fields.websiteUrl) return fields.websiteUrl;
+  if (candidate.targetSource === 'WEBSITE' && candidate.sourceUrl && !socialOrDirectoryUrl(candidate.sourceUrl)) return candidate.sourceUrl;
+  return null;
+};
 
 const categoryVariants = {
   cafes: ['cafe', 'coffee shop', 'specialty coffee', 'roastery'],
@@ -130,36 +157,96 @@ export const buildQueryVariants = (campaign = {}) => {
   const country = campaign.country || '';
   const goal = campaign.filters?.goal || campaign.query || '';
   const service = campaign.serviceProfile?.serviceType || goal || '';
-  const presenceTargets = normalizeCampaignTargeting(campaign).presenceTargets;
-  const maxVariants = Math.max(3, Math.min(Number(env.DISCOVERY_MAX_QUERY_VARIANTS) || 6, 8));
+  const presenceTargets = unique([
+    ...(normalizeCampaignTargeting(campaign).presenceTargets || []),
+    ...((Array.isArray(campaign.presenceTargets) ? campaign.presenceTargets : [])),
+  ]);
+  const maxVariants = Math.max(3, Math.min(Number(env.DISCOVERY_MAX_QUERY_VARIANTS) || 8, 8));
   const baseLocation = [city, country].filter(Boolean).join(' ');
   const bucket = Object.entries(categoryVariants).find(([, terms]) => terms.some((term) => compact(businessType).includes(compact(term))))?.[0] || null;
   const categoryTerms = bucket ? categoryVariants[bucket] : [businessType].filter(Boolean);
   const variants = [];
-
   const orderedCategoryTerms = unique(categoryTerms);
-  if (orderedCategoryTerms[0]) {
-    const term = orderedCategoryTerms[0];
-    variants.push(`${term} in ${baseLocation}`.trim());
-    if (service) variants.push(`${term} ${city} ${service}`.trim());
-  }
+  const baseTerm = orderedCategoryTerms[0] || businessType || 'business';
+  const pushVariant = (value) => {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (normalized) variants.push(normalized);
+  };
 
+  pushVariant(`${baseTerm} in ${baseLocation}`);
   for (const target of presenceTargets) {
-    variants.push(`${businessType || 'business'} ${city} ${target}`.trim());
+    pushVariant(`${baseTerm} ${city} ${target}`);
   }
 
-  if (goal) variants.push(`${businessType || 'business'} ${city} ${goal}`.trim());
-  variants.push(`${businessType || 'business'} ${city} contact`.trim());
-  variants.push(`${businessType || 'business'} ${city} website`.trim());
-  variants.push(`${businessType || 'business'} ${city} booking`.trim());
+  const serviceText = compact(service);
+  if (serviceText.includes('website')) {
+    pushVariant(`${baseTerm} ${city} no website`);
+    pushVariant(`${baseTerm} ${city} instagram no website`);
+    pushVariant(`${baseTerm} ${city} facebook no website`);
+  }
+  pushVariant(`${baseTerm} ${city} phone`);
+  pushVariant(`${baseTerm} ${city} contact`);
+  pushVariant(`${baseTerm} ${city} website`);
+  if (goal) pushVariant(`${baseTerm} ${city} ${goal}`);
+  if (service) pushVariant(`${baseTerm} ${city} ${service}`);
+  pushVariant(`${baseTerm} ${city} booking`);
+  pushVariant(`${baseTerm} ${city} menu`);
+  if (serviceText.includes('booking') || serviceText.includes('appointment') || serviceText.includes('reservation')) {
+    pushVariant(`${baseTerm} ${city} appointments`);
+    pushVariant(`${baseTerm} ${city} reservations`);
+  }
+  if (serviceText.includes('menu')) {
+    pushVariant(`${baseTerm} ${city} qr menu`);
+  }
 
   for (const term of orderedCategoryTerms.slice(1)) {
-    variants.push(`${term} in ${baseLocation}`.trim());
-    if (service) variants.push(`${term} ${city} ${service}`.trim());
+    pushVariant(`${term} in ${baseLocation}`);
+    pushVariant(`${term} ${city} contact`);
   }
 
-  return unique(variants.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean)).slice(0, maxVariants);
+  return unique(variants).slice(0, maxVariants);
 };
+
+const shouldCrawlCandidateWebsite = (candidate = {}) => {
+  const websiteUrl = candidate.websiteUrl || candidate.sourceUrl || null;
+  if (!websiteUrl) return false;
+  const normalized = normalizeUrl(websiteUrl);
+  if (!normalized) return false;
+  return !(
+    normalized.includes('instagram.com')
+    || normalized.includes('facebook.com')
+    || normalized.includes('linkedin.com')
+    || normalized.includes('youtube.com')
+    || normalized.includes('youtu.be')
+    || normalized.includes('x.com')
+    || normalized.includes('twitter.com')
+    || normalized.includes('google.com/maps')
+    || normalized.includes('reddit.com')
+    || normalized.includes('tripadvisor.com')
+    || normalized.includes('yelp.com')
+  );
+};
+
+const evidenceConfidenceFor = (candidate = {}) => {
+  const sourceUrls = Array.isArray(candidate.sourceUrls) ? candidate.sourceUrls.length : 0;
+  const evidenceItems = Array.isArray(candidate.evidenceItems) ? candidate.evidenceItems.length : 0;
+  const phones = Array.isArray(candidate.phoneNumbers) ? candidate.phoneNumbers.length : 0;
+  const emails = Array.isArray(candidate.emails) ? candidate.emails.length : 0;
+  return Math.max(0, Math.min(100,
+    (candidate.address ? 18 : 0)
+    + ((candidate.websiteUrl || candidate.googleMapsUrl) ? 18 : 0)
+    + ((candidate.instagramUrl || candidate.facebookUrl) ? 12 : 0)
+    + (phones > 0 ? 14 : 0)
+    + (emails > 0 ? 12 : 0)
+    + Math.min(10, sourceUrls * 2)
+    + Math.min(16, evidenceItems * 4)
+  ));
+};
+
+const mergeEvidenceItems = (...lists) => unique(lists.flat().filter(Boolean).map((item) => JSON.stringify(item)))
+  .map((item) => JSON.parse(item));
+
+const mergeSourceUrls = (...lists) => unique(lists.flat().filter(Boolean));
 
 const candidateKeyFor = (candidate = {}) => {
   const website = normalizeUrl(candidate.websiteUrl || candidate.sourceUrl);
@@ -186,6 +273,8 @@ const normalizeCatalogCandidate = (lead, campaign) => {
     address: lead.address,
     phone: lead.phone,
     websiteUrl: lead.websiteUrl,
+    phoneNumbers: lead.phoneNumbers || (lead.phone ? [lead.phone] : []),
+    emails: lead.emails || (lead.email ? [lead.email] : []),
     instagramUrl: lead.instagramUrl,
     facebookUrl: lead.facebookUrl,
     googleMapsUrl: lead.googleMapsUrl,
@@ -208,10 +297,15 @@ const normalizeEvidenceCandidate = (candidate, campaign, provider) => {
       country: fields.country || campaign.country,
       address: fields.address || null,
       phone: fields.phone || null,
-      websiteUrl: fields.websiteUrl || candidate.sourceUrl,
+      phoneNumbers: Array.isArray(fields.phoneNumbers) ? fields.phoneNumbers : (fields.phone ? [fields.phone] : []),
+      emails: Array.isArray(fields.emails) ? fields.emails : (fields.email ? [fields.email] : []),
+      email: fields.email || null,
+      websiteUrl: candidateWebsiteSeed(fields, candidate),
       instagramUrl: fields.platformUrl || null,
       facebookUrl: fields.facebookUrl || null,
       googleMapsUrl: fields.googleMapsUrl || null,
+      sourceUrls: Array.isArray(fields.sourceUrls) ? fields.sourceUrls : [candidate.sourceUrl].filter(Boolean),
+      evidenceItems: Array.isArray(fields.evidenceItems) ? fields.evidenceItems : [],
       rating: fields.rating || null,
       reviewCount: fields.reviewCount || null,
       source: provider,
@@ -229,10 +323,21 @@ const normalizeEvidenceCandidate = (candidate, campaign, provider) => {
     country: fields.country || campaign.country || null,
     address: fields.address || null,
     phone: fields.phone || null,
-    websiteUrl: fields.websiteUrl || candidate.sourceUrl,
+    phoneNumbers: Array.isArray(fields.phoneNumbers) ? fields.phoneNumbers : (fields.phone ? [fields.phone] : []),
+    emails: Array.isArray(fields.emails) ? fields.emails : (fields.email ? [fields.email] : []),
+    email: fields.email || null,
+    websiteUrl: candidateWebsiteSeed(fields, candidate),
     instagramUrl: fields.platformUrl || null,
     facebookUrl: fields.facebookUrl || null,
+    linkedInUrl: fields.linkedInUrl || null,
+    youTubeUrl: fields.youTubeUrl || null,
+    xUrl: fields.xUrl || null,
     googleMapsUrl: fields.googleMapsUrl || null,
+    sourceUrl: candidate.sourceUrl || null,
+    sourceUrls: Array.isArray(fields.sourceUrls) ? fields.sourceUrls : [candidate.sourceUrl].filter(Boolean),
+    evidenceItems: Array.isArray(fields.evidenceItems) ? fields.evidenceItems : [],
+    providerPlaceId: candidate.providerPlaceId || candidate.externalId || null,
+    evidenceConfidence: fields.evidenceConfidence || candidate.confidenceScore || 0,
     source: provider,
     sourceId: candidate.externalId || null,
     evidence: candidate,
@@ -250,6 +355,127 @@ const normalizeEvidenceCandidate = (candidate, campaign, provider) => {
     }),
     raw: candidate,
   };
+};
+
+const enrichAcceptedCandidate = async ({ candidate, campaign, usageCounters }) => {
+  const enriched = { ...candidate };
+  let contactExtraction = null;
+
+  if (usageCounters.websiteCrawls < MAX_WEBSITE_CRAWLS_PER_CAMPAIGN && shouldCrawlCandidateWebsite(candidate)) {
+    usageCounters.websiteCrawls += 1;
+    try {
+      contactExtraction = await extractPublicContactData({
+        websiteUrl: candidate.websiteUrl || candidate.sourceUrl,
+        businessName: candidate.businessName,
+        city: candidate.city,
+        country: candidate.country,
+      });
+    } catch {
+      contactExtraction = null;
+    }
+  }
+
+  const resolvedLinks = resolveOfficialLinks({
+    candidate,
+    contactExtraction,
+    evidenceItems: candidate.evidence?.extractedFields?.evidenceItems || candidate.evidenceItems || [],
+  });
+
+  const phoneNumbers = unique([
+    ...(candidate.phoneNumbers || []),
+    ...(contactExtraction?.phoneNumbers || []),
+  ]);
+  const emails = unique([
+    ...(candidate.emails || []),
+    ...(contactExtraction?.emails || []),
+  ]);
+  const evidenceItems = mergeEvidenceItems(
+    candidate.evidenceItems || [],
+    candidate.evidence?.extractedFields?.evidenceItems || [],
+    contactExtraction?.evidenceItems || [],
+  );
+  const sourceUrls = mergeSourceUrls(
+    candidate.sourceUrls || [],
+    [candidate.sourceUrl].filter(Boolean),
+    resolvedLinks.sourceUrls || [],
+    contactExtraction?.sourceUrls || [],
+  );
+
+  Object.assign(enriched, {
+    phoneNumbers,
+    emails,
+    phone: candidate.phone || phoneNumbers[0] || null,
+    email: candidate.email || emails[0] || null,
+    whatsappLinks: contactExtraction?.whatsappLinks || [],
+    websiteUrl: resolvedLinks.websiteUrl || candidate.websiteUrl || null,
+    instagramUrl: resolvedLinks.instagramUrl || candidate.instagramUrl || null,
+    facebookUrl: resolvedLinks.facebookUrl || candidate.facebookUrl || null,
+    linkedInUrl: resolvedLinks.linkedInUrl || candidate.linkedInUrl || null,
+    youTubeUrl: resolvedLinks.youTubeUrl || candidate.youTubeUrl || null,
+    xUrl: resolvedLinks.xUrl || candidate.xUrl || null,
+    googleMapsUrl: resolvedLinks.googleMapsUrl || candidate.googleMapsUrl || null,
+    contactPageUrl: resolvedLinks.contactPageUrl || null,
+    bookingLink: resolvedLinks.bookingLink || null,
+    menuLink: resolvedLinks.menuLink || null,
+    sourceUrls,
+    evidenceItems,
+    evidenceConfidence: evidenceConfidenceFor({
+      ...candidate,
+      ...resolvedLinks,
+      phoneNumbers,
+      emails,
+      sourceUrls,
+      evidenceItems,
+    }),
+    contactabilityScore: Math.max(0, Math.min(100, (phoneNumbers.length ? 40 : 0) + (emails.length ? 30 : 0) + ((contactExtraction?.contactPageUrl || resolvedLinks.contactPageUrl) ? 15 : 0) + ((contactExtraction?.whatsappLinks?.length || 0) ? 15 : 0))),
+  });
+
+  enriched.score = scoreLeadCandidate({
+    lead: enriched,
+    campaign,
+    sourceConfidence: Math.max(candidate.evidenceConfidence || 0, candidate.score?.finalScore || 0, enriched.evidenceConfidence || 0),
+  });
+  enriched.opportunityScore = enriched.score.finalScore;
+  enriched.dataQualityLevel = enriched.score.dataQualityLevel;
+
+  if (enriched.evidence) {
+    enriched.evidence = {
+      ...enriched.evidence,
+      extractedFields: {
+        ...(enriched.evidence.extractedFields || {}),
+        businessName: enriched.businessName,
+        category: enriched.category,
+        city: enriched.city,
+        country: enriched.country,
+        address: enriched.address,
+        phone: enriched.phone,
+        phoneNumbers,
+        email: enriched.email,
+        emails,
+        websiteUrl: enriched.websiteUrl,
+        instagramUrl: enriched.instagramUrl,
+        facebookUrl: enriched.facebookUrl,
+        linkedInUrl: enriched.linkedInUrl,
+        youTubeUrl: enriched.youTubeUrl,
+        xUrl: enriched.xUrl,
+        googleMapsUrl: enriched.googleMapsUrl,
+        contactPageUrl: enriched.contactPageUrl,
+        bookingLink: enriched.bookingLink,
+        menuLink: enriched.menuLink,
+        sourceUrls,
+        evidenceItems,
+        evidenceConfidence: enriched.evidenceConfidence,
+      },
+    };
+  }
+
+  const extractionSummary = summarizeContactExtraction(contactExtraction || {});
+  usageCounters.contactExtractions += contactExtraction ? 1 : 0;
+  usageCounters.officialLinksFound += resolvedLinks.resolvedCount || 0;
+  usageCounters.phoneFound += extractionSummary.phoneCount || phoneNumbers.length;
+  usageCounters.emailFound += extractionSummary.emailCount || emails.length;
+
+  return enriched;
 };
 
 const normalizeGoogleLeadToEvidence = (lead) => ({
@@ -312,6 +538,13 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
   const externalEvidenceResults = [];
   const layerSummary = [];
   const requestedLimit = Math.max(1, Number(campaign.requestedLimit) || 20);
+  const usageCounters = {
+    websiteCrawls: 0,
+    contactExtractions: 0,
+    officialLinksFound: 0,
+    phoneFound: 0,
+    emailFound: 0,
+  };
 
   const cacheStartedAt = Date.now();
   const evidenceRecords = await findReusableEvidenceCandidates({
@@ -478,9 +711,10 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
             continue;
           }
           if (!accepted.has(normalized.dedupeKey)) {
-            acceptedExternal.push(normalized);
-            accepted.set(normalized.dedupeKey, normalized);
-            externalEvidenceResults.push(normalized);
+            const enriched = await enrichAcceptedCandidate({ candidate: normalized, campaign, usageCounters });
+            acceptedExternal.push(enriched);
+            accepted.set(enriched.dedupeKey, enriched);
+            externalEvidenceResults.push(enriched);
           } else {
             registerRejection(searchMetadataRejections, 'REJECTED_DUPLICATE');
           }
@@ -572,9 +806,10 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
             continue;
           }
           if (!accepted.has(normalized.dedupeKey)) {
-            acceptedExternal.push(normalized);
-            accepted.set(normalized.dedupeKey, normalized);
-            externalEvidenceResults.push(normalized);
+            const enriched = await enrichAcceptedCandidate({ candidate: normalized, campaign, usageCounters });
+            acceptedExternal.push(enriched);
+            accepted.set(enriched.dedupeKey, enriched);
+            externalEvidenceResults.push(enriched);
           } else {
             registerRejection(googleRejections, 'REJECTED_DUPLICATE');
           }
@@ -671,6 +906,7 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
 
   const foundCount = accepted.size;
   const shortfallCount = Math.max(0, requestedLimit - foundCount);
+  const mapReadyCount = [...accepted.values()].filter((item) => Number.isFinite(item.raw?.latitude ?? item.latitude) && Number.isFinite(item.raw?.longitude ?? item.longitude)).length;
   const shortfallReason = shortfallCount > 0
     ? `Only ${foundCount} of ${requestedLimit} leads were found across the configured discovery layers.`
     : null;
@@ -681,12 +917,28 @@ export const runDiscoveryOrchestrator = async ({ campaign }) => {
     requestedLimit,
     foundCount,
     acceptedCount: foundCount,
+    rejectedCount: layerSummary.reduce((sum, layer) => sum
+      + (layer.rejectedLowQuality || 0)
+      + (layer.rejectedGeneratedName || 0)
+      + (layer.rejectedMissingBusinessEvidence || 0)
+      + (layer.rejectedWrongLocation || 0)
+      + (layer.rejectedDuplicate || 0), 0),
     shortfallCount,
     shortfallReason,
     queryVariants,
+    queryCount: queryVariants.length,
     readiness,
     providerBreakdown,
     layerSummary,
+    evidenceSummary: {
+      contactExtractionCount: usageCounters.contactExtractions,
+      officialLinksFound: usageCounters.officialLinksFound,
+      phoneFound: usageCounters.phoneFound,
+      emailFound: usageCounters.emailFound,
+      mapReadyCount,
+      aiAssistedCount: 0,
+      ruleBasedReviewCount: foundCount,
+    },
     executionSummary: {
       searchMetadataProviderUsed: searchMetadataLayer?.attempted ? (searchMetadataLayer?.provider || null) : null,
       searchMetadataSecondaryProviderUsed: Boolean(searchMetadataLayer?.warnings?.includes('SECONDARY_PROVIDER_USED')),

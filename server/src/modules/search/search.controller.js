@@ -664,12 +664,21 @@ export const getCampaignStatus = asyncHandler(async (req, res) => {
         || campaign.resultCount
         || latestLeadList?.resultCount
         || 0,
+      rejectedCount: leadListFilters?.discovery?.rejectedCount
+        || campaignFilters?.rejectedCount
+        || 0,
       shortfallCount: leadListFilters?.discovery?.shortfallCount
         || campaignFilters?.shortfallCount
+        || 0,
+      queryCount: leadListFilters?.discovery?.queryCount
+        || leadListFilters?.discovery?.queryVariants?.length
         || 0,
       providerBreakdown: leadListFilters?.discovery?.providerBreakdown
         || campaignFilters?.discoveryProviderBreakdown
         || [],
+      evidenceSummary: leadListFilters?.discovery?.evidenceSummary
+        || campaignFilters?.evidenceSummary
+        || {},
       layerSummary: leadListFilters?.discovery?.layerReport
         || campaignFilters?.discoveryLayerReport
         || [],
