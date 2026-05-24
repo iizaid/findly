@@ -10,6 +10,7 @@ let createApp;
 let prisma;
 let getTestOutbox;
 let processNextSearchJob;
+let processNextWorkerJob;
 let setAiProviderOverridesForTests;
 let MockAiProvider;
 let env;
@@ -67,6 +68,7 @@ beforeAll(async () => {
   ({ prisma } = await import('../../src/db/prisma.js'));
   ({ getTestOutbox } = await import('../../src/modules/mail/mail.service.js'));
   ({ processNextSearchJob } = await import('../../src/workers/searchWorker.js'));
+  ({ processNextWorkerJob } = await import('../../src/workers/searchWorker.js'));
   ({ setAiProviderOverridesForTests } = await import('../../src/modules/ai/aiRouter.service.js'));
   ({ MockAiProvider } = await import('../../src/modules/ai/providers/mockProvider.js'));
   ({ env } = await import('../../src/config/env.js'));
@@ -504,19 +506,42 @@ describe('LeadList Workflow Architecture', () => {
     });
   });
 
-  it('verifies batch list analysis works and charges credits accurately', async () => {
+  it('persists lead list analysis jobs across navigation and prevents duplicate runs', async () => {
     const csrfToken = await getCsrfToken(agent1);
     const beforeCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
 
-    // We analyzed listItems[0] previously. listItems[1] is unanalyzed.
-    // Batch analyze should only charge for unanalyzed items (which is 1).
-    const batchRes = await agent1.post(`/api/search/lists/${leadListId}/analyze`)
+    const firstStart = await agent1.post(`/api/search/lists/${leadListId}/analyze`)
       .set('X-CSRF-Token', csrfToken)
       .send({})
-      .expect(200);
+      .expect(202);
 
-    expect(batchRes.body.data.analyzedCount).toBe(1);
-    expect(batchRes.body.data.creditsUsed).toBe(1);
+    expect(firstStart.body.data.job.jobId).toBeDefined();
+    expect(firstStart.body.data.job.status).toBe('QUEUED');
+
+    const secondStart = await agent1.post(`/api/search/lists/${leadListId}/analyze`)
+      .set('X-CSRF-Token', csrfToken)
+      .send({})
+      .expect(202);
+
+    expect(secondStart.body.data.reused).toBe(true);
+    expect(secondStart.body.data.job.jobId).toBe(firstStart.body.data.job.jobId);
+
+    const persistedQueuedJob = await agent1.get(`/api/search/lists/${leadListId}/analysis-job`).expect(200);
+    expect(persistedQueuedJob.body.data.job.jobId).toBe(firstStart.body.data.job.jobId);
+    expect(['QUEUED', 'RUNNING']).toContain(persistedQueuedJob.body.data.job.status);
+
+    const processed = await processNextWorkerJob({ workerId: `analysis-worker-${unique}` });
+    expect(processed?.status).toBe('COMPLETED');
+
+    const completedJob = await agent1.get(`/api/search/lists/${leadListId}/analysis-job`).expect(200);
+    expect(completedJob.body.data.job.status).toBe('COMPLETED');
+    expect(completedJob.body.data.job.summary.totalAnalyzed).toBe(1);
+    expect(completedJob.body.data.job.summary.creditsUsed).toBe(1);
+    expect(completedJob.body.data.job.summary.ruleBasedCount + completedJob.body.data.job.summary.aiAssistedCount).toBe(1);
+
+    const listResponse = await agent1.get(`/api/search/lists/${leadListId}`).expect(200);
+    expect(listResponse.body.data.list.analysisStatus).toBe('COMPLETED');
+    expect(listResponse.body.data.list.analysisSummary.totalAnalyzed).toBe(1);
 
     const afterCredits = (await agent1.get('/api/credits')).body.data.credits.balance;
     expect(afterCredits).toBe(beforeCredits - 1);

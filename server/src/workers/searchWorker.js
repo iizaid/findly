@@ -18,6 +18,7 @@ import {
 import { runCampaign } from '../modules/search/search.service.js';
 import { GEO_ENRICHMENT_JOB_TYPE, processGeoEnrichmentJob } from '../modules/geo/geoEnrichment.service.js';
 import { processWebsiteEnrichmentJob, WEBSITE_ENRICHMENT_JOB_TYPE } from '../modules/search/websiteEnrichmentJob.service.js';
+import { LEAD_LIST_ANALYSIS_JOB_TYPE, processLeadListAnalysisJob } from '../modules/search/leadListAnalysisJob.service.js';
 
 const sleep = (ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
@@ -127,6 +128,29 @@ export const processNextWorkerJob = async ({ workerId = env.WORKER_ID || `search
     } catch (error) {
       const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
       const errorMessage = error instanceof AppError ? error.message : 'Geo enrichment job failed.';
+      await markJobFailed({ jobId: job.id, errorCode, errorMessage }).catch(() => {});
+      logger.warn('search_worker.job.failed', {
+        workerId,
+        jobId: job.id,
+        type: job.type,
+        errorCode,
+      });
+      return { jobId: job.id, status: 'FAILED', errorCode };
+    }
+  }
+
+  if (job.type === LEAD_LIST_ANALYSIS_JOB_TYPE) {
+    try {
+      const result = await processLeadListAnalysisJob({ jobId: job.id });
+      logger.info('search_worker.job.completed', {
+        workerId,
+        jobId: job.id,
+        type: job.type,
+      });
+      return { jobId: job.id, status: 'COMPLETED', result };
+    } catch (error) {
+      const errorCode = error instanceof AppError ? error.code : errorCodes.INTERNAL_ERROR;
+      const errorMessage = error instanceof AppError ? error.message : 'Lead list analysis job failed.';
       await markJobFailed({ jobId: job.id, errorCode, errorMessage }).catch(() => {});
       logger.warn('search_worker.job.failed', {
         workerId,

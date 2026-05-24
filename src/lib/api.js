@@ -156,6 +156,22 @@ export const getLeadMap = ({ leadIds = [], listId = null } = {}) => {
 
 export const getSearchReadiness = () => apiRequest('/api/search/readiness');
 
+export const startLeadListAnalysis = (listId) => apiRequest(
+  `/api/search/lists/${encodeURIComponent(listId)}/analyze`,
+  {
+    method: 'POST',
+    body: JSON.stringify({}),
+  },
+);
+
+export const getLeadListAnalysisJob = (listId) => apiRequest(
+  `/api/search/lists/${encodeURIComponent(listId)}/analysis-job`,
+);
+
+export const getAnalysisJobStatus = (jobId) => apiRequest(
+  `/api/search/analysis-jobs/${encodeURIComponent(jobId)}`,
+);
+
 export const startLeadMapEnrichment = ({ leadIds = [], listId = null, forceRefresh = false } = {}) => apiRequest(
   '/api/lead-map/enrich',
   {

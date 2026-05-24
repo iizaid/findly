@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    setupFiles: ['dotenv/config'],
+    setupFiles: ['dotenv/config', 'tests/setupEnv.js'],
     environment: 'node',
     fileParallelism: false,
     hookTimeout: 30000,

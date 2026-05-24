@@ -1,6 +1,5 @@
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { successResponse } from '../../utils/apiResponse.js';
-import { logger } from '../../utils/logger.js';
 import { prisma } from '../../db/prisma.js';
 import { AppError, errorCodes } from '../../utils/AppError.js';
 import { toPagination } from '../../utils/pagination.js';
@@ -24,6 +23,10 @@ import { normalizeCampaignTargeting } from './sourceTargetMapping.service.js';
 import { getDiscoveryReadinessSummary } from './discoveryReadiness.service.js';
 import { getAiRuntimeConfig } from '../ai/ai.config.js';
 import { getGeoRuntimeStatus } from '../geo/geoReadiness.service.js';
+import {
+  getLeadListAnalysisJob,
+  startLeadListAnalysisJob,
+} from './leadListAnalysisJob.service.js';
 import {
   getSupportedJordanGovernorates,
   leadMatchesGovernorate,
@@ -759,7 +762,27 @@ export const getLeadLists = asyncHandler(async (req, res) => {
     }),
     prisma.leadList.count({ where }),
   ]);
-  const mapped = lists.map(sanitizeLeadListForUserResponse);
+  const listIds = lists.map((list) => list.id);
+  const analyzedCounts = listIds.length ? await prisma.leadListLead.groupBy({
+    by: ['leadListId'],
+    where: {
+      leadListId: { in: listIds },
+      OR: [
+        { analysisStatus: 'COMPLETED' },
+        { analyses: { some: {} } },
+      ],
+    },
+    _count: { _all: true },
+  }) : [];
+  const analyzedCountMap = new Map(analyzedCounts.map((row) => [row.leadListId, row._count._all]));
+  const mapped = lists.map((list) => {
+    const analyzedLeadCount = analyzedCountMap.get(list.id) || 0;
+    return {
+      ...sanitizeLeadListForUserResponse(list),
+      analyzedLeadCount,
+      pendingAnalysisCount: Math.max(0, (list._count?.leadItems || 0) - analyzedLeadCount),
+    };
+  });
   return successResponse(res, { lists: mapped, pagination: { page: pagination.page, limit: pagination.limit, total } }, 'Lead lists loaded.');
 });
 
@@ -773,10 +796,41 @@ export const getLeadListById = asyncHandler(async (req, res) => {
   });
 
   if (!list) throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
+  const analyzedLeadCount = await prisma.leadListLead.count({
+    where: {
+      leadListId: list.id,
+      OR: [
+        { analysisStatus: 'COMPLETED' },
+        { analyses: { some: {} } },
+      ],
+    },
+  });
 
   return successResponse(res, {
-    list: sanitizeLeadListForUserResponse(list),
+    list: {
+      ...sanitizeLeadListForUserResponse(list),
+      analyzedLeadCount,
+      pendingAnalysisCount: Math.max(0, (list._count?.leadItems || 0) - analyzedLeadCount),
+    },
   }, 'Lead list loaded.');
+});
+
+export const getLeadListAnalysisJobStatus = asyncHandler(async (req, res) => {
+  const job = await getLeadListAnalysisJob({
+    listId: req.validated.params.id,
+    userId: req.user.id,
+  });
+
+  return successResponse(res, { job }, 'Lead list analysis status loaded.');
+});
+
+export const getAnalysisJobStatus = asyncHandler(async (req, res) => {
+  const job = await getLeadListAnalysisJob({
+    jobId: req.validated.params.id,
+    userId: req.user.id,
+  });
+
+  return successResponse(res, { job }, 'Analysis job status loaded.');
 });
 
 export const getOpportunitySignals = asyncHandler(async (req, res) => {
@@ -1356,196 +1410,15 @@ export const analyzeListItem = asyncHandler(async (req, res) => {
 
 export const analyzeListItems = asyncHandler(async (req, res) => {
   const { id: listId } = req.validated.params;
-
-  const leadList = await prisma.leadList.findFirst({
-    where: { id: listId, userId: req.user.id },
-    include: { campaign: { include: { serviceProfile: true } } },
+  const result = await startLeadListAnalysisJob({
+    listId,
+    userId: req.user.id,
   });
-
-  if (!leadList) {
-    throw new AppError(errorCodes.NOT_FOUND, 'Lead list not found.', 404);
-  }
-
-  const items = await prisma.leadListLead.findMany({
-    where: {
-      leadListId: listId,
-      OR: [
-        { analysisStatus: null },
-        { analysisStatus: { notIn: ['COMPLETED'] } },
-      ],
-      analyses: { none: {} },
-    },
-    include: { lead: true, catalogLead: true },
-    take: 100,
-  });
-
-  if (items.length === 0) {
-    return successResponse(res, { analyzedCount: 0, creditsUsed: 0, aiAssistedCount: 0, ruleBasedCount: 0, failedCount: 0, skippedExistingCount: 0 }, 'No items require analysis or list empty.');
-  }
-
-  const profile = leadList.campaign?.serviceProfile || { serviceType: 'Digital Presence Improvement' };
-  
-  let analyzedCount = 0;
-  let creditsUsed = 0;
-  let aiAssistedCount = 0;
-  let ruleBasedCount = 0;
-  let failedCount = 0;
-  let skippedExistingCount = 0;
-
-  const results = [];
-
-  const concurrency = Math.max(1, Math.min(Number(env.AI_ANALYSIS_CONCURRENCY) || 2, 5));
-  
-  for (let i = 0; i < items.length; i += concurrency) {
-    const chunk = items.slice(i, i + concurrency);
-    
-    const chunkPromises = chunk.map(async (item) => {
-      const sourceLead = item.lead || item.catalogLead;
-      if (!sourceLead) return { item, status: 'failed', reason: 'no_lead_data' };
-
-      const userCredits = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { creditsBalance: true },
-      });
-      if (!userCredits || userCredits.creditsBalance < ANALYSIS_CREDITS) {
-        return { item, status: 'failed', reason: 'insufficient_credits' };
-      }
-
-      try {
-        const ruleBasedAnalysis = buildRuleBasedAnalysisData({ lead: sourceLead, profile });
-        const aiReview = await runLeadAnalysisAiReview({
-          lead: sourceLead,
-          profile,
-          campaign: leadList.campaign,
-          ruleBasedAnalysis,
-        });
-
-        const finalAnalysisData = enrichAnalysisDataForPersistence({
-          analysisData: aiReview.analysis,
-          aiResult: aiReview.aiResult,
-        });
-        const responseMetadata = buildAnalysisResponseMetadata({
-          analysisData: finalAnalysisData,
-          aiResult: aiReview.aiResult,
-        });
-
-        const result = await prisma.$transaction(async (tx) => {
-          const currentItem = await tx.leadListLead.findFirst({
-            where: { id: item.id },
-            include: { analyses: { select: { id: true } } },
-          });
-
-          if (currentItem.analyses.length > 0 || currentItem.analysisStatus === 'COMPLETED') {
-            return { status: 'skipped' };
-          }
-
-          await deductCredits({
-            tx,
-            userId: req.user.id,
-            workspaceId: leadList.workspaceId,
-            amount: ANALYSIS_CREDITS,
-            type: 'CREDIT_USED',
-            reason: `Analyzed list item in batch: ${sourceLead.businessName}`,
-            referenceType: 'LeadListLead',
-            referenceId: item.id,
-          });
-
-          const analysis = await tx.leadAnalysis.create({
-            data: toLeadAnalysisCreateData({
-              lead: sourceLead,
-              analysisData: finalAnalysisData,
-              userId: req.user.id,
-              workspaceId: leadList.workspaceId,
-              campaignId: leadList.campaignId,
-              leadListLeadId: item.id,
-            }),
-          });
-
-          await tx.leadListLead.update({
-            where: { id: item.id },
-            data: {
-              analysisStatus: 'COMPLETED',
-              analyzedAt: new Date(),
-              score: analysis.opportunityScore,
-            },
-          });
-
-          return { status: 'analyzed', responseMetadata, analysis };
-        });
-
-        return { item, ...result };
-      } catch (err) {
-        logger.error(`[Bulk Analysis] Failed for item ${item.id}:`, err);
-        return { item, status: 'failed', reason: 'error' };
-      }
-    });
-
-    const chunkResults = await Promise.all(chunkPromises);
-    results.push(...chunkResults);
-  }
-
-  const scoreDistribution = { GOLD: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
-  const topOpportunities = [];
-
-  for (const res of results) {
-    if (res.status === 'skipped') {
-      skippedExistingCount++;
-    } else if (res.status === 'failed') {
-      failedCount++;
-    } else if (res.status === 'analyzed') {
-      analyzedCount++;
-      creditsUsed += ANALYSIS_CREDITS;
-      if (res.responseMetadata.analysisSource === 'AI_ASSISTED') {
-        aiAssistedCount++;
-      } else {
-        ruleBasedCount++;
-      }
-      
-      const level = res.analysis.scoreLevel;
-      if (scoreDistribution[level] !== undefined) scoreDistribution[level]++;
-      
-      topOpportunities.push(res.analysis);
-    }
-  }
-
-  // Create audit log for the batch run
-  if (analyzedCount > 0) {
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'LEAD_LIST_BULK_ANALYZED',
-        entityType: 'LeadList',
-        entityId: leadList.id,
-        metadata: {
-          workspaceId: leadList.workspaceId,
-          analyzedCount,
-          creditsUsed,
-          aiAssistedCount,
-          ruleBasedCount,
-        },
-      },
-    });
-  }
-
-  // Sort top opportunities
-  topOpportunities.sort((a, b) => b.opportunityScore - a.opportunityScore);
 
   return successResponse(res, {
-    analyzedCount,
-    creditsUsed,
-    aiAssistedCount,
-    ruleBasedCount,
-    failedCount,
-    skippedExistingCount,
-    scoreDistribution,
-    topOpportunities: topOpportunities.slice(0, 3).map(a => ({
-      id: a.id,
-      leadListLeadId: a.leadListLeadId,
-      score: a.opportunityScore,
-      level: a.scoreLevel,
-      service: a.suggestedService
-    }))
-  }, 'Lead list bulk analysis completed.');
+    job: result.job,
+    reused: result.reused,
+  }, result.reused ? 'Existing lead list analysis is already running.' : 'Lead list analysis queued.', 202);
 });
 
 // ═══════════════════════════════════════

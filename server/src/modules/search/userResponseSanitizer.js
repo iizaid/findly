@@ -146,6 +146,9 @@ export const sanitizeLeadListItemForUserResponse = (item) => {
 
 export const sanitizeLeadListForUserResponse = (list) => {
   if (!list) return list;
+  const analysis = list.filters?.analysis && typeof list.filters.analysis === 'object'
+    ? list.filters.analysis
+    : null;
   const {
     sourceRequested: _sourceRequested,
     sourceUsed: _sourceUsed,
@@ -159,6 +162,12 @@ export const sanitizeLeadListForUserResponse = (list) => {
   return {
     ...safeList,
     leadCount: _count?.leadItems || _count?.leads || 0,
+    analysisStatus: analysis?.status || null,
+    analysisJobId: analysis?.jobId || null,
+    analysisSummary: analysis?.summary || null,
+    analysisProgressCurrent: analysis?.progressCurrent ?? 0,
+    analysisProgressTotal: analysis?.progressTotal ?? 0,
+    analysisUpdatedAt: analysis?.updatedAt || null,
   };
 };
 

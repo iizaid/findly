@@ -24,7 +24,7 @@ const productionEnv = {
 describe('production env validation', () => {
   it('allows development/test localhost defaults', () => {
     const parsed = parseEnv({
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly_test',
       NODE_ENV: 'test',
       CLIENT_ORIGIN: 'http://localhost:5173',
       SESSION_SECRET: strongSecret,
@@ -82,7 +82,7 @@ describe('production env validation', () => {
 
   it('parses disposable email domain lists and auth abuse defaults in test mode', () => {
     const parsed = parseEnv({
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly_test',
       NODE_ENV: 'test',
       CLIENT_ORIGIN: 'http://localhost:5173',
       SESSION_SECRET: strongSecret,
@@ -91,6 +91,37 @@ describe('production env validation', () => {
 
     expect(parsed.AUTH_ABUSE_PROTECTION_ENABLED).toBe(true);
     expect(parsed.DISPOSABLE_EMAIL_DOMAINS_LIST).toEqual(['mailinator.com', 'tempmail.com']);
+  });
+
+  it('rejects unsafe test database urls unless explicitly overridden', () => {
+    expect(() => parseEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      NODE_ENV: 'test',
+      CLIENT_ORIGIN: 'http://localhost:5173',
+      SESSION_SECRET: strongSecret,
+    })).toThrow(/Refusing to run tests against a non-test database/);
+
+    const parsed = parseEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      NODE_ENV: 'test',
+      CLIENT_ORIGIN: 'http://localhost:5173',
+      SESSION_SECRET: strongSecret,
+      TEST_DATABASE_ALLOW_DEV_OVERWRITE: 'true',
+    });
+
+    expect(parsed.TEST_DATABASE_ALLOW_DEV_OVERWRITE).toBe(true);
+  });
+
+  it('prefers TEST_DATABASE_URL in test mode', () => {
+    const parsed = parseEnv({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly',
+      TEST_DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/findly_test',
+      NODE_ENV: 'test',
+      CLIENT_ORIGIN: 'http://localhost:5173',
+      SESSION_SECRET: strongSecret,
+    });
+
+    expect(parsed.DATABASE_URL).toContain('findly_test');
   });
 
   it('requires turnstile keys when bot challenge protection is enabled in production', () => {

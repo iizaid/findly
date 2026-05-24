@@ -6,6 +6,7 @@ dotenv.config({ quiet: true });
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 const IS_TEST_ENV = process.env.NODE_ENV === 'test';
+const TEST_DATABASE_PATTERN = /(test|_test|test_|findly_test)/i;
 
 const parseOriginList = (value = '') => String(value)
   .split(',')
@@ -30,8 +31,20 @@ const isStrongMasterKey = (value) => {
   }
 };
 
+const isSafeTestDatabaseUrl = (value) => TEST_DATABASE_PATTERN.test(String(value || ''));
+
+const applyTestDatabaseUrlOverride = (source = process.env) => {
+  if (source.NODE_ENV !== 'test') return source;
+  if (source.TEST_DATABASE_URL && source.DATABASE_URL !== source.TEST_DATABASE_URL) {
+    source.DATABASE_URL = source.TEST_DATABASE_URL;
+  }
+  return source;
+};
+
 export const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  TEST_DATABASE_URL: z.string().optional(),
+  TEST_DATABASE_ALLOW_DEV_OVERWRITE: createBooleanParser(false),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   CLIENT_ORIGIN: z.string().min(1).default('http://localhost:5173'),
@@ -298,6 +311,23 @@ export const envSchema = z.object({
   IMPORT_UPLOAD_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
   ADMIN_UPLOAD_DIR: z.string().optional(),
 }).superRefine((value, ctx) => {
+  if (value.NODE_ENV === 'test') {
+    const candidateDatabaseUrl = value.TEST_DATABASE_URL || value.DATABASE_URL;
+    if (!candidateDatabaseUrl) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TEST_DATABASE_URL'],
+        message: 'TEST_DATABASE_URL or a test-only DATABASE_URL is required in test mode.',
+      });
+    } else if (!value.TEST_DATABASE_ALLOW_DEV_OVERWRITE && !isSafeTestDatabaseUrl(candidateDatabaseUrl)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DATABASE_URL'],
+        message: 'Refusing to run tests against a non-test database. Set TEST_DATABASE_URL or use TEST_DATABASE_ALLOW_DEV_OVERWRITE=true explicitly.',
+      });
+    }
+  }
+
   if (value.NODE_ENV !== 'production') return;
 
   const clientOrigins = parseOriginList(value.CLIENT_ORIGIN);
@@ -565,7 +595,8 @@ export const envSchema = z.object({
 });
 
 export const parseEnv = (source = process.env) => {
-  const parsed = envSchema.safeParse(source);
+  const preparedSource = applyTestDatabaseUrlOverride(source);
+  const parsed = envSchema.safeParse(preparedSource);
 
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
@@ -585,3 +616,5 @@ export const parseEnv = (source = process.env) => {
 };
 
 export const env = parseEnv(process.env);
+
+export { applyTestDatabaseUrlOverride, isSafeTestDatabaseUrl };

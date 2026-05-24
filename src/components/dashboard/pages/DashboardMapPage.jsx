@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -13,15 +12,16 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
-import DashboardEmptyState from '../DashboardEmptyState';
 import { getGeoEnrichmentJob, getLeadMap, startLeadMapEnrichment } from '../../../lib/api';
 import { safeExternalUrl } from '../../../lib/urlSafety';
+import useGsapPageReveal from '../../../hooks/useGsapPageReveal';
 
 const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL?.trim() || '';
 const MAP_ENABLED = String(import.meta.env.VITE_LEAD_MAP_ENABLED ?? 'true') !== 'false';
+const MAP_PREVIEW_MODE = String(import.meta.env.VITE_MAP_PREVIEW_MODE ?? 'false') === 'true';
 const DEFAULT_CENTER = [
-  Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LNG ?? 35),
-  Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LAT ?? 31),
+  Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LNG ?? 35.91),
+  Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LAT ?? 31.95),
 ];
 const DEFAULT_ZOOM = Number(import.meta.env.VITE_MAP_DEFAULT_ZOOM ?? 6);
 
@@ -59,9 +59,7 @@ const buildMarkerElement = ({ lead, active = false }) => {
   element.style.borderRadius = '16px';
   element.style.border = active ? '3px solid rgba(17,17,17,0.18)' : '2px solid rgba(17,17,17,0.06)';
   element.style.background = markerColor(lead.scoreLevel);
-  element.style.boxShadow = active
-    ? '0 20px 36px rgba(0,0,0,0.18)'
-    : '0 14px 28px rgba(0,0,0,0.12)';
+  element.style.boxShadow = active ? '0 20px 36px rgba(0,0,0,0.18)' : '0 14px 28px rgba(0,0,0,0.12)';
   element.style.color = '#111111';
   element.style.display = 'flex';
   element.style.alignItems = 'center';
@@ -95,9 +93,50 @@ const fitToLeads = (map, leads) => {
   });
 };
 
+const MapOverlay = ({
+  title,
+  description,
+  actions = [],
+  diagnostics = [],
+}) => (
+  <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-5">
+    <div className="pointer-events-auto w-full max-w-xl rounded-[28px] border border-black/[0.08] bg-white/92 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur-md">
+      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Lead Map</p>
+      <h3 className="mt-2 text-2xl font-bold tracking-tight text-black">{title}</h3>
+      <p className="mt-3 text-[14px] font-semibold leading-6 text-black/60">{description}</p>
+      {diagnostics.length > 0 && (
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          {diagnostics.map((item) => (
+            <div key={item.label} className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-black/45">{item.label}</p>
+              <p className="mt-1 text-[15px] font-bold text-black">{item.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {actions.length > 0 && (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              className={`inline-flex h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold transition-colors ${action.secondary ? 'border border-black/[0.08] bg-white text-black hover:bg-black/[0.03]' : 'bg-black text-white hover:bg-black/85'}`}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+);
+
 const DashboardMapPage = ({ onNavigate }) => {
+  const pageRef = useRef(null);
   const routeSearch = window.location.search;
   const selection = useMemo(() => parseRouteSelection(routeSearch), [routeSearch]);
+  const [previewMode, setPreviewMode] = useState(MAP_PREVIEW_MODE);
   const [state, setState] = useState({
     status: selection.leadIds.length || selection.listId ? 'loading' : 'idle',
     mappable: [],
@@ -113,6 +152,8 @@ const DashboardMapPage = ({ onNavigate }) => {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new globalThis.Map());
+
+  useGsapPageReveal(pageRef);
 
   useEffect(() => {
     if (!selection.leadIds.length && !selection.listId) {
@@ -160,7 +201,7 @@ const DashboardMapPage = ({ onNavigate }) => {
   const visibleLeads = filteredMappable.slice(0, 100);
 
   useEffect(() => {
-    if (!MAP_ENABLED || !MAP_STYLE_URL || !mapContainerRef.current || mapRef.current) return;
+    if (!MAP_ENABLED || !MAP_STYLE_URL || !mapContainerRef.current || mapRef.current) return undefined;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -188,6 +229,11 @@ const DashboardMapPage = ({ onNavigate }) => {
 
     markersRef.current.forEach((entry) => entry.marker.remove());
     markersRef.current.clear();
+
+    if (!visibleLeads.length) {
+      map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, speed: 0.8 });
+      return;
+    }
 
     visibleLeads.forEach((lead, index) => {
       const element = buildMarkerElement({ lead, active: false });
@@ -220,7 +266,7 @@ const DashboardMapPage = ({ onNavigate }) => {
         });
       });
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         element.style.opacity = '1';
         element.style.transform = 'translateY(0)';
       }, index * 18);
@@ -239,9 +285,7 @@ const DashboardMapPage = ({ onNavigate }) => {
       const element = entry.marker.getElement();
       element.style.background = markerColor(lead.scoreLevel);
       element.style.border = active ? '3px solid rgba(17,17,17,0.18)' : '2px solid rgba(17,17,17,0.06)';
-      element.style.boxShadow = active
-        ? '0 20px 36px rgba(0,0,0,0.18)'
-        : '0 14px 28px rgba(0,0,0,0.12)';
+      element.style.boxShadow = active ? '0 20px 36px rgba(0,0,0,0.18)' : '0 14px 28px rgba(0,0,0,0.12)';
       element.style.transform = active ? 'translateY(-2px)' : 'translateY(0)';
     });
   }, [activeLeadId, hoverLeadId, visibleLeads]);
@@ -283,7 +327,7 @@ const DashboardMapPage = ({ onNavigate }) => {
           setJobState({
             submitting: false,
             polling: false,
-            message: `Location enrichment completed: ${summary?.resolvedItems ?? 0} resolved, ${summary?.lowConfidenceItems ?? 0} low-confidence, ${summary?.failedItems ?? 0} not mappable, ${summary?.providerNoResultItems ?? 0} no-result, ${summary?.providerRateLimitedItems ?? 0} rate-limited.`,
+            message: `Location enrichment completed: ${summary?.resolvedItems ?? 0} resolved, ${summary?.lowConfidenceItems ?? 0} low-confidence, ${summary?.failedItems ?? 0} unresolved.`,
           });
           return;
         }
@@ -300,17 +344,52 @@ const DashboardMapPage = ({ onNavigate }) => {
   };
 
   const missingMapSetup = !MAP_ENABLED || !MAP_STYLE_URL;
+  const hasSelection = !!(selection.leadIds.length || selection.listId);
+  const showPreviewOverlay = !hasSelection || previewMode;
+  const showNoCoordinatesOverlay = hasSelection && !visibleLeads.length && !missingMapSetup;
+
+  const overlay = missingMapSetup
+    ? {
+        title: 'Map style is not configured',
+        description: 'Set VITE_MAP_STYLE_URL to a production-safe MapLibre style URL. Example: https://api.maptiler.com/maps/streets/style.json?key=YOUR_KEY',
+        diagnostics: [{ label: 'Missing env', value: 'VITE_MAP_STYLE_URL' }],
+        actions: [{ label: 'Open settings', onClick: () => onNavigate('/dashboard/settings') }],
+      }
+    : showPreviewOverlay
+      ? {
+          title: 'Map preview mode',
+          description: 'Select leads or run a campaign to place verified businesses here. The map stays visible so you can inspect layout and style before you have map-ready leads.',
+          diagnostics: [{ label: 'Preview center', value: 'Amman region' }],
+          actions: [
+            { label: 'Find Leads', onClick: () => onNavigate('/dashboard/find-leads') },
+            { label: 'Lead Lists', onClick: () => onNavigate('/dashboard/lead-lists'), secondary: true },
+          ],
+        }
+      : showNoCoordinatesOverlay
+        ? {
+            title: 'No reliable coordinates yet',
+            description: 'The map is ready, but the selected leads still need stronger location evidence before they can be placed here.',
+            diagnostics: [
+              { label: 'Low confidence', value: diagnostics.lowConfidenceCount ?? 0 },
+              { label: 'No result', value: diagnostics.providerNoResultCount ?? 0 },
+              { label: 'Bad response', value: diagnostics.providerBadResponseCount ?? 0 },
+              { label: 'Rate limited', value: diagnostics.providerRateLimitedCount ?? 0 },
+              { label: 'Insufficient input', value: diagnostics.skippedInsufficientInputCount ?? 0 },
+            ],
+            actions: [{ label: 'Enrich locations', onClick: runEnrichment }],
+          }
+        : null;
 
   return (
-    <div className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.1fr)_410px]">
-      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28 }}>
+    <div ref={pageRef} className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.1fr)_410px]" data-gsap-reveal>
+      <div data-gsap-stagger>
         <DashboardCard className="overflow-hidden p-5 md:p-7">
           <div className="flex flex-col gap-4 border-b border-black/[0.06] pb-6 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Geographic intelligence</p>
               <h2 className="mt-2 text-3xl font-bold tracking-tight text-black md:text-4xl">Lead Map</h2>
               <p className="mt-3 max-w-3xl text-[14px] font-semibold leading-6 text-black/55">
-                Findly only maps leads with reliable coordinates.
+                Findly only maps leads with reliable coordinates. Preview mode keeps the live map visible even before results are mappable.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -334,6 +413,14 @@ const DashboardMapPage = ({ onNavigate }) => {
               </button>
               <button
                 type="button"
+                onClick={() => setPreviewMode((value) => !value)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
+              >
+                <MapIcon size={15} />
+                {previewMode ? 'Hide preview' : 'Preview map'}
+              </button>
+              <button
+                type="button"
                 onClick={() => onNavigate('/dashboard/map')}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
               >
@@ -349,150 +436,128 @@ const DashboardMapPage = ({ onNavigate }) => {
             </div>
           )}
 
-          {!selection.leadIds.length && !selection.listId ? (
-            <div className="mt-6">
-              <DashboardEmptyState
-                title="Choose leads to view on the map."
-                description="Open Find Leads or Lead Lists, then send selected leads here."
-                actionLabel="Find leads"
-                onAction={() => onNavigate('/dashboard/find-leads')}
-                secondaryActionLabel="Open lead lists"
-                onSecondaryAction={() => onNavigate('/dashboard/lead-lists')}
-              />
+          <div className="mt-5 grid gap-3 md:grid-cols-4" data-gsap-stagger>
+            <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Selected leads</p>
+              <p className="mt-2 text-2xl font-bold text-black">{state.summary?.accessibleCount ?? 0}</p>
             </div>
-          ) : missingMapSetup ? (
-            <div className="mt-6">
-              <DashboardEmptyState
-                title="Map style is not configured."
-                description="Set VITE_MAP_STYLE_URL to a production-safe MapLibre style URL before using the Lead Map."
-                actionLabel="Open settings"
-                onAction={() => onNavigate('/dashboard/settings')}
-              />
+            <div className="rounded-2xl border border-[#B6FF00]/70 bg-[#F6FFD2] p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-black/55">Mapped leads</p>
+              <p className="mt-2 text-2xl font-bold text-black">{state.summary?.mappableCount ?? 0}</p>
             </div>
-          ) : (
-            <>
-              <div className="mt-5 grid gap-3 md:grid-cols-4">
-                <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Selected leads</p>
-                  <p className="mt-2 text-2xl font-bold text-black">{state.summary?.accessibleCount ?? 0}</p>
-                </div>
-                <div className="rounded-2xl border border-[#B6FF00]/70 bg-[#F6FFD2] p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-black/55">Mapped leads</p>
-                  <p className="mt-2 text-2xl font-bold text-black">{state.summary?.mappableCount ?? 0}</p>
-                </div>
-                <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Needs enrichment</p>
-                  <p className="mt-2 text-2xl font-bold text-black">{state.summary?.notMappableCount ?? 0}</p>
-                </div>
-                <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Map threshold</p>
-                  <p className="mt-2 text-2xl font-bold text-black">{state.summary?.minConfidenceToMap ?? 0}</p>
-                </div>
-              </div>
+            <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Needs enrichment</p>
+              <p className="mt-2 text-2xl font-bold text-black">{state.summary?.notMappableCount ?? 0}</p>
+            </div>
+            <div className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-secondary">Map threshold</p>
+              <p className="mt-2 text-2xl font-bold text-black">{state.summary?.minConfidenceToMap ?? 0}</p>
+            </div>
+          </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Resolved: {diagnostics.resolvedCount ?? 0}</div>
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Low confidence: {diagnostics.lowConfidenceCount ?? 0}</div>
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">No result: {diagnostics.providerNoResultCount ?? 0}</div>
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Bad response: {diagnostics.providerBadResponseCount ?? 0}</div>
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Rate-limited: {diagnostics.providerRateLimitedCount ?? 0}</div>
-                <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Insufficient input: {diagnostics.skippedInsufficientInputCount ?? 0}</div>
-              </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6" data-gsap-stagger>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Resolved: {diagnostics.resolvedCount ?? 0}</div>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Low confidence: {diagnostics.lowConfidenceCount ?? 0}</div>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">No result: {diagnostics.providerNoResultCount ?? 0}</div>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Bad response: {diagnostics.providerBadResponseCount ?? 0}</div>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Rate limited: {diagnostics.providerRateLimitedCount ?? 0}</div>
+            <div className="rounded-2xl border border-black/[0.06] bg-white p-3 text-xs font-bold text-black/70">Insufficient input: {diagnostics.skippedInsufficientInputCount ?? 0}</div>
+          </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                <select value={cityFilter} onChange={(event) => setCityFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
-                  <option value="">All cities</option>
-                  {cities.map((city) => <option key={city} value={city}>{city}</option>)}
-                </select>
-                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
-                  <option value="">All categories</option>
-                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-                </select>
-                <select value={accuracyFilter} onChange={(event) => setAccuracyFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
-                  <option value="">All accuracy levels</option>
-                  {accuracies.map((accuracy) => <option key={accuracy} value={accuracy}>{accuracy}</option>)}
-                </select>
-              </div>
+          <div className="mt-5 flex flex-wrap gap-2" data-gsap-stagger>
+            <select value={cityFilter} onChange={(event) => setCityFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
+              <option value="">All cities</option>
+              {cities.map((city) => <option key={city} value={city}>{city}</option>)}
+            </select>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
+              <option value="">All categories</option>
+              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <select value={accuracyFilter} onChange={(event) => setAccuracyFilter(event.target.value)} className="h-10 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-3 text-[13px] font-semibold text-black">
+              <option value="">All accuracy levels</option>
+              {accuracies.map((accuracy) => <option key={accuracy} value={accuracy}>{accuracy}</option>)}
+            </select>
+          </div>
 
-              <div className="mt-5 overflow-hidden rounded-[30px] border border-black/[0.08] bg-[#F7F8F6]">
-                {state.status === 'loading' ? (
-                  <div className="flex min-h-[560px] items-center justify-center">
-                    <Loader2 size={28} className="animate-spin text-secondary" />
-                  </div>
-                ) : state.status === 'error' ? (
-                  <div className="flex min-h-[560px] items-center justify-center p-6">
-                    <div className="flex max-w-lg items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
-                      <AlertCircle size={18} className="mt-0.5 shrink-0" />
-                      <div className="space-y-2">
-                        <p className="text-sm font-bold">{state.message}</p>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className="inline-flex h-9 items-center justify-center rounded-full bg-red-600 px-4 text-xs font-bold text-white transition-colors hover:bg-red-700"
-                          >
-                            Retry
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onNavigate('/dashboard/find-leads')}
-                            className="inline-flex h-9 items-center justify-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
-                          >
-                            Back to Find Leads
-                          </button>
-                        </div>
-                      </div>
+          <div className="relative mt-5 overflow-hidden rounded-[30px] border border-black/[0.08] bg-[#F7F8F6]">
+            {missingMapSetup ? (
+              <div className="min-h-[560px] bg-[#F7F8F6]" />
+            ) : (
+              <div ref={mapContainerRef} className="min-h-[560px] w-full" />
+            )}
+
+            {state.status === 'loading' && (
+              <div className="absolute inset-0 z-[6] flex items-center justify-center bg-white/72 backdrop-blur-sm">
+                <Loader2 size={28} className="animate-spin text-secondary" />
+              </div>
+            )}
+
+            {state.status === 'error' && (
+              <div className="absolute inset-0 z-[6] flex items-center justify-center p-6">
+                <div className="flex max-w-lg items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700">
+                  <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold">{state.message}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="inline-flex h-9 items-center justify-center rounded-full bg-red-600 px-4 text-xs font-bold text-white transition-colors hover:bg-red-700"
+                      >
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('/dashboard/find-leads')}
+                        className="inline-flex h-9 items-center justify-center rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
+                      >
+                        Back to Find Leads
+                      </button>
                     </div>
                   </div>
-                ) : visibleLeads.length ? (
-                  <div ref={mapContainerRef} className="min-h-[560px] w-full" />
-                ) : (
-                  <div className="p-6">
-                    <DashboardEmptyState
-                      title="No selected leads have reliable coordinates yet."
-                      description="Review the items below, then run location enrichment if enough place data exists."
-                      actionLabel="Enrich locations"
-                      onAction={runEnrichment}
-                    />
-                  </div>
-                )}
+                </div>
               </div>
-              {state.summary?.markerLimitApplied && (
-                <p className="mt-3 text-[12px] font-semibold text-black/55">
-                  Showing first 100 mapped leads. Refine your selection to focus the map.
-                </p>
-              )}
-            </>
+            )}
+
+            {overlay && state.status !== 'loading' && state.status !== 'error' && (
+              <MapOverlay
+                title={overlay.title}
+                description={overlay.description}
+                diagnostics={overlay.diagnostics}
+                actions={overlay.actions}
+              />
+            )}
+          </div>
+
+          {state.summary?.markerLimitApplied && (
+            <p className="mt-3 text-[12px] font-semibold text-black/55">
+              Showing first 100 mapped leads. Refine your selection to focus the map.
+            </p>
           )}
         </DashboardCard>
-      </motion.div>
+      </div>
 
-      <motion.div initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.28, delay: 0.04 }} className="space-y-5">
+      <div className="space-y-5" data-gsap-stagger>
         <DashboardCard className="p-5 md:p-6">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Mapped leads</p>
           <div className="mt-4 space-y-3">
-            {visibleLeads.length ? visibleLeads.map((lead, index) => (
-              <motion.button
+            {visibleLeads.length ? visibleLeads.map((lead) => (
+              <button
                 key={lead.id}
                 type="button"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.22, delay: index * 0.03 }}
                 onMouseEnter={() => setHoverLeadId(lead.id)}
                 onMouseLeave={() => setHoverLeadId(null)}
-                  onClick={() => {
-                    setActiveLeadId(lead.id);
-                    const markerEntry = markersRef.current.get(lead.id);
-                    const popup = markerEntry?.marker?.getPopup?.();
-                    if (popup && !popup.isOpen()) {
-                      markerEntry.marker.togglePopup();
-                    }
-                    mapRef.current?.flyTo({
-                      center: [lead.longitude, lead.latitude],
-                      zoom: Math.max(mapRef.current?.getZoom?.() || DEFAULT_ZOOM, 13),
-                      speed: 1,
-                    });
-                  }}
+                onClick={() => {
+                  setActiveLeadId(lead.id);
+                  const markerEntry = markersRef.current.get(lead.id);
+                  const popup = markerEntry?.marker?.getPopup?.();
+                  if (popup && !popup.isOpen()) markerEntry.marker.togglePopup();
+                  mapRef.current?.flyTo({
+                    center: [lead.longitude, lead.latitude],
+                    zoom: Math.max(mapRef.current?.getZoom?.() || DEFAULT_ZOOM, 13),
+                    speed: 1,
+                  });
+                }}
                 className={`w-full rounded-2xl border p-4 text-left transition-all ${lead.id === activeLeadId ? 'border-[#B6FF00] bg-[#F6FFD2]' : 'border-black/[0.06] bg-white hover:border-black/10 hover:bg-[#FBFBFB]'}`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -504,9 +569,11 @@ const DashboardMapPage = ({ onNavigate }) => {
                     {lead.score ?? '—'}
                   </span>
                 </div>
-              </motion.button>
+              </button>
             )) : (
-              <p className="text-[13px] font-semibold text-black/55">No mappable leads match the current filters.</p>
+              <p className="text-[13px] font-semibold text-black/55">
+                {hasSelection ? 'No mapped leads match the current filters.' : 'Select leads to inspect mapped businesses here.'}
+              </p>
             )}
           </div>
         </DashboardCard>
@@ -530,18 +597,18 @@ const DashboardMapPage = ({ onNavigate }) => {
                 </div>
               </div>
             )) : (
-              <p className="text-[13px] font-semibold text-black/55">All selected leads with usable location data are already mapped.</p>
+              <p className="text-[13px] font-semibold text-black/55">No unresolved location records are waiting right now.</p>
             )}
           </div>
         </DashboardCard>
 
-        <DashboardCard className="!bg-black p-5 text-white md:p-6">
+        <DashboardCard className="bg-black p-5 text-white md:p-6">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#B6FF00] text-black">
             <MapIcon size={22} />
           </div>
           <h3 className="mt-5 text-2xl font-bold tracking-tight">No fake markers.</h3>
           <p className="mt-3 text-sm font-semibold leading-7 text-white/65">
-            Findly only renders a lead when the saved coordinates pass validation and meet the configured confidence threshold.
+            Findly renders a lead only when the saved coordinates pass validation and meet the configured confidence threshold.
           </p>
           {activeWebsiteUrl && (
             <a
@@ -555,7 +622,7 @@ const DashboardMapPage = ({ onNavigate }) => {
             </a>
           )}
         </DashboardCard>
-      </motion.div>
+      </div>
     </div>
   );
 };

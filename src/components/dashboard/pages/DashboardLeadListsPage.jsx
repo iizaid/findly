@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Loader2, Link2, AlertCircle, Search, ArrowUpDown, ExternalLink, Eye, Play, FileText, CheckCircle2 } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import DashboardEmptyState from '../DashboardEmptyState';
-import { apiRequest } from '../../../lib/api';
+import { apiRequest, getLeadListAnalysisJob, startLeadListAnalysis } from '../../../lib/api';
 import { safeExternalUrl } from '../../../lib/urlSafety';
+import useGsapPageReveal from '../../../hooks/useGsapPageReveal';
 
 const STATUS_OPTIONS = ['NEW', 'REVIEWED', 'CONTACTED', 'INTERESTED', 'NOT_A_FIT', 'SAVED', 'QUALIFIED', 'DISQUALIFIED', 'ARCHIVED'];
 
@@ -50,7 +51,42 @@ const platformLabel = {
 const listPlatformLabel = (list) => list?.platformsRequested?.map((p) => platformLabel[p] || p).join(', ')
   || 'Available Sources';
 
+const analysisStatusMeta = (job) => {
+  const status = job?.listStatus || job?.status || 'NOT_ANALYZED';
+  if (status === 'ANALYSIS_RUNNING' || status === 'RUNNING' || status === 'QUEUED') {
+    return {
+      label: 'Analysis running',
+      className: 'bg-blue-50 text-blue-700 border-blue-100',
+    };
+  }
+  if (status === 'ANALYSIS_COMPLETE' || status === 'COMPLETED') {
+    return {
+      label: 'Analysis complete',
+      className: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    };
+  }
+  if (status === 'NEEDS_REANALYSIS') {
+    return {
+      label: 'Needs re-analysis',
+      className: 'bg-amber-50 text-amber-700 border-amber-100',
+    };
+  }
+  if (status === 'ANALYSIS_FAILED' || status === 'FAILED' || status === 'CANCELLED') {
+    return {
+      label: 'Analysis failed',
+      className: 'bg-red-50 text-red-700 border-red-100',
+    };
+  }
+  return {
+    label: 'Not analyzed',
+    className: 'bg-black/[0.04] text-black/65 border-black/[0.06]',
+  };
+};
+
+const summaryValue = (job, key) => job?.summary?.[key] ?? 0;
+
 const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
+  const pageRef = useRef(null);
   const [leads, setLeads] = useState([]);
   const [savedLists, setSavedLists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,16 +103,18 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
   const [selectedLead, setSelectedLead] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(null);
   const [analyzingLead, setAnalyzingLead] = useState(null);
-  const [analyzingList, setAnalyzingList] = useState(false);
   const [editingNotes, setEditingNotes] = useState(null);
   const [notesValue, setNotesValue] = useState('');
   const [activeList, setActiveList] = useState(null);
-  const [bulkAnalysisResult, setBulkAnalysisResult] = useState(null);
+  const [analysisJob, setAnalysisJob] = useState(null);
+  const [startingAnalysisJob, setStartingAnalysisJob] = useState(false);
   const [page, setPage] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const selectedListId = new URLSearchParams(window.location.search).get('listId');
+
+  useGsapPageReveal(pageRef);
 
   useEffect(() => {
     let mounted = true;
@@ -111,7 +149,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       if (!selectedListId) {
         setLeads([]);
         setActiveList(null);
-        setBulkAnalysisResult(null);
+        setAnalysisJob(null);
         setPage(1);
         setTotalLeads(0);
         setIsLoading(false);
@@ -155,7 +193,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       }
     };
     fetchLeads();
-  }, [selectedListId, filterSource, filterCity, filterScore, filterStatus, filterMissingWeb, sortBy, sortOrder, page]);
+  }, [selectedListId, filterSource, filterCity, filterScore, filterStatus, filterMissingWeb, sortBy, sortOrder, page, analysisJob?.status]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -177,6 +215,43 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       .catch(() => setActiveList(null));
   }, [selectedListId]);
 
+  useEffect(() => {
+    if (!selectedListId) {
+      setAnalysisJob(null);
+      return undefined;
+    }
+
+    let active = true;
+    let intervalId = null;
+
+    const refreshAnalysisJob = async () => {
+      try {
+        const res = await getLeadListAnalysisJob(selectedListId);
+        if (!active) return;
+        const nextJob = res.data?.job || null;
+        setAnalysisJob(nextJob);
+        if (nextJob?.status === 'COMPLETED') {
+          onUpdate?.();
+          const listRes = await apiRequest(`/api/search/lists/${selectedListId}`);
+          if (active) setActiveList(listRes.data.list || null);
+        }
+      } catch {
+        if (active) setAnalysisJob(null);
+      }
+    };
+
+    refreshAnalysisJob();
+    intervalId = window.setInterval(() => {
+      if (analysisJob?.status && !['QUEUED', 'RUNNING'].includes(analysisJob.status)) return;
+      refreshAnalysisJob();
+    }, 2500);
+
+    return () => {
+      active = false;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [selectedListId, onUpdate, analysisJob?.status]);
+
   const cities = useMemo(() => [...new Set(leads.map((l) => l.city).filter(Boolean))], [leads]);
   const sources = useMemo(() => [...new Set(leads.map((l) => l.source).filter(Boolean))], [leads]);
 
@@ -189,6 +264,9 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       (l.city || '').toLowerCase().includes(q)
     );
   }, [leads, searchQuery]);
+
+  const activeAnalysisStatus = analysisStatusMeta(analysisJob || activeList);
+  const analysisJobRunning = ['QUEUED', 'RUNNING', 'ANALYSIS_RUNNING'].includes(analysisJob?.status || analysisJob?.listStatus || activeList?.analysisStatus);
 
   const toggleSort = (field) => {
     if (sortBy === field) {
@@ -279,87 +357,56 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
 
   const analyzeList = async () => {
     if (!selectedListId) return;
-    setAnalyzingList(true);
+    setStartingAnalysisJob(true);
     setError(null);
     try {
-      const res = await apiRequest(`/api/search/lists/${selectedListId}/analyze`, { method: 'POST' });
-      if (res?.data) {
-        setBulkAnalysisResult(res.data);
-      }
-      if (res?.data?.analyzedCount > 0) {
-        let allLeads = [];
-        let total = 0;
-        
-        for (let i = 1; i <= page; i++) {
-          const params = new URLSearchParams();
-          params.set('listId', selectedListId);
-          params.set('limit', '100');
-          params.set('page', i.toString());
-          if (filterSource) params.set('source', filterSource);
-          if (filterCity) params.set('city', filterCity);
-          if (filterScore) params.set('scoreLevel', filterScore);
-          if (filterStatus) params.set('status', filterStatus);
-          if (filterMissingWeb) params.set('missingWebsite', 'true');
-          if (sortBy) params.set('sortBy', sortBy);
-          if (sortOrder) params.set('sortOrder', sortOrder);
-          
-          const refRes = await apiRequest(`/api/search/leads?${params.toString()}`);
-          if (refRes.data.leads?.length) {
-            allLeads = [...allLeads, ...refRes.data.leads];
-          }
-          if (refRes.data.pagination?.total) {
-            total = refRes.data.pagination.total;
-          }
-        }
-        
-        // Deduplicate
-        const uniqueLeads = Array.from(
-          new Map(allLeads.map(l => [getTargetId(l), l])).values()
-        );
-        
-        setLeads(uniqueLeads);
-        if (total > 0) setTotalLeads(total);
-        onUpdate?.();
-      }
+      const res = await startLeadListAnalysis(selectedListId);
+      setAnalysisJob(res.data?.job || null);
     } catch (err) {
       setError(err.message);
     } finally {
-      setAnalyzingList(false);
+      setStartingAnalysisJob(false);
     }
   };
 
   return (
+    <div ref={pageRef}>
     <DashboardCard className="min-h-[calc(100vh-132px)] overflow-hidden p-5 md:p-7">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between" data-gsap-reveal>
+        <div data-gsap-stagger>
           <h2 className="text-2xl font-semibold tracking-tight md:text-3xl text-black">Lead Lists</h2>
           <p className="mt-2 text-sm font-medium text-black/50">
             Structured search results and opportunity lists.
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center" data-gsap-stagger>
           {savedLists.length > 0 && (
+            <div className="flex items-center gap-2">
               <select
-              value={selectedListId || ''}
-              onChange={(e) => onNavigate?.(`/dashboard/lead-lists?listId=${e.target.value}`)}
-              className="h-10 min-w-[240px] rounded-xl border border-black/5 bg-black/[0.02] px-4 text-[13px] font-medium text-black outline-none transition-colors hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-accent"
-              aria-label="Saved searches"
-            >
-              {savedLists.map((list) => (
-                <option key={list.id} value={list.id}>
-                  {list.name} • {list.leadCount || 0} leads
-                </option>
-              ))}
-            </select>
+                value={selectedListId || ''}
+                onChange={(e) => onNavigate?.(`/dashboard/lead-lists?listId=${e.target.value}`)}
+                className="h-10 min-w-[240px] rounded-xl border border-black/5 bg-black/[0.02] px-4 text-[13px] font-medium text-black outline-none transition-colors hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-accent"
+                aria-label="Saved searches"
+              >
+                {savedLists.map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.name} • {list.leadCount || 0} leads
+                  </option>
+                ))}
+              </select>
+              <span className={`inline-flex h-10 items-center rounded-xl border px-3 text-[12px] font-bold ${activeAnalysisStatus.className}`}>
+                {activeAnalysisStatus.label}
+              </span>
+            </div>
           )}
           {selectedListId && (
             <button
               type="button"
               onClick={analyzeList}
-              disabled={analyzingList}
+              disabled={startingAnalysisJob || analysisJobRunning}
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white shadow-sm ring-1 ring-black/5 px-4 text-[13px] font-medium text-black transition-colors hover:bg-black/[0.02] disabled:opacity-50"
             >
-              {analyzingList ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+              {(startingAnalysisJob || analysisJobRunning) ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
               Analyze List
             </button>
           )}
@@ -381,48 +428,69 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         </div>
       )}
 
-      {bulkAnalysisResult && (
-        <div className="mt-6 rounded-2xl border border-black/[0.08] bg-white p-5 shadow-sm">
+      {analysisJob && (
+        <div className="mt-6 rounded-2xl border border-black/[0.08] bg-white p-5 shadow-sm" data-gsap-reveal>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-bold text-black flex items-center gap-2">
-              <CheckCircle2 size={18} className="text-emerald-500" />
-              Bulk Analysis Complete
+              <CheckCircle2 size={18} className={analysisJob.status === 'COMPLETED' ? 'text-emerald-500' : 'text-blue-500'} />
+              {analysisJob.status === 'COMPLETED' ? 'Analysis complete' : 'Analysis progress'}
             </h3>
-            <button onClick={() => setBulkAnalysisResult(null)} className="text-[12px] font-medium text-black/50 hover:text-black">Dismiss</button>
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${activeAnalysisStatus.className}`}>
+              {activeAnalysisStatus.label}
+            </span>
           </div>
+          {analysisJob.progressTotal > 0 && (
+            <div className="mb-4">
+              <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-black/55">
+                <span>Analyzed {analysisJob.progressCurrent} of {analysisJob.progressTotal}</span>
+                <span>{Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100)}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-black/[0.06]">
+              <div
+                className="h-full rounded-full bg-[#B6FF00]"
+                style={{ width: `${Math.min(100, Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100))}%` }}
+                data-gsap-bar
+                data-gsap-bar-width={`${Math.min(100, Math.round(((analysisJob.progressCurrent || 0) / Math.max(analysisJob.progressTotal || 1, 1)) * 100))}%`}
+              />
+            </div>
+          </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Total Analyzed</div>
-              <div className="text-lg font-bold text-black">{bulkAnalysisResult.analyzedCount}</div>
+              <div className="text-lg font-bold text-black">{summaryValue(analysisJob, 'totalAnalyzed')}</div>
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">AI Assisted</div>
-              <div className="text-lg font-bold text-blue-600">{bulkAnalysisResult.aiAssistedCount}</div>
+              <div className="text-lg font-bold text-blue-600">{summaryValue(analysisJob, 'aiAssistedCount')}</div>
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Rule Based Review</div>
-              <div className="text-lg font-bold text-amber-600">{bulkAnalysisResult.ruleBasedCount ?? bulkAnalysisResult.fallbackCount ?? 0}</div>
+              <div className="text-lg font-bold text-amber-600">{summaryValue(analysisJob, 'ruleBasedCount')}</div>
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Failed</div>
-              <div className="text-lg font-bold text-red-600">{bulkAnalysisResult.failedCount}</div>
+              <div className="text-lg font-bold text-red-600">{summaryValue(analysisJob, 'failedCount')}</div>
             </div>
             <div className="rounded-xl bg-black/[0.02] p-3 border border-black/[0.04]">
               <div className="text-[11px] font-semibold uppercase text-black/40 mb-1">Credits Used</div>
-              <div className="text-lg font-bold text-black">{bulkAnalysisResult.creditsUsed}</div>
+              <div className="text-lg font-bold text-black">{summaryValue(analysisJob, 'creditsUsed')}</div>
             </div>
           </div>
-          {bulkAnalysisResult.topOpportunities?.length > 0 && (
+          {analysisJob.summary?.topOpportunities?.length > 0 && (
             <div className="mt-4 pt-4 border-t border-black/[0.04]">
               <div className="text-[12px] font-semibold text-black/60 mb-2">Top Opportunities Found</div>
               <div className="flex flex-wrap gap-2">
-                {bulkAnalysisResult.topOpportunities.map((opp, idx) => (
+                {analysisJob.summary.topOpportunities.map((opp, idx) => (
                   <span key={idx} className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 border border-emerald-100">
                     Score: {opp.score} ({opp.service})
                   </span>
                 ))}
               </div>
             </div>
+          )}
+          {analysisJob.errorMessage && (
+            <p className="mt-4 text-[12px] font-semibold text-red-600">{analysisJob.errorMessage}</p>
           )}
         </div>
       )}
@@ -435,10 +503,15 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
       )}
 
       {selectedListId && activeList && (
-        <div className="mt-8 rounded-2xl border border-black/5 bg-black/[0.01] p-5">
+        <div className="mt-8 rounded-2xl border border-black/5 bg-black/[0.01] p-5" data-gsap-reveal>
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-lg font-semibold tracking-tight text-black">{activeList.name}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold tracking-tight text-black">{activeList.name}</h3>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${activeAnalysisStatus.className}`}>
+                  {activeAnalysisStatus.label}
+                </span>
+              </div>
               <p className="mt-1 text-[13px] text-black/50">
                 Sources: {listPlatformLabel(activeList)}
               </p>
@@ -701,9 +774,19 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
                                       <span className="text-[13px] text-black/80 leading-relaxed">{a.outreachAngle || 'Not available'}</span>
                                     </div>
                                     <div className="flex flex-col gap-1">
-                                      <span className="text-[12px] font-medium text-black/40">Message Draft</span>
-                                      <div className="rounded-xl border border-black/[0.04] bg-black/[0.02] p-4 text-[13px] leading-relaxed text-black/80 whitespace-pre-wrap">
-                                        {a.messageDraft || 'No message draft available.'}
+                                      <span className="text-[12px] font-medium text-black/40">Outreach Draft</span>
+                                      <div className={`rounded-xl border p-4 text-[13px] leading-relaxed whitespace-pre-wrap ${
+                                        a.dataQualityLevel === 'LOW'
+                                          ? 'border-red-100 bg-red-50 text-red-700'
+                                          : a.dataQualityLevel === 'MEDIUM'
+                                            ? 'border-amber-100 bg-amber-50 text-amber-700'
+                                            : 'border-black/[0.04] bg-black/[0.02] text-black/80'
+                                      }`}>
+                                        {a.dataQualityLevel === 'LOW'
+                                          ? 'Draft paused - this lead needs stronger evidence before outreach.'
+                                          : a.dataQualityLevel === 'MEDIUM'
+                                            ? (a.messageDraft || 'Needs manual review before outreach.')
+                                            : (a.messageDraft || 'No outreach draft available.')}
                                       </div>
                                     </div>
                                     {a.reasons?.some(r => r?.startsWith('AI missing data:')) && (
@@ -830,6 +913,7 @@ const DashboardLeadListsPage = ({ onNavigate, onUpdate }) => {
         </p>
       )}
     </DashboardCard>
+    </div>
   );
 };
 
