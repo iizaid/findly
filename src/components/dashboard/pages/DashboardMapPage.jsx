@@ -5,7 +5,6 @@ import {
   AlertCircle,
   ExternalLink,
   Loader2,
-  Map as MapIcon,
   MapPin,
   RefreshCcw,
   Route,
@@ -18,7 +17,6 @@ import useGsapPageReveal from '../../../hooks/useGsapPageReveal';
 
 const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL?.trim() || '';
 const MAP_ENABLED = String(import.meta.env.VITE_LEAD_MAP_ENABLED ?? 'true') !== 'false';
-const MAP_PREVIEW_MODE = String(import.meta.env.VITE_MAP_PREVIEW_MODE ?? 'false') === 'true';
 const DEFAULT_CENTER = [
   Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LNG ?? 35.91),
   Number(import.meta.env.VITE_MAP_DEFAULT_CENTER_LAT ?? 31.95),
@@ -93,50 +91,10 @@ const fitToLeads = (map, leads) => {
   });
 };
 
-const MapOverlay = ({
-  title,
-  description,
-  actions = [],
-  diagnostics = [],
-}) => (
-  <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-5">
-    <div className="pointer-events-auto w-full max-w-xl rounded-[28px] border border-black/[0.08] bg-white/92 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur-md">
-      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Lead Map</p>
-      <h3 className="mt-2 text-2xl font-bold tracking-tight text-black">{title}</h3>
-      <p className="mt-3 text-[14px] font-semibold leading-6 text-black/60">{description}</p>
-      {diagnostics.length > 0 && (
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          {diagnostics.map((item) => (
-            <div key={item.label} className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] px-4 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-black/45">{item.label}</p>
-              <p className="mt-1 text-[15px] font-bold text-black">{item.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {actions.length > 0 && (
-        <div className="mt-5 flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              className={`inline-flex h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold transition-colors ${action.secondary ? 'border border-black/[0.08] bg-white text-black hover:bg-black/[0.03]' : 'bg-black text-white hover:bg-black/85'}`}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  </div>
-);
-
 const DashboardMapPage = ({ onNavigate }) => {
   const pageRef = useRef(null);
   const routeSearch = window.location.search;
   const selection = useMemo(() => parseRouteSelection(routeSearch), [routeSearch]);
-  const [previewMode, setPreviewMode] = useState(MAP_PREVIEW_MODE);
   const [state, setState] = useState({
     status: selection.leadIds.length || selection.listId ? 'loading' : 'idle',
     mappable: [],
@@ -345,43 +303,10 @@ const DashboardMapPage = ({ onNavigate }) => {
 
   const missingMapSetup = !MAP_ENABLED || !MAP_STYLE_URL;
   const hasSelection = !!(selection.leadIds.length || selection.listId);
-  const showPreviewOverlay = !hasSelection || previewMode;
   const showNoCoordinatesOverlay = hasSelection && !visibleLeads.length && !missingMapSetup;
 
-  const overlay = missingMapSetup
-    ? {
-        title: 'Map style is not configured',
-        description: 'Set VITE_MAP_STYLE_URL to a production-safe MapLibre style URL. Example: https://api.maptiler.com/maps/streets/style.json?key=YOUR_KEY',
-        diagnostics: [{ label: 'Missing env', value: 'VITE_MAP_STYLE_URL' }],
-        actions: [{ label: 'Open settings', onClick: () => onNavigate('/dashboard/settings') }],
-      }
-    : showPreviewOverlay
-      ? {
-          title: 'Map preview mode',
-          description: 'Select leads or run a campaign to place verified businesses here. The map stays visible so you can inspect layout and style before you have map-ready leads.',
-          diagnostics: [{ label: 'Preview center', value: 'Amman region' }],
-          actions: [
-            { label: 'Find Leads', onClick: () => onNavigate('/dashboard/find-leads') },
-            { label: 'Lead Lists', onClick: () => onNavigate('/dashboard/lead-lists'), secondary: true },
-          ],
-        }
-      : showNoCoordinatesOverlay
-        ? {
-            title: 'No reliable coordinates yet',
-            description: 'The map is ready, but the selected leads still need stronger location evidence before they can be placed here.',
-            diagnostics: [
-              { label: 'Low confidence', value: diagnostics.lowConfidenceCount ?? 0 },
-              { label: 'No result', value: diagnostics.providerNoResultCount ?? 0 },
-              { label: 'Bad response', value: diagnostics.providerBadResponseCount ?? 0 },
-              { label: 'Rate limited', value: diagnostics.providerRateLimitedCount ?? 0 },
-              { label: 'Insufficient input', value: diagnostics.skippedInsufficientInputCount ?? 0 },
-            ],
-            actions: [{ label: 'Enrich locations', onClick: runEnrichment }],
-          }
-        : null;
-
   return (
-    <div ref={pageRef} className="grid min-h-[calc(100vh-132px)] gap-5 xl:grid-cols-[minmax(0,1.1fr)_410px]" data-gsap-reveal>
+    <div ref={pageRef} className="min-h-[calc(100vh-132px)]" data-gsap-reveal>
       <div data-gsap-stagger>
         <DashboardCard className="overflow-hidden p-5 md:p-7">
           <div className="flex flex-col gap-4 border-b border-black/[0.06] pb-6 md:flex-row md:items-start md:justify-between">
@@ -389,7 +314,7 @@ const DashboardMapPage = ({ onNavigate }) => {
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Geographic intelligence</p>
               <h2 className="mt-2 text-3xl font-bold tracking-tight text-black md:text-4xl">Lead Map</h2>
               <p className="mt-3 max-w-3xl text-[14px] font-semibold leading-6 text-black/55">
-                Findly only maps leads with reliable coordinates. Preview mode keeps the live map visible even before results are mappable.
+                Findly only maps leads with reliable coordinates. The map stays visible even before results are ready to place.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -413,14 +338,6 @@ const DashboardMapPage = ({ onNavigate }) => {
               </button>
               <button
                 type="button"
-                onClick={() => setPreviewMode((value) => !value)}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
-              >
-                <MapIcon size={15} />
-                {previewMode ? 'Hide preview' : 'Preview map'}
-              </button>
-              <button
-                type="button"
                 onClick={() => onNavigate('/dashboard/map')}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
               >
@@ -433,6 +350,55 @@ const DashboardMapPage = ({ onNavigate }) => {
           {jobState.message && (
             <div className="mt-5 rounded-2xl border border-black/[0.06] bg-[#F7F8F6] px-4 py-3 text-[13px] font-semibold text-black/65">
               {jobState.message}
+            </div>
+          )}
+
+          {missingMapSetup && (
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-800">
+              Map style is not configured yet. Set <span className="font-black">VITE_MAP_STYLE_URL</span> to render the live map.
+            </div>
+          )}
+
+          {!missingMapSetup && !hasSelection && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/[0.06] bg-[#F7F8F6] px-4 py-3 text-[13px] font-semibold text-black/65">
+              <span>Map preview mode. Select leads or run a campaign to place verified businesses here.</span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/dashboard/find-leads')}
+                  className="inline-flex h-9 items-center justify-center rounded-xl bg-black px-4 text-[12px] font-semibold text-white transition-colors hover:bg-black/85"
+                >
+                  Find Leads
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/dashboard/lead-lists')}
+                  className="inline-flex h-9 items-center justify-center rounded-xl border border-black/[0.08] bg-white px-4 text-[12px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
+                >
+                  Lead Lists
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showNoCoordinatesOverlay && (
+            <div className="mt-5 rounded-2xl border border-black/[0.06] bg-[#F7F8F6] px-4 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[14px] font-bold text-black">No reliable coordinates yet</p>
+                  <p className="mt-1 text-[13px] font-semibold text-black/60">
+                    The selected leads still need stronger location evidence before they can be placed on the map.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={runEnrichment}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-black px-4 text-[13px] font-semibold text-white transition-colors hover:bg-black/85"
+                >
+                  <RefreshCcw size={15} />
+                  Enrich locations
+                </button>
+              </div>
             </div>
           )}
 
@@ -518,15 +484,6 @@ const DashboardMapPage = ({ onNavigate }) => {
                 </div>
               </div>
             )}
-
-            {overlay && state.status !== 'loading' && state.status !== 'error' && (
-              <MapOverlay
-                title={overlay.title}
-                description={overlay.description}
-                diagnostics={overlay.diagnostics}
-                actions={overlay.actions}
-              />
-            )}
           </div>
 
           {state.summary?.markerLimitApplied && (
@@ -534,92 +491,80 @@ const DashboardMapPage = ({ onNavigate }) => {
               Showing first 100 mapped leads. Refine your selection to focus the map.
             </p>
           )}
-        </DashboardCard>
-      </div>
-
-      <div className="space-y-5" data-gsap-stagger>
-        <DashboardCard className="p-5 md:p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Mapped leads</p>
-          <div className="mt-4 space-y-3">
-            {visibleLeads.length ? visibleLeads.map((lead) => (
-              <button
-                key={lead.id}
-                type="button"
-                onMouseEnter={() => setHoverLeadId(lead.id)}
-                onMouseLeave={() => setHoverLeadId(null)}
-                onClick={() => {
-                  setActiveLeadId(lead.id);
-                  const markerEntry = markersRef.current.get(lead.id);
-                  const popup = markerEntry?.marker?.getPopup?.();
-                  if (popup && !popup.isOpen()) markerEntry.marker.togglePopup();
-                  mapRef.current?.flyTo({
-                    center: [lead.longitude, lead.latitude],
-                    zoom: Math.max(mapRef.current?.getZoom?.() || DEFAULT_ZOOM, 13),
-                    speed: 1,
-                  });
-                }}
-                className={`w-full rounded-2xl border p-4 text-left transition-all ${lead.id === activeLeadId ? 'border-[#B6FF00] bg-[#F6FFD2]' : 'border-black/[0.06] bg-white hover:border-black/10 hover:bg-[#FBFBFB]'}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-bold text-black">{lead.businessName}</p>
-                    <p className="mt-1 text-[12px] font-semibold text-black/55">{[lead.category, lead.city, lead.country].filter(Boolean).join(' · ') || 'Mapped lead'}</p>
-                  </div>
-                  <span className={`inline-flex min-w-[44px] items-center justify-center rounded-2xl px-3 py-2 text-[13px] font-black ${scoreBadgeClass(lead.scoreLevel)}`}>
-                    {lead.score ?? '—'}
-                  </span>
+          {visibleLeads.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-black/[0.06] bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-bold text-black">{activeLead?.businessName}</p>
+                  <p className="mt-1 text-[12px] font-semibold text-black/55">{[activeLead?.category, activeLead?.city, activeLead?.country].filter(Boolean).join(' · ') || 'Mapped lead'}</p>
                 </div>
-              </button>
-            )) : (
-              <p className="text-[13px] font-semibold text-black/55">
-                {hasSelection ? 'No mapped leads match the current filters.' : 'Select leads to inspect mapped businesses here.'}
-              </p>
-            )}
-          </div>
-        </DashboardCard>
+                <span className={`inline-flex min-w-[44px] items-center justify-center rounded-2xl px-3 py-2 text-[13px] font-black ${scoreBadgeClass(activeLead?.scoreLevel)}`}>
+                  {activeLead?.score ?? '—'}
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeWebsiteUrl && (
+                  <a
+                    href={activeWebsiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-[#F7F8F6] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-black/[0.03]"
+                  >
+                    Open website
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+                {visibleLeads.map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onMouseEnter={() => setHoverLeadId(lead.id)}
+                    onMouseLeave={() => setHoverLeadId(null)}
+                    onClick={() => {
+                      setActiveLeadId(lead.id);
+                      const markerEntry = markersRef.current.get(lead.id);
+                      const popup = markerEntry?.marker?.getPopup?.();
+                      if (popup && !popup.isOpen()) markerEntry.marker.togglePopup();
+                      mapRef.current?.flyTo({
+                        center: [lead.longitude, lead.latitude],
+                        zoom: Math.max(mapRef.current?.getZoom?.() || DEFAULT_ZOOM, 13),
+                        speed: 1,
+                      });
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition-colors ${
+                      lead.id === activeLeadId
+                        ? 'border-[#B6FF00] bg-[#F6FFD2] text-black'
+                        : 'border-black/[0.08] bg-white text-black/70 hover:bg-black/[0.03]'
+                    }`}
+                  >
+                    <span className="truncate max-w-[180px]">{lead.businessName}</span>
+                    <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-black ${scoreBadgeClass(lead.scoreLevel)}`}>
+                      {lead.score ?? '—'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-        <DashboardCard className="p-5 md:p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-secondary">Needs verification</p>
-          <div className="mt-4 space-y-3">
-            {state.notMappable.length ? state.notMappable.map((lead) => (
-              <div key={lead.id} className="rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-black/60">
-                    <MapPin size={18} />
-                  </div>
-                  <div className="min-w-0">
+          {state.notMappable.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-black/[0.06] bg-[#F7F8F6] p-4">
+              <div className="flex items-center gap-2">
+                <MapPin size={16} className="text-black/50" />
+                <p className="text-[13px] font-bold uppercase tracking-[0.16em] text-secondary">Needs verification</p>
+              </div>
+              <div className="mt-4 space-y-3">
+                {state.notMappable.slice(0, 8).map((lead) => (
+                  <div key={lead.id} className="rounded-2xl border border-black/[0.06] bg-white p-4">
                     <p className="truncate text-[14px] font-bold text-black">{lead.businessName}</p>
                     <p className="mt-1 text-[12px] font-semibold text-black/55">{lead.reason}</p>
                     <p className="mt-2 text-[11px] font-semibold text-black/40">
                       {[lead.city, lead.country, lead.geoProvider, lead.geoAccuracy, lead.geoFailureReason].filter(Boolean).join(' · ')}
                     </p>
                   </div>
-                </div>
+                ))}
               </div>
-            )) : (
-              <p className="text-[13px] font-semibold text-black/55">No unresolved location records are waiting right now.</p>
-            )}
-          </div>
-        </DashboardCard>
-
-        <DashboardCard className="bg-black p-5 text-white md:p-6">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#B6FF00] text-black">
-            <MapIcon size={22} />
-          </div>
-          <h3 className="mt-5 text-2xl font-bold tracking-tight">No fake markers.</h3>
-          <p className="mt-3 text-sm font-semibold leading-7 text-white/65">
-            Findly renders a lead only when the saved coordinates pass validation and meet the configured confidence threshold.
-          </p>
-          {activeWebsiteUrl && (
-            <a
-              href={activeWebsiteUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black transition-colors hover:bg-[#B6FF00]"
-            >
-              Open website
-              <ExternalLink size={15} />
-            </a>
+            </div>
           )}
         </DashboardCard>
       </div>
